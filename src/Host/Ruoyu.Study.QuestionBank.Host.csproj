@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
+    <PackageReference Include="Grpc.AspNetCore.Web" Version="2.60.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contract\Ruoyu.Study.QuestionBank.Contract.csproj" />
+    <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
+    <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
+  </ItemGroup>
+
+</Project>

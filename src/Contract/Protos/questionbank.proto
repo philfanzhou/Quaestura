@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package ruoyu.study.questionbank.v1;
+
+import "Protos/questionbank.common.proto";
+
+option csharp_namespace = "Ruoyu.Study.QuestionBank.Contract.Protos";
+
+// ========== 题库服务 (原 Library) ==========
+service QuestionBankGrpcService {
+  // === 题目管理 ===
+  rpc GetQuestion(GetQuestionRequest) returns (QuestionDto);
+  rpc SearchQuestions(SearchQuestionsRequest) returns (QuestionPageResult);
+  rpc AddOrUpdateQuestion(AddOrUpdateQuestionRequest) returns (BoolResponse);
+  rpc DeleteQuestion(IdRequest) returns (BoolResponse);
+  rpc GetQuestions(GetQuestionsRequest) returns (QuestionDtoList);
+
+  // === 知识点管理 ===
+  rpc GetKnowledge(IdRequest) returns (KnowledgeDto);
+  rpc GetAllKnowledges(GetAllKnowledgesRequest) returns (KnowledgeDtoList);
+  rpc AddOrUpdateKnowledge(AddOrUpdateKnowledgeRequest) returns (BoolResponse);
+  rpc DeleteKnowledge(IdRequest) returns (BoolResponse);
+  rpc GetKnowledgesByGradeAndSubject(GetKnowledgesByGradeAndSubjectRequest) returns (KnowledgeDtoList);
+  rpc GetKnowledgeByNameLike(GetKnowledgeByNameLikeRequest) returns (KnowledgeDtoList);
+  rpc GetAllKnowledgesWithPaging(GetAllKnowledgesWithPagingRequest) returns (KnowledgePageResult);
+
+  // === 题目-知识点关联管理 ===
+  rpc BatchTagKnowledge(BatchTagKnowledgeRequest) returns (BoolResponse);
+  rpc GetQuestionKnowledges(GetQuestionKnowledgesRequest) returns (QuestionKnowledgeDtoList);
+  rpc GetQuestionsByKnowledge(GetQuestionsByKnowledgeRequest) returns (QuestionPageResult);
+  rpc RemoveAllQuestionKnowledges(RemoveAllQuestionKnowledgesRequest) returns (BoolResponse);
+}
+
+// ========== 题目请求 ==========
+message GetQuestionRequest {
+  string question_id = 1;
+  int32 subject = 2;
+  int32 grade = 3;
+}
+
+message AddOrUpdateQuestionRequest {
+  QuestionDto question = 1;
+  QuestionContentDto content = 2;
+  int32 subject = 3;
+  int32 grade = 4;
+  string user_id = 5;
+  repeated bytes pictures = 6;  // 多张图片
+}
+
+message SearchQuestionsRequest {
+  string keyword = 1;
+  int32 level = 2;
+  int32 type = 3;
+  int32 subject = 4;
+  int32 grade = 5;
+  int32 page = 6;
+  int32 size = 7;
+}
+
+message GetQuestionsRequest {
+  int32 level = 1;
+  int32 type = 2;
+  int32 subject = 3;
+  int32 grade = 4;
+  int32 page = 5;
+  int32 size = 6;
+}
+
+// ========== 知识点请求 ==========
+message GetAllKnowledgesRequest {
+  string parent_id = 1;
+}
+
+message AddOrUpdateKnowledgeRequest {
+  KnowledgeDto knowledge = 1;
+  string user_id = 2;
+}
+
+message GetKnowledgesByGradeAndSubjectRequest {
+  int32 subject = 1;
+  int32 grade = 2;
+  int32 page = 3;
+  int32 size = 4;
+}
+
+message GetKnowledgeByNameLikeRequest {
+  string name = 1;
+}
+
+message GetAllKnowledgesWithPagingRequest {
+  int32 page = 1;
+  int32 size = 2;
+}
+
+// ========== 题目-知识点关联请求 ==========
+message BatchTagKnowledgeRequest {
+  repeated string question_ids = 1;
+  string knowledge_id = 2;
+  int32 subject = 3;
+  int32 grade = 4;
+  string user_id = 5;
+}
+
+message GetQuestionKnowledgesRequest {
+  string question_id = 1;
+  int32 subject = 2;
+  int32 grade = 3;
+}
+
+message GetQuestionsByKnowledgeRequest {
+  string knowledge_id = 1;
+  int32 subject = 2;
+  int32 grade = 3;
+  int32 page = 4;
+  int32 size = 5;
+}
+
+message RemoveAllQuestionKnowledgesRequest {
+  string question_id = 1;
+  int32 subject = 2;
+  int32 grade = 3;
+}

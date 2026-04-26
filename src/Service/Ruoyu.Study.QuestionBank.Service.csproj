@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" Version="11.9.0" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="11.9.0" />
+    <PackageReference Include="Mapster" Version="7.4.0" />
+    <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contract\Ruoyu.Study.QuestionBank.Contract.csproj" />
+    <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

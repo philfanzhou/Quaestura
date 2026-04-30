@@ -40,7 +40,7 @@ var ossOptions = new OssOptions
     SecretKey = ossSecretKey,
     BucketName = ossBucketName
 };
-builder.Services.AddSingleton<IOssService>(new MinioOssService(
+builder.Services.AddSingleton<IOssService>(new S3OssService(
     ossOptions.Endpoint,
     ossOptions.AccessKey,
     ossOptions.SecretKey,
@@ -101,7 +101,7 @@ using (var scope = app.Services.CreateScope())
     }
     else
     {
-        logger.LogWarning("MinIO 连接失败，请检查 OSS 配置和 MinIO 服务状态");
+        logger.LogWarning("S3 存储连接失败，请检查 OSS 配置和存储服务状态");
     }
 }
 

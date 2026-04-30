@@ -10,73 +10,34 @@ namespace Ruoyu.Study.QuestionBank.Database.Oss;
 
 public enum OssBucket
 {
-    Mistakes,   // 错题图片
-    Questions,  // 题目图片
+    Mistakes,
+    Questions,
 }
 
 public interface IOssService
 {
-    /// <summary>
-    /// 上传单个文件，返回存储路径
-    /// </summary>
     Task<string> UploadAsync(Stream stream, string fileName, string contentType, OssBucket bucket = OssBucket.Questions);
-
-    /// <summary>
-    /// 上传单个文件，返回存储路径
-    /// </summary>
     Task<string> UploadAsync(byte[] data, string fileName, string contentType, OssBucket bucket = OssBucket.Questions);
-
-    /// <summary>
-    /// 批量上传文件，返回存储路径列表
-    /// </summary>
     Task<List<string>> UploadManyAsync(IEnumerable<(Stream stream, string fileName, string contentType)> files, OssBucket bucket = OssBucket.Questions);
-
-    /// <summary>
-    /// 下载文件
-    /// </summary>
     Task<Stream> DownloadAsync(string objectPath);
-
-    /// <summary>
-    /// 批量下载文件
-    /// </summary>
     Task<List<Stream>> DownloadManyAsync(IEnumerable<string> objectPaths);
-
-    /// <summary>
-    /// 删除单个文件
-    /// </summary>
     Task<bool> DeleteAsync(string objectPath);
-
-    /// <summary>
-    /// 批量删除文件
-    /// </summary>
     Task<int> DeleteManyAsync(IEnumerable<string> objectPaths);
-
-    /// <summary>
-    /// 获取预签名URL
-    /// </summary>
     string GetPresignedUrl(string objectPath, int expirySeconds = 3600);
-
-    /// <summary>
-    /// 批量获取预签名URL
-    /// </summary>
     List<string> GetPresignedUrls(IEnumerable<string> objectPaths, int expirySeconds = 3600);
-
-    /// <summary>
-    /// 检查 MinIO 连接是否正常
-    /// </summary>
     Task<bool> CheckConnectivityAsync();
 }
 
-public class MinioOssService : IOssService
+public class S3OssService : IOssService
 {
-    private readonly IMinioClient _minioClient;
+    private readonly IMinioClient _s3Client;
     private readonly string _bucketName;
 
-    public MinioOssService(string endpoint, string accessKey, string secretKey, string bucketName)
+    public S3OssService(string endpoint, string accessKey, string secretKey, string bucketName)
     {
         _bucketName = bucketName;
 
-        _minioClient = new MinioClient()
+        _s3Client = new MinioClient()
             .WithEndpoint(endpoint)
             .WithCredentials(accessKey, secretKey)
             .Build();
@@ -95,7 +56,7 @@ public class MinioOssService : IOssService
             .WithObjectSize(stream.Length)
             .WithContentType(contentType);
 
-        await _minioClient.PutObjectAsync(putObjectArgs);
+        await _s3Client.PutObjectAsync(putObjectArgs);
 
         return objectPath;
     }
@@ -124,7 +85,7 @@ public class MinioOssService : IOssService
                 .WithObjectSize(stream.Length)
                 .WithContentType(contentType);
 
-            await _minioClient.PutObjectAsync(putObjectArgs);
+            await _s3Client.PutObjectAsync(putObjectArgs);
             paths.Add(objectPath);
             index++;
         }
@@ -145,7 +106,7 @@ public class MinioOssService : IOssService
                 memoryStream.Position = 0;
             });
 
-        await _minioClient.GetObjectAsync(getObjectArgs);
+        await _s3Client.GetObjectAsync(getObjectArgs);
 
         return memoryStream;
     }
@@ -168,7 +129,7 @@ public class MinioOssService : IOssService
                 .WithBucket(_bucketName)
                 .WithObject(objectPath);
 
-            await _minioClient.RemoveObjectAsync(removeObjectArgs);
+            await _s3Client.RemoveObjectAsync(removeObjectArgs);
             return true;
         }
         catch
@@ -197,7 +158,7 @@ public class MinioOssService : IOssService
             .WithObject(objectPath)
             .WithExpiry(expirySeconds);
 
-        return _minioClient.PresignedGetObjectAsync(presignedGetObjectArgs).Result;
+        return _s3Client.PresignedGetObjectAsync(presignedGetObjectArgs).Result;
     }
 
     public List<string> GetPresignedUrls(IEnumerable<string> objectPaths, int expirySeconds = 3600)
@@ -210,7 +171,7 @@ public class MinioOssService : IOssService
         try
         {
             var beArgs = new BucketExistsArgs().WithBucket(_bucketName);
-            return await _minioClient.BucketExistsAsync(beArgs);
+            return await _s3Client.BucketExistsAsync(beArgs);
         }
         catch
         {
@@ -221,10 +182,10 @@ public class MinioOssService : IOssService
     private async Task EnsureBucketExistsAsync()
     {
         var beArgs = new BucketExistsArgs().WithBucket(_bucketName);
-        if (!await _minioClient.BucketExistsAsync(beArgs))
+        if (!await _s3Client.BucketExistsAsync(beArgs))
         {
             var mbArgs = new MakeBucketArgs().WithBucket(_bucketName);
-            await _minioClient.MakeBucketAsync(mbArgs);
+            await _s3Client.MakeBucketAsync(mbArgs);
         }
     }
 
@@ -244,9 +205,9 @@ public class MinioOssService : IOssService
 
 public class OssOptions
 {
-    public string Endpoint { get; set; } = "localhost:9000";
-    public string AccessKey { get; set; } = "minioadmin";
-    public string SecretKey { get; set; } = "minioadmin";
+    public string Endpoint { get; set; } = "localhost:8333";
+    public string AccessKey { get; set; } = "seaweedfs_admin";
+    public string SecretKey { get; set; } = "seaweedfs_admin";
     public string BucketName { get; set; } = "ruoyu-study";
     public bool IsSecure { get; set; } = false;
 }

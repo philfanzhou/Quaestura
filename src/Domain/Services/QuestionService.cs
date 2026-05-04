@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Ruoyu.Study.QuestionBank.Database;
 using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Database.Oss;
+using Ruoyu.Study.Common.Oss;
 
 namespace Ruoyu.Study.QuestionBank.Domain.Services;
 
@@ -221,8 +221,8 @@ public interface IOssQuestionService
     Task<List<Stream>> DownloadPicturesAsync(IEnumerable<string> paths);
     Task<bool> DeletePictureAsync(string path);
     Task<int> DeletePicturesAsync(IEnumerable<string> paths);
-    string GetPictureUrl(string path);
-    List<string> GetPictureUrls(IEnumerable<string> paths);
+    Task<string> GetPictureUrl(string path);
+    Task<List<string>> GetPictureUrls(IEnumerable<string> paths);
 }
 
 public class OssQuestionService : IOssQuestionService
@@ -264,13 +264,13 @@ public class OssQuestionService : IOssQuestionService
         return await _ossService.DeleteManyAsync(paths);
     }
 
-    public string GetPictureUrl(string path)
+    public async Task<string> GetPictureUrl(string path)
     {
-        return _ossService.GetPresignedUrl(path);
+        return await _ossService.GetPresignedUrlAsync(path);
     }
 
-    public List<string> GetPictureUrls(IEnumerable<string> paths)
+    public async Task<List<string>> GetPictureUrls(IEnumerable<string> paths)
     {
-        return _ossService.GetPresignedUrls(paths);
+        return await _ossService.GetPresignedUrlsAsync(paths);
     }
 }

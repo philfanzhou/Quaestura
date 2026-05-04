@@ -42,7 +42,7 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
             throw new RpcException(new Status(StatusCode.NotFound, "Question not found"));
         }
         var dto = MapToQuestionDto(result.Value.question, result.Value.content);
-        ConvertQuestionPicturePathsToUrls(dto);
+        await ConvertQuestionPicturePathsToUrlsAsync(dto);
         return dto;
     }
 
@@ -55,7 +55,7 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
             request.Subject, request.Grade, request.Page, request.Size);
 
         var dtos = result.items.Select(item => MapToQuestionDto(item.Question, item.Content)).ToList();
-        ConvertQuestionPicturePathsToUrls(dtos);
+        await ConvertQuestionPicturePathsToUrlsAsync(dtos);
 
         return new QuestionPageResult
         {
@@ -183,7 +183,7 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
             request.Subject, request.Grade, request.Page, request.Size);
 
         var dtos = result.items.Select(item => MapToQuestionDto(item.Question, item.Content)).ToList();
-        ConvertQuestionPicturePathsToUrls(dtos);
+        await ConvertQuestionPicturePathsToUrlsAsync(dtos);
 
         return new QuestionDtoList
         {
@@ -381,7 +381,7 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
         var questions = await _questionService.GetByIdsAsync(questionIds);
 
         var dtos = questions.Select(item => MapToQuestionDto(item.Question, item.Content)).ToList();
-        ConvertQuestionPicturePathsToUrls(dtos);
+        await ConvertQuestionPicturePathsToUrlsAsync(dtos);
 
         return new QuestionPageResult
         {
@@ -426,21 +426,21 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
         return dto;
     }
 
-    private void ConvertQuestionPicturePathsToUrls(QuestionDto dto)
+    private async Task ConvertQuestionPicturePathsToUrlsAsync(QuestionDto dto)
     {
         if (dto.PicturePaths.Count > 0)
         {
-            var urls = _ossQuestionService.GetPictureUrls(dto.PicturePaths.ToList());
+            var urls = await _ossQuestionService.GetPictureUrls(dto.PicturePaths.ToList());
             dto.PicturePaths.Clear();
             dto.PicturePaths.AddRange(urls);
         }
     }
 
-    private List<QuestionDto> ConvertQuestionPicturePathsToUrls(List<QuestionDto> dtos)
+    private async Task<List<QuestionDto>> ConvertQuestionPicturePathsToUrlsAsync(List<QuestionDto> dtos)
     {
         foreach (var dto in dtos)
         {
-            ConvertQuestionPicturePathsToUrls(dto);
+            await ConvertQuestionPicturePathsToUrlsAsync(dto);
         }
         return dtos;
     }

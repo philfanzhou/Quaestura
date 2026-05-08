@@ -72,7 +72,7 @@ public class KnowledgeService : IKnowledgeService
         }
 
         knowledge.CreatedBy = userId;
-        knowledge.CreatedAt = DateTime.UtcNow;
+        knowledge.CreatedAt = DateTimeOffset.UtcNow;
         await _dbContext.Knowledges.AddAsync(knowledge);
         await _dbContext.SaveChangesAsync();
         return (true, false);
@@ -102,7 +102,7 @@ public class KnowledgeService : IKnowledgeService
         existing.Subject = knowledge.Subject;
         existing.Grade = knowledge.Grade;
         existing.UpdatedBy = userId;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = DateTimeOffset.UtcNow;
 
         await _dbContext.SaveChangesAsync();
         return (true, false, false);

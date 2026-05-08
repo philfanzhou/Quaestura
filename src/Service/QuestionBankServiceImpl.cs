@@ -114,7 +114,7 @@ public class QuestionBankServiceImpl : QuestionBankGrpcService.QuestionBankGrpcS
                     existingQuestion.Subject = request.Subject;
                     existingQuestion.StudentId = request.Question.StudentId;
                     existingQuestion.MistakeId = request.Question.MistakeId;
-                    existingQuestion.UpdatedAt = DateTime.UtcNow;
+                    existingQuestion.UpdatedAt = DateTimeOffset.UtcNow;
 
                     await _questionService.UpdateAsync(existingQuestion, content, picturePaths.Count > 0 ? picturePaths : null);
                     return new BoolResponse { Success = true };

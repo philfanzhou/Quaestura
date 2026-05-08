@@ -38,8 +38,8 @@ public class QuestionService : IQuestionService
         }
 
         entity.Id = Guid.NewGuid();
-        entity.CreatedAt = DateTime.UtcNow;
-        entity.UpdatedAt = DateTime.UtcNow;
+        entity.CreatedAt = DateTimeOffset.UtcNow;
+        entity.UpdatedAt = DateTimeOffset.UtcNow;
         entity.UserId = userId;
         entity.Subject = subject;
         entity.Grade = grade;
@@ -80,7 +80,7 @@ public class QuestionService : IQuestionService
         existing.Subject = entity.Subject;
         existing.StudentId = entity.StudentId;
         existing.MistakeId = entity.MistakeId;
-        existing.UpdatedAt = DateTime.UtcNow;
+        existing.UpdatedAt = DateTimeOffset.UtcNow;
         if (picturePaths != null)
         {
             existing.PicturePaths = picturePaths.Count == 0 ? null : JsonSerializer.Serialize(picturePaths);

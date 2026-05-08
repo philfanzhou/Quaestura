@@ -28,7 +28,7 @@ public class Knowledge
     public string? CreatedBy { get; set; }
 
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     [Column("is_referenced")]
     public bool IsReferenced { get; set; }
@@ -45,7 +45,7 @@ public class Knowledge
 
     [Column("updated_at")]
     [ConcurrencyCheck]
-    public DateTime? UpdatedAt { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
 
     [ForeignKey("ParentId")]
     public virtual Knowledge? Parent { get; set; }

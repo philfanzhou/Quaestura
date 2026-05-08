@@ -13,11 +13,11 @@ public class Question
     public Guid Id { get; set; } = Guid.NewGuid();
 
     [Column("created_at")]
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
     [Column("updated_at")]
     [ConcurrencyCheck]
-    public DateTime UpdatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 
     [Column("level")]
     public int Level { get; set; }

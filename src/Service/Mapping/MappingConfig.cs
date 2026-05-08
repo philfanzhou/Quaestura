@@ -13,8 +13,8 @@ public static class MappingConfig
         // Question 映射
         TypeAdapterConfig<Question, QuestionDto>.NewConfig()
             .Map(dest => dest.Id, src => src.Id.ToString())
-            .Map(dest => dest.CreatedAt, src => src.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"))
-            .Map(dest => dest.UpdatedAt, src => src.UpdatedAt.ToString("yyyy-MM-dd HH:mm:ss"))
+            .Map(dest => dest.CreatedAt, src => src.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"))
+            .Map(dest => dest.UpdatedAt, src => src.UpdatedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"))
             .Map(dest => dest.UserId, src => src.UserId ?? "")
             .Map(dest => dest.StudentId, src => src.StudentId ?? "")
             .Map(dest => dest.MistakeId, src => src.MistakeId ?? "");
@@ -42,7 +42,7 @@ public static class MappingConfig
             .Map(dest => dest.Name, src => src.Name)
             .Map(dest => dest.Description, src => src.Description ?? "")
             .Map(dest => dest.CreatedBy, src => src.CreatedBy ?? "")
-            .Map(dest => dest.CreatedAt, src => src.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss"))
+            .Map(dest => dest.CreatedAt, src => src.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"))
             .Map(dest => dest.IsReferenced, src => src.IsReferenced)
             .Map(dest => dest.Subject, src => src.Subject ?? 0)
             .Map(dest => dest.Grade, src => src.Grade ?? 0)
@@ -74,9 +74,9 @@ public static class MappingConfig
             .Map(dest => dest.Grade, src => src.Knowledge.Grade);
     }
 
-    private static string MapNullableDateTime(DateTime? dateTime)
+    private static string MapNullableDateTime(DateTimeOffset? dateTime)
     {
-        return dateTime.HasValue ? dateTime.Value.ToString("yyyy-MM-dd HH:mm:ss") : "";
+        return dateTime.HasValue ? dateTime.Value.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'") : "";
     }
 
     private static string? MapEmptyString(string value)

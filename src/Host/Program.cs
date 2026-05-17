@@ -20,31 +20,21 @@ var config = builder.Configuration;
 MappingConfig.RegisterMappings();
 
 // 获取数据库连接字符串（缺失则直接终止启动）
-var connectionString = config.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("数据库连接字符串 'Default' 未配置，请检查 appsettings.json 或环境变量。");
-
-// 注册 EF Core DbContext
+var connectionString = config.GetConnectionString("Default");
+var isPostgreSql = !string.IsNullOrWhiteSpace(connectionString)
+    && (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
+        || connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase));
 builder.Services.AddDbContext<QuestionBankDbContext>(options =>
-    options.UseNpgsql(connectionString));
-
-// 注册 MinIO OSS 服务（缺失关键配置则直接终止启动）
-var ossEndpoint = config["Oss:Endpoint"] ?? throw new InvalidOperationException("OSS Endpoint 未配置，请检查 appsettings.json 或环境变量。");
-var ossAccessKey = config["Oss:AccessKey"] ?? throw new InvalidOperationException("OSS AccessKey 未配置，请检查 appsettings.json 或环境变量。");
-var ossSecretKey = config["Oss:SecretKey"] ?? throw new InvalidOperationException("OSS SecretKey 未配置，请检查 appsettings.json 或环境变量。");
-var ossBucketName = config["Oss:BucketName"] ?? throw new InvalidOperationException("OSS BucketName 未配置，请检查 appsettings.json 或环境变量。");
-
-var ossOptions = new OssOptions
 {
-    Endpoint = ossEndpoint,
-    AccessKey = ossAccessKey,
-    SecretKey = ossSecretKey,
-    BucketName = ossBucketName
-};
+    if (isPostgreSql)
+        options.UseNpgsql(connectionString);
+    else
+        options.UseSqlite(connectionString ?? "Data Source=data/sqlite/ruoyu_study_questionbank.db");
+});
+
+var ossOptions = config.GetSection("Oss").Get<OssOptions>() ?? new OssOptions();
 builder.Services.AddSingleton<IOssService>(new S3OssService(
-    ossOptions.Endpoint,
-    ossOptions.AccessKey,
-    ossOptions.SecretKey,
-    ossOptions.BucketName));
+    ossOptions.Endpoint, ossOptions.AccessKey, ossOptions.SecretKey, ossOptions.BucketName));
 
 // 注册领域服务
 builder.Services.AddScoped<IQuestionService, QuestionService>();

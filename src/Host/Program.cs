@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Ruoyu.Study.Common.Oss;
 using Ruoyu.Study.QuestionBank.Database;
@@ -97,10 +98,12 @@ using (var scope = app.Services.CreateScope())
 }
 
 // 配置 Swagger
-app.UseSwagger();
-app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuestionBank gRPC API v1"));
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuestionBank gRPC API v1"));
+}
 
-// 启用 gRPC-Web
 app.UseGrpcWeb();
 
 // 映射 gRPC 端点

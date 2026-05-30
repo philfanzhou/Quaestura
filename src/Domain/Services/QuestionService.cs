@@ -144,23 +144,27 @@ public class QuestionService : IQuestionService
         var totalCount = await query.CountAsync();
         var totalPages = (int)Math.Ceiling(totalCount / (double)size);
 
-        var questionIds = await query
+        var allQuestions = await query.Select(q => new { q.Id, q.CreatedAt }).ToListAsync();
+        var sortedQuestionIds = allQuestions
             .OrderByDescending(q => q.CreatedAt)
             .Skip((page - 1) * size)
             .Take(size)
             .Select(q => q.Id)
-            .ToListAsync();
+            .ToList();
 
         var questions = await _dbContext.Questions
-            .Where(q => questionIds.Contains(q.Id))
+            .Where(q => sortedQuestionIds.Contains(q.Id))
             .ToListAsync();
 
-        var contentQIds = questionIds;
+        var orderedQuestions = sortedQuestionIds
+            .Select(id => questions.First(q => q.Id == id))
+            .ToList();
+
         var contents = await _dbContext.QuestionContents
-            .Where(c => contentQIds.Contains(c.QuestionId))
+            .Where(c => sortedQuestionIds.Contains(c.QuestionId))
             .ToListAsync();
 
-        var items = questions.Select(q => new QuestionWithContent
+        var items = orderedQuestions.Select(q => new QuestionWithContent
         {
             Question = q,
             Content = contents.FirstOrDefault(c => c.QuestionId == q.Id)

@@ -7,8 +7,6 @@ IMAGE_NAME="ruoyu.study.questionbank:${IMAGE_TAG}"
 CONTAINER_NAME="ruoyu-questionbank"
 NETWORK_NAME="ruoyu-net"
 
-#GRPC_PORT="10894"
-
 LISTEN_URL="http://+:5007"
 
 DB_HOST="ruoyu-postgres"

@@ -73,6 +73,19 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
+app.Logger.LogInformation("QuestionBank Service starting");
+app.Logger.LogInformation("Listening: {Urls}", Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "(default)");
+if (isPostgreSql && !string.IsNullOrEmpty(connectionString))
+{
+    var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
+    app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
+}
+else
+{
+    app.Logger.LogInformation("Database: SQLite");
+}
+app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOptions.BucketName);
+
 // 自动执行数据库迁移
 using (var scope = app.Services.CreateScope())
 {

@@ -9,6 +9,8 @@ NETWORK_NAME="ruoyu-net"
 
 #GRPC_PORT="10894"
 
+LISTEN_URL="http://+:5007"
+
 DB_HOST="ruoyu-postgres"
 DB_PORT="5432"
 DB_NAME="ruoyu_study_questionbank"
@@ -38,7 +40,7 @@ docker run -d \
   --restart unless-stopped \
   --network "$NETWORK_NAME" \
   -e TZ=Asia/Shanghai \
-  -e ASPNETCORE_URLS="http://+:5007" \
+  -e ASPNETCORE_URLS="${LISTEN_URL}" \
   -e ConnectionStrings__Default="${CONNECTION_STRING}" \
   -e Oss__Endpoint="${OSS_ENDPOINT}" \
   -e Oss__AccessKey="${OSS_ACCESS_KEY}" \

@@ -35,7 +35,8 @@ builder.Services.AddDbContext<QuestionBankDbContext>(options =>
 
 var ossOptions = config.GetSection("Oss").Get<OssOptions>() ?? new OssOptions();
 builder.Services.AddSingleton<IOssService>(new S3OssService(
-    ossOptions.Endpoint, ossOptions.AccessKey, ossOptions.SecretKey, ossOptions.BucketName));
+    ossOptions.Endpoint, ossOptions.AccessKey, ossOptions.SecretKey, ossOptions.BucketName,
+    publicEndpoint: ossOptions.PublicEndpoint));
 
 // 注册领域服务
 builder.Services.AddScoped<IQuestionService, QuestionService>();

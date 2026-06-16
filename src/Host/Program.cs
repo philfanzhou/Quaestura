@@ -91,8 +91,8 @@ app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOp
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<QuestionBankDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    await DatabaseInitializer.InitializeAsync(dbContext, logger);
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+    await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory);
 }
 
 // MinIO 连通性检测

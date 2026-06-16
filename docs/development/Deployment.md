@@ -2,7 +2,7 @@
 
 ## 构建与部署
 
-- Dockerfile：`scripts/6.questionbank/1.build/Dockerfile`
+- Dockerfile：`deploy/Dockerfile`
 - 部署脚本：`scripts/6.questionbank/2.deploy/start.sh`
 
 ## 配置项

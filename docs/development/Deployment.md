@@ -1,17 +1,18 @@
-# 部署与运�?
+# 部署与运�?
 
-## 构建与部�?
+## 构建与部�?
 
 - Dockerfile：`src/Host/Dockerfile`
 - 部署脚本：`scripts/6.questionbank/2.deploy/start.sh`
+- 注意：Program.cs 中使用 `DbConnectionStringBuilder` 需要 `using System.Data.Common;`
 
-## 配置�?
+## 配置�?
 
 ### 服务端口
 
-- gRPC（端口见项目配置�?
+- gRPC（端口见项目配置�?
 
-### 数据�?
+### 数据�?
 
 SQLite，数据文件：`data/sqlite/ruoyu_study_questionbank.db`
 

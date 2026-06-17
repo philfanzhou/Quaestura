@@ -1,4 +1,5 @@
 using System;
+using System.Data.Common;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;

@@ -3,19 +3,19 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Contract", "src\Contract\Ruoyu.Study.QuestionBank.Contract.csproj", "{A1B2C3D4-1234-5678-9ABC-DEF012345678}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Contract", "Contract\Ruoyu.Study.QuestionBank.Contract.csproj", "{A1B2C3D4-1234-5678-9ABC-DEF012345678}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Database", "src\Database\Ruoyu.Study.QuestionBank.Database.csproj", "{B2C3D4E5-2345-6789-ABCD-EF0123456789}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Database", "Database\Ruoyu.Study.QuestionBank.Database.csproj", "{B2C3D4E5-2345-6789-ABCD-EF0123456789}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Domain", "src\Domain\Ruoyu.Study.QuestionBank.Domain.csproj", "{C3D4E5F6-3456-789A-BCDE-F01234567890}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Domain", "Domain\Ruoyu.Study.QuestionBank.Domain.csproj", "{C3D4E5F6-3456-789A-BCDE-F01234567890}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Service", "src\Service\Ruoyu.Study.QuestionBank.Service.csproj", "{D4E5F6A7-4567-89AB-CDEF-012345678901}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Service", "Service\Ruoyu.Study.QuestionBank.Service.csproj", "{D4E5F6A7-4567-89AB-CDEF-012345678901}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Host", "src\Host\Ruoyu.Study.QuestionBank.Host.csproj", "{E5F6A7B8-5678-9ABC-DEF0-123456789012}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ruoyu.Study.QuestionBank.Host", "Host\Ruoyu.Study.QuestionBank.Host.csproj", "{E5F6A7B8-5678-9ABC-DEF0-123456789012}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0C88DD14-F956-CE84-757C-A364CCF449FC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuestionBank.Test", "test\QuestionBank.Test.csproj", "{FA2A6F1F-BCF8-4005-96C0-00E96EBC33B7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "QuestionBank.Test", "Tests\QuestionBank.Test.csproj", "{FA2A6F1F-BCF8-4005-96C0-00E96EBC33B7}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject

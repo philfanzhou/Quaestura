@@ -7,9 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
-    <PackageReference Include="Grpc.AspNetCore.Web" Version="2.60.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -19,7 +16,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Contract\Ruoyu.Study.QuestionBank.Contract.csproj" />
     <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
     <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
   </ItemGroup>

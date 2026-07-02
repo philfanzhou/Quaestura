@@ -2,63 +2,85 @@
 
 ## 1. 项目概述
 
-QuestionBank 是基于 gRPC 的统一题库管理微服务，专注于**题目管理**和**知识点管理**，为教育系统提供稳定的题库检索、组卷和基础静态数据服务。
+QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管理微服务，专注于**题目管理**和**知识点管理**，为教育系统提供稳定的题库检索、组卷和基础静态数据服务。本服务在单一 docker 容器中同时提供 **WebAPI（端口 5007）** 和 **管理前端 SPA**。
 
 **注：** 错题管理相关业务（包括学生上传错题、错因分析、错题重练等动态数据）已解耦并拆分至专门的 `ruoyu.mistake` 微服务中。
 
 ## 2. 文档导航
 
-- [数据库与存储设计](docs/database/README.md) - 包含 SQLite 单库表结构设计和 SeaweedFS 存储路径规范
-- [系统部署指南](src/Host/README.md) - 包含环境依赖、启动要求、配置项说明以及 Docker 部署指南
+- [API 规范](docs/overview/ApiSpec.md) - 完整 HTTP 端点定义、请求/响应 schema、错误码字典
+- [管理前端 spec](../../questionbank_portal/frontend/docs/admin-frontend-spec.md) - Vue 3 + Element Plus 管理前端技术栈、目录、路由、与后端集成
+- [数据库与存储设计](docs/database/README.md) - 包含 SQLite/PostgreSQL 双库表结构设计和 SeaweedFS 存储路径规范
+- [部署与运行指南](docs/development/Deployment.md) - 包含环境依赖、启动要求、配置项说明以及 Docker 部署指南
+- [错误处理规范](docs/development/ErrorHandling.md) - HTTP 错误响应格式与异常处理规范
+- [单元测试规范](docs/development/Testing.md) - 测试项目结构、覆盖范围与约定
+- [本地部署指南](src/Host/README.md) - 端口与端点清单
 
 ## 3. 技术栈
 
-- **框架**: .NET 8 + gRPC
-- **数据库**: SQLite (单库设计)
-- **ORM**: Entity Framework Core 8.0 + Microsoft.Data.Sqlite
-- **对象存储**: SeaweedFS (S3 兼容, 端口 8333)
-- **架构**: DDD (领域驱动设计)
+- **后端框架**: .NET 8 + ASP.NET Core 最小 API (WebAPI)
+- **管理前端**: Vue 3 + TypeScript + Vite + Element Plus + Axios（位于 `src/questionbank_portal/frontend/`，与 `user_portal`/`teacher_portal` 同级）
+- **数据库**: SQLite（开发）/ PostgreSQL（容器化部署），自动识别
+- **ORM**: Entity Framework Core 8.0 + Microsoft.Data.Sqlite / Npgsql
+- **对象存储**: SeaweedFS（S3 兼容，端口 8333）
+- **校验**: FluentValidation
+- **架构**: DDD（领域驱动设计）
 
 ## 4. 项目结构
 
 ```
-ruoyu.questionBank/src/
-├── Contract    # gRPC 协议定义、DTO
-├── Database    # 数据访问层 (EF Core, Entity, OSS)
-├── Domain      # 领域逻辑 (Services)
-├── Service     # gRPC 服务实现
-└── Host        # 应用入口
+ruoyu.questionBank/                     # 后端服务
+├── src/                                # .NET 源码（Database/Domain/Service/Host）
+├── docs/                               # 后端正式文档
+├── start.sh                            # Docker 启动脚本
+└── README.md
+src/questionbank_portal/                # 管理前端（与 user_portal/teacher_portal 同级）
+└── frontend/
+    ├── package.json
+    ├── vite.config.ts
+    ├── index.html
+    ├── docs/admin-frontend-spec.md
+    └── src/
 ```
 
+## 5. 端口
+
+- HTTP 5007（WebAPI + 管理前端 SPA，同进程）
+
+### 5.1 题目管理（Question）
+
+| 功能 | 端点 | 说明 |
+|------|------|------|
 ## 5. 核心功能
 
-### 5.1 题目管理 (Question)
+### 5.1 题目管理（Question）
 
-| 功能 | 说明 |
-|------|------|
-| 添加题目 | 创建新题目，支持图片和文本内容 |
-| 查询题目 | 根据 ID 获取题目详情 |
-| 搜索题目 | 支持按关键字、难度等级、题目类型筛选 |
-| 删除题目 | 删除指定题目 |
-| 批量获取 | 根据 ID 列表批量获取题目 |
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 查询题目 | `GET /admin/questions/{id}` | 根据 ID 获取题目详情 |
+| 搜索题目 | `GET /admin/questions` | 按关键字、难度等级、题目类型筛选 |
+| 上传题目 | `POST /admin/questions` | multipart/form-data，支持图片和文本内容 |
+| 删除题目 | `DELETE /admin/questions/{id}` | 删除指定题目及关联 OSS 图片 |
+| 列表查询 | `GET /admin/questions` | 按 level/type/subject/grade 分页 |
 
-### 5.2 知识点管理 (Knowledge)
+### 5.2 知识点管理（Knowledge）
 
-| 功能 | 说明 |
-|------|------|
-| 添加知识点 | 创建知识点，支持层级结构 |
-| 更新知识点 | 修改知识点信息 |
-| 删除知识点 | 删除知识点（被引用时不可删除） |
-| 查询知识点 | 根据 ID 获取详情 |
-| 获取子知识点 | 获取指定父知识点的所有子节点 |
-| 模糊搜索 | 根据名称模糊匹配知识点 |
-| 分页查询 | 支持按年级、学科分页查询 |
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 查询知识点 | `GET /admin/knowledges/{id}` | 根据 ID 获取详情 |
+| 列表查询 | `GET /admin/knowledges` | 支持按 parentId 查子节点、按 grade/subject 分页、按 name 模糊搜索 |
+| 新增/更新 | `POST /admin/knowledges` | id 存在则更新，空则新增 |
+| 删除知识点 | `DELETE /admin/knowledges/{id}` | 被引用时拒绝删除 |
 
-### 5.3 题目-知识点关联 (QuestionKnowledge)
+### 5.3 题目-知识点关联（QuestionKnowledge）
 
-| 功能 | 说明 |
-|------|------|
-| 批量打标签 | 批量将知识点关联到题目 |
-| 获取题目知识点 | 获取指定题目的所有关联知识点 |
-| 获取知识点题目 | 获取关联到指定知识点的所有题目 |
-| 移除关联 | 移除题目的所有知识点关联 |
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 批量打标签 | `POST /admin/question-knowledges/batch-tag` | 批量将知识点关联到题目 |
+| 获取题目知识点 | `GET /admin/question-knowledges?questionId=` | 获取指定题目的所有关联 |
+| 获取知识点题目 | `GET /admin/question-knowledges?knowledgeId=` | 获取关联到指定知识点的所有题目 |
+| 移除关联 | `DELETE /admin/question-knowledges?questionId=` | 移除题目的所有知识点关联 |
+
+## 6. 端口
+
+- HTTP 5007（WebAPI 入口）

@@ -13,6 +13,8 @@ public class QuestionBankDbContext : DbContext
     public DbSet<Question> Questions { get; set; } = null!;
     public DbSet<QuestionContent> QuestionContents { get; set; } = null!;
     public DbSet<QuestionKnowledge> QuestionKnowledges { get; set; } = null!;
+    public DbSet<Tag> Tags { get; set; } = null!;
+    public DbSet<QuestionTag> QuestionTags { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -66,6 +68,29 @@ public class QuestionBankDbContext : DbContext
             entity.HasOne(e => e.Knowledge)
                   .WithMany(k => k.QuestionKnowledges)
                   .HasForeignKey(e => e.KnowledgeId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // Tag 配置
+        modelBuilder.Entity<Tag>(entity =>
+        {
+            entity.HasIndex(e => e.Name).IsUnique();
+        });
+
+        // QuestionTag 配置
+        modelBuilder.Entity<QuestionTag>(entity =>
+        {
+            entity.HasIndex(e => new { e.QuestionId, e.TagId }).IsUnique();
+            entity.HasIndex(e => e.TagId);
+
+            entity.HasOne(e => e.Question)
+                  .WithMany(q => q.QuestionTags)
+                  .HasForeignKey(e => e.QuestionId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(e => e.Tag)
+                  .WithMany(t => t.QuestionTags)
+                  .HasForeignKey(e => e.TagId)
                   .OnDelete(DeleteBehavior.Cascade);
         });
     }

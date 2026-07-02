@@ -1,7 +1,6 @@
 using System;
+using System.Collections.Generic;
 using FluentAssertions;
-using Google.Protobuf;
-using Grpc.Core;
 using Ruoyu.Study.QuestionBank.Service.Validation;
 using Xunit;
 
@@ -21,7 +20,7 @@ public class ImageValidationHelperTests
     // GIF89a magic number: 47 49 46 38 39 61
     private static readonly byte[] Gif89aMagic = { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00 };
 
-    // WebP (RIFF) magic number: 52 49 46 46
+    // WebP (RIFF) magic number: 52 49 46 46 ... 57 45 42 50
     private static readonly byte[] WebpMagic = { 0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50 };
 
     // BMP magic number: 42 4D
@@ -30,27 +29,25 @@ public class ImageValidationHelperTests
     // ==================== ValidateImage ====================
 
     [Fact]
-    public void ValidateImage_WithNullData_ThrowsInvalidArgument()
+    public void ValidateImage_WithNullData_Throws()
     {
         var act = () => ImageValidationHelper.ValidateImage(null!);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片数据为空");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image data is empty");
     }
 
     [Fact]
-    public void ValidateImage_WithEmptyData_ThrowsInvalidArgument()
+    public void ValidateImage_WithEmptyData_Throws()
     {
         var act = () => ImageValidationHelper.ValidateImage(Array.Empty<byte>());
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片数据为空");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image data is empty");
     }
 
     [Fact]
-    public void ValidateImage_WithExceedingSize_ThrowsInvalidArgument()
+    public void ValidateImage_WithExceedingSize_Throws()
     {
         // 10MB + 1 byte
         var oversizedData = new byte[10 * 1024 * 1024 + 1];
@@ -60,9 +57,8 @@ public class ImageValidationHelperTests
 
         var act = () => ImageValidationHelper.ValidateImage(oversizedData);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("不能超过 10MB");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image size exceeds 10MB*");
     }
 
     [Fact]
@@ -128,28 +124,25 @@ public class ImageValidationHelperTests
     }
 
     [Fact]
-    public void ValidateImage_WithUnsupportedFormat_ThrowsInvalidArgument()
+    public void ValidateImage_WithUnsupportedFormat_Throws()
     {
         var unsupportedData = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09 };
 
         var act = () => ImageValidationHelper.ValidateImage(unsupportedData);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片格式不被支持");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image format not supported*");
     }
 
     [Fact]
-    public void ValidateImage_WithTooShortData_ThrowsInvalidArgument()
+    public void ValidateImage_WithTooShortData_Throws()
     {
-        // Only 1 byte, shorter than any magic number
         var shortData = new byte[] { 0x42 };
 
         var act = () => ImageValidationHelper.ValidateImage(shortData);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片格式不被支持");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image format not supported*");
     }
 
     // ==================== ValidateImages ====================
@@ -165,7 +158,7 @@ public class ImageValidationHelperTests
     [Fact]
     public void ValidateImages_WithEmptyList_DoesNotThrow()
     {
-        var act = () => ImageValidationHelper.ValidateImages(new System.Collections.Generic.List<ByteString>());
+        var act = () => ImageValidationHelper.ValidateImages(new List<byte[]>());
 
         act.Should().NotThrow();
     }
@@ -173,11 +166,11 @@ public class ImageValidationHelperTests
     [Fact]
     public void ValidateImages_WithAllValidImages_DoesNotThrow()
     {
-        var images = new System.Collections.Generic.List<ByteString>
+        var images = new List<byte[]>
         {
-            ByteString.CopyFrom(JpegMagic),
-            ByteString.CopyFrom(PngMagic),
-            ByteString.CopyFrom(Gif89aMagic)
+            JpegMagic,
+            PngMagic,
+            Gif89aMagic
         };
 
         var act = () => ImageValidationHelper.ValidateImages(images);
@@ -186,34 +179,32 @@ public class ImageValidationHelperTests
     }
 
     [Fact]
-    public void ValidateImages_WithOneInvalidImage_ThrowsInvalidArgument()
+    public void ValidateImages_WithOneInvalidImage_Throws()
     {
-        var images = new System.Collections.Generic.List<ByteString>
+        var images = new List<byte[]>
         {
-            ByteString.CopyFrom(JpegMagic),
-            ByteString.CopyFrom(new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09 })
+            JpegMagic,
+            new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09 }
         };
 
         var act = () => ImageValidationHelper.ValidateImages(images);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片格式不被支持");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image format not supported*");
     }
 
     [Fact]
-    public void ValidateImages_WithEmptyImageInList_ThrowsInvalidArgument()
+    public void ValidateImages_WithEmptyImageInList_Throws()
     {
-        var images = new System.Collections.Generic.List<ByteString>
+        var images = new List<byte[]>
         {
-            ByteString.CopyFrom(JpegMagic),
-            ByteString.Empty
+            JpegMagic,
+            Array.Empty<byte>()
         };
 
         var act = () => ImageValidationHelper.ValidateImages(images);
 
-        var ex = act.Should().Throw<RpcException>().Subject.Single();
-        ex.StatusCode.Should().Be(StatusCode.InvalidArgument);
-        ex.Status.Detail.Should().Contain("图片数据为空");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("Image data is empty");
     }
 }

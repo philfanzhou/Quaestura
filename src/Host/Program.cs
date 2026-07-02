@@ -1,7 +1,11 @@
 using System;
 using System.Data.Common;
+using System.IO;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
@@ -12,16 +16,17 @@ using Ruoyu.Study.Common.Oss;
 using Ruoyu.Study.QuestionBank.Database;
 using Ruoyu.Study.QuestionBank.Domain.Services;
 using Ruoyu.Study.QuestionBank.Service;
-using Ruoyu.Study.QuestionBank.Service.Mapping;
+using Ruoyu.Study.QuestionBank.Service.Endpoints;
+using Ruoyu.Study.QuestionBank.Service.Middleware;
 using Ruoyu.Study.QuestionBank.Service.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 var config = builder.Configuration;
 
-// 注册 Mapster 映射配置
-MappingConfig.RegisterMappings();
+// HTTP port for the only listener (single-port deployment: API + SPA on 5007)
+var httpPort = 5007;
 
-// 获取数据库连接字符串（缺失则直接终止启动）
+// Get database connection string (missing = fail to start)
 var connectionString = config.GetConnectionString("Default");
 var isPostgreSql = !string.IsNullOrWhiteSpace(connectionString)
     && (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
@@ -39,44 +44,42 @@ builder.Services.AddSingleton<IOssService>(new S3OssService(
     ossOptions.Endpoint, ossOptions.AccessKey, ossOptions.SecretKey, ossOptions.BucketName,
     publicEndpoint: ossOptions.PublicEndpoint));
 
-// 注册领域服务
+// Register domain services
 builder.Services.AddScoped<IQuestionService, QuestionService>();
 builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
 builder.Services.AddScoped<IQuestionKnowledgeService, QuestionKnowledgeService>();
+builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<IQuestionTagService, QuestionTagService>();
 builder.Services.AddScoped<IOssQuestionService, OssQuestionService>();
 
-// 注册 gRPC 服务（含验证拦截器和全局异常拦截器）
-builder.Services.AddGrpc(options =>
-{
-    options.EnableDetailedErrors = true;
-    options.Interceptors.Add<GrpcValidationInterceptor>();
-    options.Interceptors.Add<GrpcExceptionInterceptor>();
-});
+// Register FluentValidation validators
+builder.Services.AddValidatorsFromAssemblyContaining<CreateQuestionRequestValidator>();
 
-// 注册 FluentValidation 验证器
-builder.Services.AddValidatorsFromAssemblyContaining<QuestionValidator>();
-
-// 注册 gRPC 拦截器
-builder.Services.AddScoped<GrpcValidationInterceptor>();
-builder.Services.AddScoped<GrpcExceptionInterceptor>();
-
-// 注册内存缓存
+// Register memory cache (reserved for future use)
 builder.Services.AddMemoryCache(options =>
 {
     options.SizeLimit = 1024;
 });
 
-// 添加 Swagger
+// Add Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "QuestionBank gRPC API", Version = "v1" });
+    c.SwaggerDoc("v1", new() { Title = "QuestionBank WebAPI", Version = "v1" });
+});
+
+// Bind Kestrel explicitly to the configured httpPort
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(httpPort);
 });
 
 var app = builder.Build();
 
+var appTitle = config["APP_TITLE"] ?? "Ruoyu.Study.QuestionBank.Admin";
+
 app.Logger.LogInformation("QuestionBank Service starting");
-app.Logger.LogInformation("Listening: {Urls}", Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "(default)");
+app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
 if (isPostgreSql && !string.IsNullOrEmpty(connectionString))
 {
     var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
@@ -87,8 +90,9 @@ else
     app.Logger.LogInformation("Database: SQLite");
 }
 app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOptions.BucketName);
+app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 
-// 自动执行数据库迁移
+// Apply database initialization
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<QuestionBankDbContext>();
@@ -96,7 +100,7 @@ using (var scope = app.Services.CreateScope())
     await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory);
 }
 
-// MinIO 连通性检测
+// OSS connectivity check
 using (var scope = app.Services.CreateScope())
 {
     var ossService = scope.ServiceProvider.GetRequiredService<IOssService>();
@@ -104,27 +108,80 @@ using (var scope = app.Services.CreateScope())
     var connected = await ossService.CheckConnectivityAsync();
     if (connected)
     {
-        logger.LogInformation("MinIO 连接正常");
+        logger.LogInformation("OSS connection OK");
     }
     else
     {
-        logger.LogWarning("S3 存储连接失败，请检查 OSS 配置和存储服务状态");
+        logger.LogWarning("S3 storage connection failed, check OSS configuration");
     }
 }
 
-// 配置 Swagger
+// Configure Swagger
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuestionBank gRPC API v1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuestionBank WebAPI v1"));
 }
 
-app.UseGrpcWeb();
+// Global exception handling
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// 映射 gRPC 端点
-app.MapGrpcService<QuestionBankServiceImpl>();
+// Map endpoints
+app.MapQuestionEndpoints();
+app.MapKnowledgeEndpoints();
+app.MapQuestionKnowledgeEndpoints();
+app.MapTagEndpoints();
+app.MapQuestionTagEndpoints();
 
-// 健康检查端点
-app.MapGet("/health", () => "Healthy");
+// Health check
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
+
+// ========== Static files & SPA for Admin Web (HTTP port only) ==========
+// Serves Vue 3 questionbank_portal/frontend SPA built into wwwroot/.
+// Excludes /admin (API), /health, /swagger so the API still works.
+var escapedAppTitle = appTitle.Replace("'", "\\'");
+app.MapWhen(
+    context => !context.Request.Path.StartsWithSegments("/admin")
+             && !context.Request.Path.StartsWithSegments("/health")
+             && !context.Request.Path.StartsWithSegments("/swagger"),
+    spaApp =>
+    {
+        spaApp.UseDefaultFiles();
+
+        // Inject app title from APP_TITLE env var into index.html at runtime.
+        spaApp.Use(async (context, next) =>
+        {
+            if (context.Request.Path == "/index.html")
+            {
+                var wwwroot = app.Environment.WebRootPath;
+                var filePath = Path.Combine(wwwroot ?? string.Empty, "index.html");
+                if (File.Exists(filePath))
+                {
+                    var content = await File.ReadAllTextAsync(filePath);
+                    content = content.Replace("__APP_TITLE__", appTitle);
+                    content = content.Replace(
+                        "</head>",
+                        $"<script>window.__APP_TITLE__ = '{escapedAppTitle}';</script></head>");
+                    context.Response.ContentType = "text/html; charset=utf-8";
+                    await context.Response.WriteAsync(content);
+                    return;
+                }
+            }
+            await next();
+        });
+
+        spaApp.UseStaticFiles();
+
+        // SPA fallback for Vue Router history mode
+        spaApp.MapWhen(_ => true, innerSpa =>
+        {
+            innerSpa.Use(async (context, next) =>
+            {
+                context.Request.Path = "/index.html";
+                await next();
+            });
+            innerSpa.UseStaticFiles();
+        });
+    });
 
 app.Run();

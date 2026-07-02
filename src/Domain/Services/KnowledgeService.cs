@@ -122,7 +122,7 @@ public class KnowledgeService : IKnowledgeService
     public async Task<List<Knowledge>> GetLikeAsync(string name)
     {
         return await _dbContext.Knowledges
-            .Where(k => EF.Functions.ILike(k.Name, $"%{name}%"))
+            .Where(k => k.Name != null && k.Name.Contains(name))
             .OrderBy(k => k.Name)
             .ToListAsync();
     }

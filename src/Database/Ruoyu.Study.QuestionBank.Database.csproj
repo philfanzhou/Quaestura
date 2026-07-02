@@ -17,7 +17,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\ruoyu.common\src\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
-    <ProjectReference Include="..\Contract\Ruoyu.Study.QuestionBank.Contract.csproj" />
   </ItemGroup>
 
 </Project>

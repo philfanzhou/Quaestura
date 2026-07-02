@@ -54,4 +54,6 @@ public class Question
 
     [ForeignKey("Id")]
     public virtual ICollection<QuestionKnowledge> QuestionKnowledges { get; set; } = new List<QuestionKnowledge>();
+
+    public virtual ICollection<QuestionTag> QuestionTags { get; set; } = new List<QuestionTag>();
 }

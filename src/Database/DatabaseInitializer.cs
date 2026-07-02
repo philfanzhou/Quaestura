@@ -78,13 +78,41 @@ public static class DatabaseInitializer
                     knowledge_id uuid NOT NULL,
                     weight double precision NOT NULL,
                     CONSTRAINT PK_question_knowledge PRIMARY KEY (id),
-                    CONSTRAINT FK_question_knowledge_question_question_id 
+                    CONSTRAINT FK_question_knowledge_question_question_id
                         FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_question_knowledge_knowledge_knowledge_id 
+                    CONSTRAINT FK_question_knowledge_knowledge_knowledge_id
                         FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE CASCADE
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_question_knowledge_question_id_knowledge_id ON question_knowledge (question_id, knowledge_id);
                 CREATE INDEX IF NOT EXISTS IX_question_knowledge_knowledge_id ON question_knowledge (knowledge_id);",
+
+            "tag" => @"
+                CREATE TABLE IF NOT EXISTS tag (
+                    id uuid NOT NULL,
+                    name character varying(100) NOT NULL,
+                    color character varying(20) NULL,
+                    description text NULL,
+                    created_by character varying(36) NULL,
+                    created_at timestamp with time zone NOT NULL,
+                    usage_count integer NOT NULL DEFAULT 0,
+                    CONSTRAINT PK_tag PRIMARY KEY (id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_tag_name ON tag (name);",
+
+            "question_tag" => @"
+                CREATE TABLE IF NOT EXISTS question_tag (
+                    id uuid NOT NULL,
+                    question_id uuid NOT NULL,
+                    tag_id uuid NOT NULL,
+                    created_at timestamp with time zone NOT NULL,
+                    CONSTRAINT PK_question_tag PRIMARY KEY (id),
+                    CONSTRAINT FK_question_tag_question_question_id
+                        FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE,
+                    CONSTRAINT FK_question_tag_tag_tag_id
+                        FOREIGN KEY (tag_id) REFERENCES tag(id) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_question_tag_question_id_tag_id ON question_tag (question_id, tag_id);
+                CREATE INDEX IF NOT EXISTS IX_question_tag_tag_id ON question_tag (tag_id);",
 
             _ => null
         };

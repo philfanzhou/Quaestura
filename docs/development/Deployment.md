@@ -1,22 +1,86 @@
-# 部署与运�?
+# 部署与运行
 
-## 构建与部�?
+## 1. 快速启动
 
-- Dockerfile：`src/Host/Dockerfile`
-- 部署脚本：`scripts/6.questionbank/2.deploy/start.sh`
-- 注意：Program.cs 中使用 `DbConnectionStringBuilder` 需要 `using System.Data.Common;`
+### 1.1 启动要求
 
-## 配置�?
+1. **数据库**：SQLite（开发）或 PostgreSQL（容器化部署）
+2. **对象存储**：SeaweedFS（S3 端口 8333）
+3. **网络端口**：HTTP 5007
 
-### 服务端口
+### 1.2 启动方式
 
-- gRPC（端口见项目配置�?
+#### 方式一：本地 .NET 启动
 
-### 数据�?
+```bash
+cd src/services/ruoyu.questionBank/src/Host
+dotnet run --configuration Release
+```
 
-SQLite，数据文件：`data/sqlite/ruoyu_study_questionbank.db`
+#### 方式二：Docker 启动
 
-### 对象存储配置
+```bash
+# 1. 构建镜像
+./script/build-script/06-questionbank.build.sh
+
+# 2. 启动容器
+cd src/services/ruoyu.questionBank
+./start.sh
+```
+
+`start.sh` 默认连接 PostgreSQL 容器 `ruoyu-postgres:5432`（库 `ruoyu_study_questionbank`）。
+
+### 1.3 验证启动
+
+```bash
+# 健康检查
+curl http://localhost:5007/health
+# 预期：Healthy
+
+# Swagger UI
+open http://localhost:5007/swagger
+```
+
+## 2. 配置项
+
+### 2.1 数据库连接
+
+`appsettings.json` 中 `ConnectionStrings:Default`：
+
+```json
+{
+  "ConnectionStrings": {
+    "Default": "Data Source=data/sqlite/ruoyu_study_questionbank.db"
+  }
+}
+```
+
+**双库自动识别**（`Program.cs:25-35`）：
+
+- 连接字符串含 `Host=` 或 `Server=` → 走 PostgreSQL（`UseNpgsql`）
+- 否则 → 走 SQLite（`UseSqlite`）
+
+#### SQLite（本地开发）
+
+```json
+"Default": "Data Source=data/sqlite/ruoyu_study_questionbank.db"
+```
+
+数据库文件由 `DatabaseInitializer` 启动时自动创建，无需手动建库。
+
+#### PostgreSQL（容器化部署）
+
+```json
+"Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
+```
+
+#### 通过环境变量覆盖
+
+```bash
+export ConnectionStrings__Default="Host=...;Port=...;Database=...;Username=...;Password=...;"
+```
+
+### 2.2 对象存储
 
 ```json
 {
@@ -24,7 +88,82 @@ SQLite，数据文件：`data/sqlite/ruoyu_study_questionbank.db`
     "Endpoint": "ruoyu-seaweedfs:8333",
     "AccessKey": "seaweedfs_admin",
     "SecretKey": "seaweedfs_admin",
-    "BucketName": "ruoyu-study"
+    "BucketName": "ruoyu-study",
+    "PublicEndpoint": "https://ry.zhoufan.asia"
   }
 }
 ```
+
+- `Endpoint`：内部通信地址（容器内用容器名 `ruoyu-seaweedfs:8333`，本地用 `localhost:8333`）
+- `PublicEndpoint`：外部访问地址，用于生成预签名 URL
+- `AccessKey` / `SecretKey`：S3 凭证
+
+启动时会自动检测 OSS 连通性（`Program.cs` 中的 `OssService.CheckConnectivityAsync`），失败时输出 Warning 但不阻断启动。
+
+## 3. Docker 部署
+
+### 3.1 镜像构建（4 阶段多阶段构建）
+
+Dockerfile 位于 `src/Host/Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ questionbank_portal/frontend（Vue 3 构建产物）**：
+
+| 阶段 | 基镜像 | 作用 |
+|------|--------|------|
+| 1. `frontend-build` | `node:20-alpine` | 构建 Vue 3 questionbank_portal/frontend，输出 `dist/` |
+| 2. `build` | `mcr.microsoft.com/dotnet/sdk:8.0` | 还原 + 发布 .NET Host，**把阶段 1 的 `dist/` 复制到 `Host/wwwroot/`** |
+| 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | 运行时镜像，仅含 .NET 运行时 + 发布产物 |
+
+**关键点**：
+- build context 是仓库根 `$REPO_ROOT`（与 `Identity` 服务的 3 阶段构建对齐）
+- 阶段 1 独立：frontend 构建失败不会污染 backend 镜像
+- 阶段 2 的 `COPY --from=frontend-build /app/dist .../Host/wwwroot` 是把 Vite 产物注入 ASP.NET Core 默认 web root 的关键一行
+
+### 3.2 启动
+
+```bash
+cd src/services/ruoyu.questionBank
+./start.sh
+```
+
+容器使用 `ruoyu-net` 网络，通过容器名解析其他服务（`ruoyu-postgres`、`ruoyu-seaweedfs`）。
+
+### 3.3 环境变量
+
+`start.sh` 注入以下环境变量：
+
+| 变量 | 值 |
+|------|-----|
+| `TZ` | `Asia/Shanghai` |
+| `ASPNETCORE_URLS` | `http://+:5007` |
+| `ConnectionStrings__Default` | PostgreSQL 连接串 |
+| `Oss__Endpoint` | `ruoyu-seaweedfs:8333` |
+| `Oss__AccessKey` | `seaweedfs_admin` |
+| `Oss__SecretKey` | `seaweedfs_admin` |
+| `Oss__BucketName` | `ruoyu-study` |
+
+## 4. 端口分配
+
+| 端口 | 协议 | 用途 |
+|------|------|------|
+| 5007 | HTTP | WebAPI 入口 |
+| 5007 | HTTP | Swagger UI（仅开发环境） |
+| 5007 | HTTP | 健康检查 `/health` |
+
+## 5. 日志
+
+启动日志格式：
+
+```
+QuestionBank Service starting
+Listening: http://+:5007
+Database: PostgreSQL ruoyu-postgres:5432/ruoyu_study_questionbank
+OSS: ruoyu-seaweedfs:8333/ruoyu-study
+```
+
+数据库类型根据连接字符串自动识别并记录。
+
+## 6. 依赖服务
+
+| 依赖 | 是否必需 | 启动失败行为 |
+|------|----------|--------------|
+| PostgreSQL/SQLite | 是 | 启动失败 |
+| SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |

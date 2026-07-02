@@ -44,6 +44,7 @@ docker run -d \
   -e Oss__AccessKey="${OSS_ACCESS_KEY}" \
   -e Oss__SecretKey="${OSS_SECRET_KEY}" \
   -e Oss__BucketName="${OSS_BUCKET}" \
+  -e APP_TITLE="${CONTAINER_NAME}" \
   "$IMAGE_NAME"
 
 echo "${CONTAINER_NAME} started"

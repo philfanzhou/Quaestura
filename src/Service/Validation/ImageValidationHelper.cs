@@ -1,68 +1,92 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Grpc.Core;
+using Microsoft.AspNetCore.Http;
 
 namespace Ruoyu.Study.QuestionBank.Service.Validation;
 
 /// <summary>
-/// 图片上传安全校验工具：文件大小上限 + Magic Number 校验
+/// Image upload validation: file size limit + magic number check.
+/// Throws <see cref="InvalidOperationException"/> with English message; the global
+/// <c>ExceptionHandlingMiddleware</c> maps it to HTTP 400 + errorCode
+/// <c>QUESTIONBANK_VALIDATION_INVALID_IMAGE</c>.
 /// </summary>
 public static class ImageValidationHelper
 {
-    // 默认单文件大小上限：10MB
     private const int MaxFileSizeBytes = 10 * 1024 * 1024;
 
-    // 支持的图片 Magic Number（按字节偏移量）
     private static readonly Dictionary<byte[], string> ImageMagicNumbers = new()
     {
-        // JPEG: FF D8 FF
         { new byte[] { 0xFF, 0xD8, 0xFF }, "JPEG" },
-        // PNG: 89 50 4E 47 0D 0A 1A 0A
         { new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, "PNG" },
-        // GIF87a: 47 49 46 38 37 61
         { new byte[] { 0x47, 0x49, 0x46, 0x38, 0x37, 0x61 }, "GIF" },
-        // GIF89a: 47 49 46 38 39 61
         { new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, "GIF" },
-        // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
         { new byte[] { 0x52, 0x49, 0x46, 0x46 }, "WebP" },
-        // BMP: 42 4D (BM)
         { new byte[] { 0x42, 0x4D }, "BMP" },
     };
 
     /// <summary>
-    /// 校验字节数组是否满足文件大小和图片格式要求
+    /// Validate a single image's binary content.
     /// </summary>
     public static void ValidateImage(byte[] imageData)
     {
         if (imageData == null || imageData.Length == 0)
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument, "图片数据为空"));
+            throw new InvalidOperationException("Image data is empty");
         }
 
         if (imageData.Length > MaxFileSizeBytes)
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument,
-                $"单张图片大小不能超过 {MaxFileSizeBytes / 1024 / 1024}MB"));
+            throw new InvalidOperationException(
+                $"Image size exceeds {MaxFileSizeBytes / 1024 / 1024}MB");
         }
 
         if (!IsValidImageMagicNumber(imageData))
         {
-            throw new RpcException(new Status(StatusCode.InvalidArgument,
-                "图片格式不被支持，仅允许 JPEG、PNG、GIF、WebP、BMP"));
+            throw new InvalidOperationException(
+                "Image format not supported, only JPEG, PNG, GIF, WebP, BMP are allowed");
         }
     }
 
     /// <summary>
-    /// 批量校验图片列表
+    /// Validate a single uploaded file. Reads bytes from the IFormFile stream.
     /// </summary>
-    public static void ValidateImages(IList<Google.Protobuf.ByteString> images)
+    public static byte[] ReadAndValidate(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+        {
+            throw new InvalidOperationException("Image data is empty");
+        }
+
+        if (file.Length > MaxFileSizeBytes)
+        {
+            throw new InvalidOperationException(
+                $"Image size exceeds {MaxFileSizeBytes / 1024 / 1024}MB");
+        }
+
+        using var ms = new MemoryStream();
+        file.CopyTo(ms);
+        var bytes = ms.ToArray();
+
+        if (!IsValidImageMagicNumber(bytes))
+        {
+            throw new InvalidOperationException(
+                "Image format not supported, only JPEG, PNG, GIF, WebP, BMP are allowed");
+        }
+
+        return bytes;
+    }
+
+    /// <summary>
+    /// Validate a batch of image byte arrays.
+    /// </summary>
+    public static void ValidateImages(IList<byte[]> images)
     {
         if (images == null || images.Count == 0) return;
 
         foreach (var image in images)
         {
-            ValidateImage(image.ToByteArray());
+            ValidateImage(image);
         }
     }
 

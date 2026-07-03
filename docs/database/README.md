@@ -2,14 +2,13 @@
 
 ## 数据库设计
 
-### 双库支持
+### 数据库
 
-`Program.cs` 启动时根据 `ConnectionStrings:Default` 自动识别数据库类型：
+本服务**仅支持 PostgreSQL**，由 `Program.cs` 通过 `UseNpgsql` 注册。开发、测试、生产统一使用 PostgreSQL 实例。
 
-- 连接字符串含 `Host=` 或 `Server=` → PostgreSQL
-- 否则 → SQLite
+启动时 `DatabaseInitializer.InitializeAsync` 自动建表（`CREATE TABLE IF NOT EXISTS`），无需手动执行迁移。
 
-**当前实现**：本地开发用 SQLite，容器化部署用 PostgreSQL。两种数据库表结构相同，由 EF Core 8 + Npgsql/Microsoft.Data.Sqlite 兼容。
+迁移文件位于 `src/Database/Migrations/`，仅供 EF Core 工具使用，运行时通过 `DatabaseInitializer` 的原生 SQL 初始化。
 
 ### 表结构
 
@@ -180,12 +179,6 @@
                                    │ question│ (复用上方)
                                    └─────────┘
 ```
-
-## 数据库初始化
-
-启动时 `DatabaseInitializer.InitializeAsync` 自动建表（`CREATE TABLE IF NOT EXISTS`），无需手动执行迁移。
-
-迁移文件位于 `src/Database/Migrations/`，仅供 EF Core 工具使用，运行时通过 `DatabaseInitializer` 的原生 SQL 初始化。
 
 ## 对象存储 (SeaweedFS)
 

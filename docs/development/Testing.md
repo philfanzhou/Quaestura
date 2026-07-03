@@ -14,7 +14,7 @@
 - Moq 4.20.70
 - FluentAssertions 6.12.0
 - FluentValidation 11.9.0（测试 RequestValidators）
-- Microsoft.EntityFrameworkCore.Sqlite 8.0.11（Domain 层集成测试 + 端点集成测试）
+- Microsoft.EntityFrameworkCore.InMemory 8.0.11（Domain 层集成测试 + 端点集成测试）
 
 ## Domain 层测试覆盖范围
 
@@ -29,7 +29,7 @@
 | `Services/TagServiceAdditionalTests.cs` | `ITagService` 边界与异常路径 |
 | `Services/QuestionTagServiceTests.cs` | `IQuestionTagService` 主要路径（批量打标、移除、查询、计数同步） |
 
-Domain 层测试使用 `TestBase` 提供的 in-memory SQLite 数据库，与 WebAPI 层无关。
+Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 WebAPI 层无关。
 
 ## Validation 组件测试覆盖范围
 
@@ -130,7 +130,7 @@ public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Progra
 }
 ```
 
-注意：集成测试需要 SQLite in-memory 数据库替换，通过 `WebApplicationFactory.ConfigureServices` 注入。
+注意：集成测试需要把 DbContext 切换到 EF Core InMemory 数据库，通过 `WebApplicationFactory.ConfigureServices` 注入。
 
 ## 运行方式
 

@@ -46,4 +46,4 @@
 
 迁移过程中对 Domain 层做了一处必要修复（不在原 HR 列表中）：
 
-- **`Domain/Services/KnowledgeService.cs:GetLikeAsync`**：原实现使用 `EF.Functions.ILike`（Npgsql 专属），SQLite 上会抛 `NotSupportedException`。改为 `Contains` 以支持双库自动识别。已通过端到端验证（SQLite + PostgreSQL 均可用）。
+- **`Domain/Services/KnowledgeService.cs:GetLikeAsync`**：原实现使用 `EF.Functions.ILike`（Npgsql 专属），不可移植。改为 `Contains` 以保证 PostgreSQL 兼容性。已通过端到端验证。

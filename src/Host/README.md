@@ -7,7 +7,7 @@
 ### 1.1 启动要求
 
 1. **SeaweedFS**: 必须先启动 SeaweedFS 服务（S3 端口 8333）
-2. **数据库**: SQLite（本地开发）或 PostgreSQL（容器化部署），启动时自动建表
+2. **数据库**: PostgreSQL，启动时自动建表
 
 ### 1.2 WebAPI 端口
 
@@ -23,7 +23,7 @@
 ```json
 {
   "ConnectionStrings": {
-    "Default": "Data Source=data/sqlite/ruoyu_study_questionbank.db"
+    "Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
   },
   "Oss": {
     "Endpoint": "ruoyu-seaweedfs:8333",

@@ -4,7 +4,7 @@
 
 ### 1.1 启动要求
 
-1. **数据库**：SQLite（开发）或 PostgreSQL（容器化部署）
+1. **数据库**：PostgreSQL（本地开发与容器化部署统一使用）
 2. **对象存储**：SeaweedFS（S3 端口 8333）
 3. **网络端口**：HTTP 5007
 
@@ -50,29 +50,14 @@ open http://localhost:5007/swagger
 ```json
 {
   "ConnectionStrings": {
-    "Default": "Data Source=data/sqlite/ruoyu_study_questionbank.db"
+    "Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
   }
 }
 ```
 
-**双库自动识别**（`Program.cs:25-35`）：
+本服务仅支持 PostgreSQL（`Program.cs` 中通过 `UseNpgsql` 强制注册）。
 
-- 连接字符串含 `Host=` 或 `Server=` → 走 PostgreSQL（`UseNpgsql`）
-- 否则 → 走 SQLite（`UseSqlite`）
-
-#### SQLite（本地开发）
-
-```json
-"Default": "Data Source=data/sqlite/ruoyu_study_questionbank.db"
-```
-
-数据库文件由 `DatabaseInitializer` 启动时自动创建，无需手动建库。
-
-#### PostgreSQL（容器化部署）
-
-```json
-"Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
-```
+数据库表由 `DatabaseInitializer` 启动时自动创建（`CREATE TABLE IF NOT EXISTS`），无需手动建库。
 
 #### 通过环境变量覆盖
 
@@ -159,11 +144,11 @@ Database: PostgreSQL ruoyu-postgres:5432/ruoyu_study_questionbank
 OSS: ruoyu-seaweedfs:8333/ruoyu-study
 ```
 
-数据库类型根据连接字符串自动识别并记录。
+数据库类型固定为 PostgreSQL，启动日志直接记录连接信息。
 
 ## 6. 依赖服务
 
 | 依赖 | 是否必需 | 启动失败行为 |
 |------|----------|--------------|
-| PostgreSQL/SQLite | 是 | 启动失败 |
+| PostgreSQL | 是 | 启动失败 |
 | SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |

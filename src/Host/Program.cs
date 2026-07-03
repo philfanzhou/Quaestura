@@ -28,16 +28,12 @@ var httpPort = 5007;
 
 // Get database connection string (missing = fail to start)
 var connectionString = config.GetConnectionString("Default");
-var isPostgreSql = !string.IsNullOrWhiteSpace(connectionString)
-    && (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
-        || connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase));
-builder.Services.AddDbContext<QuestionBankDbContext>(options =>
+if (string.IsNullOrWhiteSpace(connectionString))
 {
-    if (isPostgreSql)
-        options.UseNpgsql(connectionString);
-    else
-        options.UseSqlite(connectionString ?? "Data Source=data/sqlite/ruoyu_study_questionbank.db");
-});
+    throw new InvalidOperationException("ConnectionStrings:Default is required (PostgreSQL).");
+}
+builder.Services.AddDbContext<QuestionBankDbContext>(options =>
+    options.UseNpgsql(connectionString));
 
 var ossOptions = config.GetSection("Oss").Get<OssOptions>() ?? new OssOptions();
 builder.Services.AddSingleton<IOssService>(new S3OssService(
@@ -80,15 +76,8 @@ var appTitle = config["APP_TITLE"] ?? "Ruoyu.Study.QuestionBank.Admin";
 
 app.Logger.LogInformation("QuestionBank Service starting");
 app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
-if (isPostgreSql && !string.IsNullOrEmpty(connectionString))
-{
-    var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
-    app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
-}
-else
-{
-    app.Logger.LogInformation("Database: SQLite");
-}
+var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
+app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
 app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOptions.BucketName);
 app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 

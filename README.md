@@ -10,7 +10,7 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 
 - [API 规范](docs/overview/ApiSpec.md) - 完整 HTTP 端点定义、请求/响应 schema、错误码字典
 - [管理前端 spec](../../questionbank_portal/frontend/docs/admin-frontend-spec.md) - Vue 3 + Element Plus 管理前端技术栈、目录、路由、与后端集成
-- [数据库与存储设计](docs/database/README.md) - 包含 SQLite/PostgreSQL 双库表结构设计和 SeaweedFS 存储路径规范
+- [数据库与存储设计](docs/database/README.md) - 包含 PostgreSQL 表结构设计和 SeaweedFS 存储路径规范
 - [部署与运行指南](docs/development/Deployment.md) - 包含环境依赖、启动要求、配置项说明以及 Docker 部署指南
 - [错误处理规范](docs/development/ErrorHandling.md) - HTTP 错误响应格式与异常处理规范
 - [单元测试规范](docs/development/Testing.md) - 测试项目结构、覆盖范围与约定
@@ -20,8 +20,8 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 
 - **后端框架**: .NET 8 + ASP.NET Core 最小 API (WebAPI)
 - **管理前端**: Vue 3 + TypeScript + Vite + Element Plus + Axios（位于 `src/questionbank_portal/frontend/`，与 `user_portal`/`teacher_portal` 同级）
-- **数据库**: SQLite（开发）/ PostgreSQL（容器化部署），自动识别
-- **ORM**: Entity Framework Core 8.0 + Microsoft.Data.Sqlite / Npgsql
+- **数据库**: PostgreSQL
+- **ORM**: Entity Framework Core 8.0 + Npgsql
 - **对象存储**: SeaweedFS（S3 兼容，端口 8333）
 - **校验**: FluentValidation
 - **架构**: DDD（领域驱动设计）

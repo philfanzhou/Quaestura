@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Ruoyu.Study.QuestionBank.Database;
 
@@ -12,17 +11,14 @@ public class TestBase : IDisposable
     public TestBase()
     {
         var options = new DbContextOptionsBuilder<QuestionBankDbContext>()
-            .UseSqlite("DataSource=:memory:")
+            .UseInMemoryDatabase($"QuestionBankTest_{Guid.NewGuid()}")
             .Options;
 
         _dbContext = new QuestionBankDbContext(options);
-        _dbContext.Database.OpenConnection();
-        _dbContext.Database.EnsureCreated();
     }
 
     public void Dispose()
     {
-        _dbContext.Database.CloseConnection();
         _dbContext.Dispose();
     }
 }

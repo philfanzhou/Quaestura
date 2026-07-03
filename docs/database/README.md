@@ -93,7 +93,7 @@
 | `usage_count` | INT | NOT NULL DEFAULT 0 | 引用次数（用于按热度排序、删除前检查） |
 
 **索引**：
-- `IX_tag_name` UNIQUE (LOWER(name)) — 不区分大小写唯一（SQLite 通过应用层检查，PostgreSQL 通过函数索引）
+- `IX_tag_name` UNIQUE (LOWER(name)) — 不区分大小写唯一，通过 PostgreSQL 函数索引实现
 
 **设计说明**：
 - 与 `knowledge` 平行（不与 subject/grade 强绑定），便于跨学科年级复用

@@ -9,7 +9,7 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 ## 2. 文档导航
 
 - [API 规范](docs/overview/ApiSpec.md) - 完整 HTTP 端点定义、请求/响应 schema、错误码字典
-- [管理前端 spec](../../questionbank_portal/frontend/docs/admin-frontend-spec.md) - Vue 3 + Element Plus 管理前端技术栈、目录、路由、与后端集成
+- [管理前端 spec](frontend/docs/admin-frontend-spec.md) - Vue 3 + 手写 CSS 管理前端技术栈、目录、路由、与后端集成
 - [数据库与存储设计](docs/database/README.md) - 包含 PostgreSQL 表结构设计和 SeaweedFS 存储路径规范
 - [部署与运行指南](docs/development/Deployment.md) - 包含环境依赖、启动要求、配置项说明以及 Docker 部署指南
 - [错误处理规范](docs/development/ErrorHandling.md) - HTTP 错误响应格式与异常处理规范
@@ -19,7 +19,7 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 ## 3. 技术栈
 
 - **后端框架**: .NET 8 + ASP.NET Core 最小 API (WebAPI)
-- **管理前端**: Vue 3 + TypeScript + Vite + Element Plus + Axios（位于 `src/questionbank_portal/frontend/`，与 `user_portal`/`teacher_portal` 同级）
+- **管理前端**: Vue 3 + TypeScript + Vite + 手写 CSS + Axios（位于 `frontend/`，与后端同目录）
 - **数据库**: PostgreSQL
 - **ORM**: Entity Framework Core 8.0 + Npgsql
 - **对象存储**: SeaweedFS（S3 兼容，端口 8333）
@@ -30,17 +30,16 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 
 ```
 ruoyu.questionBank/                     # 后端服务
+├── frontend/                           # 管理前端（与后端同目录）
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── index.html
+│   ├── docs/admin-frontend-spec.md
+│   └── src/
 ├── src/                                # .NET 源码（Database/Domain/Service/Host）
 ├── docs/                               # 后端正式文档
 ├── start.sh                            # Docker 启动脚本
 └── README.md
-src/questionbank_portal/                # 管理前端（与 user_portal/teacher_portal 同级）
-└── frontend/
-    ├── package.json
-    ├── vite.config.ts
-    ├── index.html
-    ├── docs/admin-frontend-spec.md
-    └── src/
 ```
 
 ## 5. 端口

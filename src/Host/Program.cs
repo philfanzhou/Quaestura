@@ -126,7 +126,7 @@ app.MapQuestionTagEndpoints();
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
 
 // ========== Static files & SPA for Admin Web (HTTP port only) ==========
-// Serves Vue 3 questionbank_portal/frontend SPA built into wwwroot/.
+// Serves Vue 3 frontend SPA built into wwwroot/.
 // Excludes /admin (API), /health, /swagger so the API still works.
 var escapedAppTitle = appTitle.Replace("'", "\\'");
 app.MapWhen(

@@ -14,7 +14,7 @@
 - **HTTP**: 5007
 - **Swagger UI**: http://localhost:5007/swagger（仅开发环境）
 - **健康检查**: http://localhost:5007/health
-- **WebUI（管理前端）**: http://localhost:5007/（与 API 同端口同进程，详见 [`../../../questionbank_portal/frontend/docs/admin-frontend-spec.md`](../../../questionbank_portal/frontend/docs/admin-frontend-spec.md)）
+- **WebUI（管理前端）**: http://localhost:5007/（与 API 同端口同进程，详见 [`../frontend/docs/admin-frontend-spec.md`](../frontend/docs/admin-frontend-spec.md)）
 
 ### 1.3 配置项
 
@@ -126,7 +126,7 @@ Docker 镜像是**单 docker 同时包含 backend + questionbank_portal/frontend
 如需修改管理前端并立即看到效果，单独构建前端即可（开发模式 `npm run dev` 走 vite proxy 5173 → 5007）：
 
 ```bash
-cd ../../../questionbank_portal/frontend
+cd ../frontend
 npm install
 npm run dev   # 开发模式（Vite dev server + 代理到 :5007）
 npm run build # 生产构建（生成 dist/，由 Docker 阶段 1 复制到 wwwroot/）

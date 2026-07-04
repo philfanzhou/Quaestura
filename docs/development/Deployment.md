@@ -89,11 +89,11 @@ export ConnectionStrings__Default="Host=...;Port=...;Database=...;Username=...;P
 
 ### 3.1 镜像构建（4 阶段多阶段构建）
 
-Dockerfile 位于 `src/Host/Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ questionbank_portal/frontend（Vue 3 构建产物）**：
+Dockerfile 位于 `src/Host/Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ frontend（Vue 3 构建产物）**：
 
 | 阶段 | 基镜像 | 作用 |
 |------|--------|------|
-| 1. `frontend-build` | `node:20-alpine` | 构建 Vue 3 questionbank_portal/frontend，输出 `dist/` |
+| 1. `frontend-build` | `node:20-alpine` | 构建 Vue 3 frontend，输出 `dist/` |
 | 2. `build` | `mcr.microsoft.com/dotnet/sdk:8.0` | 还原 + 发布 .NET Host，**把阶段 1 的 `dist/` 复制到 `Host/wwwroot/`** |
 | 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | 运行时镜像，仅含 .NET 运行时 + 发布产物 |
 

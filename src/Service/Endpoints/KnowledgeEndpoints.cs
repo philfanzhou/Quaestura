@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Ruoyu.Study.Common.Authentication;
 using Ruoyu.Study.QuestionBank.Database.Entity;
 using Ruoyu.Study.QuestionBank.Domain.Services;
 using Ruoyu.Study.QuestionBank.Service.Middleware;
@@ -106,10 +108,13 @@ public static class KnowledgeEndpoints
     }
 
     private static async Task<IResult> UpsertKnowledge(
+        ClaimsPrincipal user,
         CreateKnowledgeRequest request,
         IKnowledgeService service,
         IValidator<CreateKnowledgeRequest> validator)
     {
+        var userId = user.GetRequiredUserId();
+
         var validation = await validator.ValidateAsync(request);
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
@@ -131,7 +136,7 @@ public static class KnowledgeEndpoints
 
         if (isCreate)
         {
-            var (success, isDuplicate) = await service.AddAsync(knowledge, request.UserId);
+            var (success, isDuplicate) = await service.AddAsync(knowledge, userId);
             if (isDuplicate)
                 throw new DomainException(
                     "Knowledge with same (subject, grade, name) already exists",
@@ -144,7 +149,7 @@ public static class KnowledgeEndpoints
         }
         else
         {
-            var (success, isReferenced, wouldCreateCycle) = await service.UpdateAsync(knowledge, request.UserId);
+            var (success, isReferenced, wouldCreateCycle) = await service.UpdateAsync(knowledge, userId);
             if (isReferenced)
                 throw new BusinessPreconditionException(
                     "Knowledge is referenced and cannot be updated", "QUESTIONBANK_KNOWLEDGE_REFERENCED");

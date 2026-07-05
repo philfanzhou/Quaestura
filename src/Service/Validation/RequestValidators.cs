@@ -22,9 +22,6 @@ public class CreateKnowledgeRequestValidator : AbstractValidator<CreateKnowledge
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Name is required");
 
-        RuleFor(x => x.UserId)
-            .NotEmpty().WithMessage("UserId is required");
-
         When(x => x.Subject.HasValue, () =>
         {
             RuleFor(x => x.Subject!.Value)
@@ -54,9 +51,6 @@ public class BatchTagKnowledgeRequestValidator : AbstractValidator<BatchTagKnowl
 
         RuleFor(x => x.Grade)
             .GreaterThan(0).WithMessage("Grade must be greater than 0");
-
-        RuleFor(x => x.UserId)
-            .NotEmpty().WithMessage("UserId is required");
     }
 }
 
@@ -67,9 +61,6 @@ public class CreateTagRequestValidator : AbstractValidator<CreateTagRequest>
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Name is required")
             .MaximumLength(100).WithMessage("Name must not exceed 100 characters");
-
-        RuleFor(x => x.UserId)
-            .NotEmpty().WithMessage("UserId is required");
 
         When(x => !string.IsNullOrEmpty(x.Color), () =>
         {
@@ -89,8 +80,5 @@ public class BatchTagQuestionRequestValidator : AbstractValidator<BatchTagQuesti
 
         RuleFor(x => x.TagIds)
             .NotEmpty().WithMessage("At least one tag id is required");
-
-        RuleFor(x => x.UserId)
-            .NotEmpty().WithMessage("UserId is required");
     }
 }

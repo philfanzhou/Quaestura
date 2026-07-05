@@ -1,10 +1,12 @@
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Ruoyu.Study.Common.Authentication;
 using Ruoyu.Study.QuestionBank.Database.Entity;
 using Ruoyu.Study.QuestionBank.Domain.Services;
 using Ruoyu.Study.QuestionBank.Service.Middleware;
@@ -25,6 +27,9 @@ public static class TagEndpoints
 
         return app;
     }
+
+    // GET endpoints are available to any authenticated user (including students,
+    // who consume tags). The FallbackPolicy already enforces authentication.
 
     private static async Task<IResult> ListTags(
         ITagService service,
@@ -56,11 +61,24 @@ public static class TagEndpoints
         return Results.Ok(new { success = true, data = MapToResponse(tag) });
     }
 
+    // POST/DELETE endpoints require a staff role (teacher/assistant/admin).
+    // Update and delete additionally enforce strict ownership: a staff member
+    // can only modify or delete tags they created.
+
     private static async Task<IResult> UpsertTag(
+        ClaimsPrincipal user,
         CreateTagRequest request,
         ITagService service,
         IValidator<CreateTagRequest> validator)
     {
+        if (!user.IsStaff())
+        {
+            throw new ForbiddenException(
+                "Only staff members can create or modify tags",
+                "QUESTIONBANK_FORBIDDEN");
+        }
+        var userId = user.GetRequiredUserId();
+
         var validation = await validator.ValidateAsync(request);
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
@@ -79,7 +97,7 @@ public static class TagEndpoints
 
         if (isCreate)
         {
-            var (success, isDuplicate) = await service.AddAsync(tag, request.UserId);
+            var (success, isDuplicate) = await service.AddAsync(tag, userId);
             if (isDuplicate)
                 throw new DomainException(
                     "Tag with same name already exists",
@@ -92,7 +110,17 @@ public static class TagEndpoints
         }
         else
         {
-            var (success, isDuplicate) = await service.UpdateAsync(tag, request.UserId);
+            // Ownership check: only the creator can update the tag.
+            var existing = await service.GetAsync(tag.Id)
+                ?? throw new EntityNotFoundException("Tag", request.Id!);
+            if (!string.Equals(existing.CreatedBy, userId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ForbiddenException(
+                    "You can only modify tags you created",
+                    "QUESTIONBANK_FORBIDDEN_NOT_OWNER");
+            }
+
+            var (success, isDuplicate) = await service.UpdateAsync(tag, userId);
             if (isDuplicate)
                 throw new DomainException(
                     "Tag with same name already exists",
@@ -105,8 +133,29 @@ public static class TagEndpoints
         return Results.Ok(new { success = true, data = new { id = tag.Id.ToString() } });
     }
 
-    private static async Task<IResult> DeleteTag(Guid id, ITagService service)
+    private static async Task<IResult> DeleteTag(
+        ClaimsPrincipal user,
+        Guid id,
+        ITagService service)
     {
+        if (!user.IsStaff())
+        {
+            throw new ForbiddenException(
+                "Only staff members can delete tags",
+                "QUESTIONBANK_FORBIDDEN");
+        }
+        var userId = user.GetRequiredUserId();
+
+        // Ownership check: only the creator can delete the tag.
+        var existing = await service.GetAsync(id)
+            ?? throw new EntityNotFoundException("Tag", id.ToString());
+        if (!string.Equals(existing.CreatedBy, userId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ForbiddenException(
+                "You can only delete tags you created",
+                "QUESTIONBANK_FORBIDDEN_NOT_OWNER");
+        }
+
         var (success, isReferenced) = await service.DeleteAsync(id);
         if (isReferenced)
             throw new BusinessPreconditionException(

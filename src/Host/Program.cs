@@ -12,6 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Ruoyu.Study.Common.Authentication;
 using Ruoyu.Study.Common.Oss;
 using Ruoyu.Study.QuestionBank.Database;
 using Ruoyu.Study.QuestionBank.Domain.Services;
@@ -56,6 +57,11 @@ builder.Services.AddMemoryCache(options =>
 {
     options.SizeLimit = 1024;
 });
+
+// JWT Bearer authentication (validates tokens issued by QuantumZhou.Identity).
+// FallbackPolicy = RequireAuthenticatedUser, so every /admin/* endpoint requires
+// a valid JWT unless explicitly decorated with [AllowAnonymous].
+builder.Services.AddRuoyuJwtBearer(config);
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -115,6 +121,10 @@ if (app.Environment.IsDevelopment())
 // Global exception handling
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
+// Authentication & authorization (JWT Bearer)
+app.UseAuthentication();
+app.UseAuthorization();
+
 // Map endpoints
 app.MapQuestionEndpoints();
 app.MapKnowledgeEndpoints();
@@ -122,8 +132,8 @@ app.MapQuestionKnowledgeEndpoints();
 app.MapTagEndpoints();
 app.MapQuestionTagEndpoints();
 
-// Health check
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" }));
+// Health check (public, no auth required)
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
 
 // ========== Static files & SPA for Admin Web (HTTP port only) ==========
 // Serves Vue 3 frontend SPA built into wwwroot/.

@@ -6,7 +6,8 @@
 
 1. **数据库**：PostgreSQL（本地开发与容器化部署统一使用）
 2. **对象存储**：SeaweedFS（S3 端口 8333）
-3. **网络端口**：HTTP 5007
+3. **认证服务**：QuantumZhou.Identity（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
+4. **网络端口**：HTTP 5007
 
 ### 1.2 启动方式
 
@@ -85,6 +86,28 @@ export ConnectionStrings__Default="Host=...;Port=...;Database=...;Username=...;P
 
 启动时会自动检测 OSS 连通性（`Program.cs` 中的 `OssService.CheckConnectivityAsync`），失败时输出 Warning 但不阻断启动。
 
+### 2.3 认证服务（JWT）
+
+服务通过 JWT Bearer Token 认证，信任由 QuantumZhou.Identity 签发的 JWT。详见 [Authentication.md](./Authentication.md)。
+
+```json
+{
+  "IdentityService": {
+    "Authority": "http://ruoyu-identity:8080",
+    "Audience": "QuantumZhou.microservices",
+    "RequireHttpsMetadata": false
+  }
+}
+```
+
+- `Authority`：Identity 服务基础 URL，用于 OIDC discovery（拉取 `/.well-known/openid-configuration` 和 `/.well-known/jwks`）
+- `Audience`：预期 audience，默认 `QuantumZhou.microservices`
+- `RequireHttpsMetadata`：是否强制 HTTPS 元数据，开发环境可设为 false
+
+**必需**：`IdentityService:Authority` 必须配置，否则服务启动时抛 `InvalidOperationException`。
+
+签名公钥通过 OIDC discovery 自动获取，无需手动配置密钥。
+
 ## 3. Docker 部署
 
 ### 3.1 镜像构建（4 阶段多阶段构建）
@@ -124,6 +147,7 @@ cd src/services/ruoyu.questionBank
 | `Oss__AccessKey` | `seaweedfs_admin` |
 | `Oss__SecretKey` | `seaweedfs_admin` |
 | `Oss__BucketName` | `ruoyu-study` |
+| `IdentityService__Authority` | `http://ruoyu-identity:5002`（JWT 签发方，用于 OIDC discovery） |
 
 ## 4. 端口分配
 
@@ -152,3 +176,4 @@ OSS: ruoyu-seaweedfs:8333/ruoyu-study
 |------|----------|--------------|
 | PostgreSQL | 是 | 启动失败 |
 | SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |
+| QuantumZhou.Identity | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |

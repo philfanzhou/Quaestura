@@ -39,6 +39,8 @@
 |--------|----------|---------------|------|
 | `200 OK` | 请求成功 | — | 成功查询、新增、更新、删除 |
 | `400 Bad Request` | 请求参数验证失败 | `QUESTIONBANK_VALIDATION_*` | ID 格式无效、必填字段为空、文件过大 |
+| `401 Unauthorized` | 未提供 JWT 或 JWT 无效/过期 | —（由认证中间件返回） | token 过期、签名无效 |
+| `403 Forbidden` | 已认证但角色不足或归属校验失败 | `QUESTIONBANK_FORBIDDEN*` | 学生调用 tag 写接口、修改他人创建的 tag |
 | `404 Not Found` | 资源不存在 | `QUESTIONBANK_<RESOURCE>_NOT_FOUND` | Question not found |
 | `409 Conflict` | 资源冲突 | `QUESTIONBANK_<RESOURCE>_CONFLICT` | 重复创建 |
 | `422 Unprocessable Entity` | 业务前置条件不满足 | `QUESTIONBANK_PRECONDITION_*` | 删除被引用的知识点 |
@@ -55,6 +57,7 @@
 | `EntityNotFoundException` | 实体不存在 | 404 | `QUESTIONBANK_<RESOURCE>_NOT_FOUND` |
 | `ValidationException` | 参数验证失败 | 400 | `QUESTIONBANK_VALIDATION_*` |
 | `BusinessPreconditionException` | 业务前置条件不满足 | 422 | `QUESTIONBANK_PRECONDITION_*` |
+| `ForbiddenException` | 角色不足或归属校验失败 | 403 | `QUESTIONBANK_FORBIDDEN` 或 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
 
 ### 全局异常中间件
 

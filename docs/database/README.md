@@ -88,7 +88,7 @@
 | `name` | VARCHAR(100) | NOT NULL, UNIQUE | 标签名（不区分大小写唯一） |
 | `color` | VARCHAR(20) | NULL | 显示颜色（HEX 格式，如 `#FF6B6B`） |
 | `description` | TEXT | NULL | 描述 |
-| `created_by` | VARCHAR(36) | NULL | 创建者 ID |
+| `created_by` | VARCHAR(36) | NULL | 创建者 ID（从 JWT `sub` claim 写入，用于归属校验） |
 | `created_at` | TIMESTAMPTZ | NOT NULL | 创建时间 |
 | `usage_count` | INT | NOT NULL DEFAULT 0 | 引用次数（用于按热度排序、删除前检查） |
 
@@ -99,6 +99,7 @@
 - 与 `knowledge` 平行（不与 subject/grade 强绑定），便于跨学科年级复用
 - 无层级（无 parent_id）
 - `usage_count` 由 `question_tag` 增/减自动维护，删除前检查 `usage_count == 0`
+- `created_by` 由服务端从 JWT 写入，客户端无法伪造；修改/删除时校验 `created_by == 当前 userId`（严格归属制，详见 [Authentication.md](../development/Authentication.md)）
 
 #### question_tag 题目标签关联表
 

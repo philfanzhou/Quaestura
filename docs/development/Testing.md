@@ -62,10 +62,9 @@ Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 Web
 | Pictures 为空 | 验证失败，含 "At least one picture is required" |
 | Level 为负数 | 验证失败，含 "Level must not be negative" |
 | Type 为负数 | 验证失败，含 "Type must not be negative" |
-| Subject <= 0 | 验证失败，含 "Subject must be greater than 0" |
-| Grade <= 0 | 验证失败，含 "Grade must be greater than 0" |
-| UserId 为空 | 验证失败，含 "UserId is required" |
 | 全部字段合法 | 验证通过 |
+
+> 注：`subject` / `grade` 由 form 字段单独校验（在 endpoint 内），不在 `CreateQuestionRequestValidator` 范围内。`userId` 已从 DTO 移除，改从 JWT 读取。
 
 #### CreateKnowledgeRequestValidator
 
@@ -84,7 +83,6 @@ Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 Web
 | KnowledgeId 无效 | 验证失败，含 "KnowledgeId must be a valid UUID" |
 | Subject <= 0 | 验证失败，含 "Subject must be greater than 0" |
 | Grade <= 0 | 验证失败，含 "Grade must be greater than 0" |
-| UserId 为空 | 验证失败，含 "UserId is required" |
 
 #### CreateTagRequestValidator
 
@@ -92,7 +90,6 @@ Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 Web
 |------|------|
 | Name 为空 | 验证失败，含 "Name is required" |
 | Name 超过 100 字符 | 验证失败，含 "Name must not exceed 100 characters" |
-| UserId 为空 | 验证失败，含 "UserId is required" |
 | Color 格式非 HEX | 验证失败，含 "Color must be a valid HEX color (e.g., #FF6B6B)" |
 | Color 缺失 | 验证通过（color 可选） |
 | 全部字段合法 | 验证通过 |
@@ -103,8 +100,27 @@ Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 Web
 |------|------|
 | QuestionIds 为空 | 验证失败，含 "At least one question id is required" |
 | TagIds 为空 | 验证失败，含 "At least one tag id is required" |
-| UserId 为空 | 验证失败，含 "UserId is required" |
 | 全部字段合法 | 验证通过 |
+
+> 注：所有 DTO 的 `UserId` 字段已移除（改从 JWT 读取），相关校验场景同步移除。
+
+## 鉴权测试
+
+### Tag 端点权限测试
+
+测试位置：`src/Tests/Endpoints/TagEndpointsAuthTests.cs`
+
+| 场景 | 期望 |
+|------|------|
+| 学生调用 `POST /admin/tags` | 403 `QUESTIONBANK_FORBIDDEN` |
+| 教师调用 `POST /admin/tags`（创建） | 200 成功 |
+| 助教调用 `POST /admin/tags`（创建） | 200 成功 |
+| 教师更新自己创建的 tag | 200 成功 |
+| 教师更新他人创建的 tag | 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
+| 助教删除自己创建的 tag（usage_count=0） | 200 成功 |
+| 助教删除他人创建的 tag | 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
+| 学生调用 `GET /admin/tags` | 200 成功（学生可查询） |
+| 学生调用 `POST /admin/question-tags/batch-tag` | 200 成功（学生可打标） |
 
 ## 端点集成测试（可选）
 

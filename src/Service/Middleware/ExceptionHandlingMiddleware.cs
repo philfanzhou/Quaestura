@@ -42,6 +42,18 @@ public class BusinessPreconditionException : DomainException
 }
 
 /// <summary>
+/// Thrown when the authenticated user is not allowed to perform the operation.
+/// Maps to HTTP 403.
+/// </summary>
+public class ForbiddenException : DomainException
+{
+    public ForbiddenException(string message, string errorCode)
+        : base(message, errorCode, HttpStatusCode.Forbidden)
+    {
+    }
+}
+
+/// <summary>
 /// Global exception handling middleware. Converts known domain exceptions to structured
 /// JSON error responses and masks all unhandled exceptions as 500.
 /// </summary>

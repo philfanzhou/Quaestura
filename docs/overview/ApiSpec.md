@@ -4,7 +4,19 @@
 
 ## 1. 通用约定
 
-### 1.1 响应格式
+### 1.1 认证
+
+所有 `/admin/*` 端点要求 JWT Bearer Token 认证（详见 [Authentication.md](../development/Authentication.md)）：
+
+```
+Authorization: Bearer <jwt-token>
+```
+
+JWT 由 QuantumZhou.Identity 签发，包含 `sub`（userId）和 `role`（teacher/assistant/admin/student）claim。服务端从 JWT 读取 userId，**请求体不再包含 userId 字段**。
+
+未提供或提供无效 JWT → 401 Unauthorized（由认证中间件返回）。
+
+### 1.2 响应格式
 
 **成功响应（单条）**：
 
@@ -38,14 +50,14 @@
 }
 ```
 
-### 1.2 通用字段
+### 1.3 通用字段
 
 - 所有 ID 字段为 UUID 字符串（如 `00000000-0000-0000-0000-000000000001`）
 - 所有时间戳为 ISO 8601 UTC 字符串（如 `2026-07-02T10:00:00.000Z`）
 - `subject`（学科）和 `grade`（年级）为整数，由 [`ruoyu.common` 共享常量](../../../../services/ruoyu.common/) 定义
 - 所有消息/错误信息使用英文
 
-### 1.3 通用查询参数
+### 1.4 通用查询参数
 
 | 参数 | 类型 | 必填 | 默认值 | 说明 |
 |------|------|------|--------|------|
@@ -158,10 +170,11 @@
 |------|------|------|------|
 | `question` | string (JSON) | **是** | `QuestionPayload` JSON 字符串 |
 | `content` | string (JSON) | 否 | `QuestionContentPayload` JSON 字符串 |
-| `userId` | string (UUID) | **是** | 上传者 ID |
 | `subject` | int (form) | **是** | 学科 |
 | `grade` | int (form) | **是** | 年级 |
 | `pictures` | file[] | 否 | 图片文件（支持 JPEG/PNG/GIF/WebP/BMP，单张 ≤ 10MB） |
+
+> `userId` 从 JWT 读取（`sub` claim），不再从 form 字段获取。
 
 **QuestionPayload**：
 
@@ -302,10 +315,11 @@
   "name": "知识点名称",
   "description": "描述 (optional)",
   "subject": 1,
-  "grade": 7,
-  "userId": "uuid"
+  "grade": 7
 }
 ```
+
+> `userId` 从 JWT 读取，写入 `created_by` / `updated_by`。
 
 **响应 200**：
 
@@ -353,8 +367,7 @@
   "questionIds": ["uuid", "uuid"],
   "knowledgeId": "uuid",
   "subject": 1,
-  "grade": 7,
-  "userId": "uuid"
+  "grade": 7
 }
 ```
 
@@ -453,6 +466,16 @@
 
 Tag 是与 Knowledge 平行的自由标签（无层级，不绑 subject/grade）。适用于教师对题目的临时打标（"期中重点"、"高频考点"、"易错题"等）。
 
+#### 权限矩阵
+
+| 端点 | 角色要求 | 归属校验 |
+|------|---------|---------|
+| `GET /admin/tags` | 任意认证用户（含 student） | 无 |
+| `GET /admin/tags/{id}` | 任意认证用户 | 无 |
+| `POST /admin/tags`（创建） | teacher / assistant / admin | 无 |
+| `POST /admin/tags`（更新） | teacher / assistant / admin | 必须 `CreatedBy == 当前 userId` |
+| `DELETE /admin/tags/{id}` | teacher / assistant / admin | 必须 `CreatedBy == 当前 userId` |
+
 #### GET `/admin/tags`
 
 列表/搜索 Tag。
@@ -518,6 +541,10 @@ Tag 详情。
 
 新增或更新 Tag（id 存在则更新，空则新增）。
 
+**角色**：teacher / assistant / admin（学生不可调用，返回 403）
+
+**归属**：更新模式下，仅 `tag.CreatedBy == 当前 userId` 可修改，否则返回 403
+
 **请求体**：
 
 ```json
@@ -525,10 +552,11 @@ Tag 详情。
   "id": "uuid (optional)",
   "name": "期中重点",
   "color": "#FF6B6B (optional, HEX format)",
-  "description": "期中考试重点 (optional)",
-  "userId": "uuid"
+  "description": "期中考试重点 (optional)"
 }
 ```
+
+> `userId` 从 JWT 读取，写入 `created_by`。
 
 **响应 200**：
 
@@ -541,11 +569,17 @@ Tag 详情。
 
 **错误**：
 - 400 `QUESTIONBANK_VALIDATION_FAILED` — name 缺失或 color 格式非法
+- 403 `QUESTIONBANK_FORBIDDEN` — 学生角色调用
+- 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` — 更新他人创建的 tag
 - 409 `QUESTIONBANK_TAG_DUPLICATE` — 同名 Tag 已存在
 
 #### DELETE `/admin/tags/{id}`
 
 删除 Tag（仅当 `usageCount == 0` 时可删）。
+
+**角色**：teacher / assistant / admin
+
+**归属**：仅 `tag.CreatedBy == 当前 userId` 可删除，否则返回 403
 
 **响应 200**：
 
@@ -558,6 +592,8 @@ Tag 详情。
 
 **错误**：
 - 400 `QUESTIONBANK_VALIDATION_INVALID_ID`
+- 403 `QUESTIONBANK_FORBIDDEN` — 学生角色调用
+- 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` — 删除他人创建的 tag
 - 404 `QUESTIONBANK_TAG_NOT_FOUND`
 - 422 `QUESTIONBANK_TAG_REFERENCED` — Tag 仍被题目引用
 
@@ -567,13 +603,14 @@ Tag 详情。
 
 批量给多个题打多个 Tag（已存在的关联自动跳过）。
 
+**角色**：任意认证用户（学生可调用，给自己错题对应的 question 打标）
+
 **请求体**：
 
 ```json
 {
   "questionIds": ["uuid", "uuid"],
-  "tagIds": ["uuid", "uuid"],
-  "userId": "uuid"
+  "tagIds": ["uuid", "uuid"]
 }
 ```
 
@@ -587,7 +624,7 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — questionIds/tagIds 为空或 userId 缺失
+- 400 `QUESTIONBANK_VALIDATION_FAILED` — questionIds/tagIds 为空
 - 404 `QUESTIONBANK_TAG_NOT_FOUND` — 任一 tagId 不存在
 
 #### GET `/admin/question-tags`
@@ -676,6 +713,8 @@ Tag 详情。
 | `QUESTIONBANK_VALIDATION_FAILED` | 400 | 请求参数验证失败（FluentValidation） |
 | `QUESTIONBANK_VALIDATION_INVALID_ID` | 400 | ID 格式非 UUID |
 | `QUESTIONBANK_VALIDATION_INVALID_IMAGE` | 400 | 图片格式/大小不符 |
+| `QUESTIONBANK_FORBIDDEN` | 403 | 已认证但角色不足（如学生调用 tag 写接口） |
+| `QUESTIONBANK_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
 | `QUESTIONBANK_QUESTION_NOT_FOUND` | 404 | 题目不存在 |
 | `QUESTIONBANK_KNOWLEDGE_NOT_FOUND` | 404 | 知识点不存在 |
 | `QUESTIONBANK_KNOWLEDGE_DUPLICATE` | 409 | 同 (subject, grade, name) 已存在 |
@@ -687,34 +726,39 @@ Tag 详情。
 | `QUESTIONBANK_INTERNAL_ERROR` | 500 | 服务内部错误（已脱敏） |
 | `QUESTIONBANK_UNAVAILABLE` | 503 | 依赖服务不可用 |
 
+> 401 Unauthorized 由认证中间件直接返回，无 errorCode（响应体为空）。
+
 ## 4. 示例
+
+> 所有请求需携带 `Authorization: Bearer <jwt-token>` 头（以下示例省略）。
 
 ### 4.1 创建知识点
 
 ```bash
 curl -X POST http://localhost:5007/admin/knowledges \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt-token>" \
   -d '{
     "name": "一般现在时",
     "subject": 1,
-    "grade": 7,
-    "userId": "00000000-0000-0000-0000-000000000001"
+    "grade": 7
   }'
 ```
 
 ### 4.2 搜索题目
 
 ```bash
-curl "http://localhost:5007/admin/questions?subject=1&grade=7&keyword=一般现在时&page=1&size=10"
+curl "http://localhost:5007/admin/questions?subject=1&grade=7&keyword=一般现在时&page=1&size=10" \
+  -H "Authorization: Bearer <jwt-token>"
 ```
 
 ### 4.3 上传题目
 
 ```bash
 curl -X POST http://localhost:5007/admin/questions \
+  -H "Authorization: Bearer <jwt-token>" \
   -F 'question={"level":1,"type":1,"width":800,"height":600}' \
   -F 'content={"content":"题目内容","correctAnswer":"答案","analysis":"解析"}' \
-  -F 'userId=00000000-0000-0000-0000-000000000001' \
   -F 'subject=1' \
   -F 'grade=7' \
   -F 'pictures=@/path/to/test.jpg'
@@ -725,11 +769,11 @@ curl -X POST http://localhost:5007/admin/questions \
 ```bash
 curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <jwt-token>" \
   -d '{
     "questionIds": ["q1-uuid", "q2-uuid"],
     "knowledgeId": "k-uuid",
     "subject": 1,
-    "grade": 7,
-    "userId": "00000000-0000-0000-0000-000000000001"
+    "grade": 7
   }'
 ```

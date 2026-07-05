@@ -22,6 +22,8 @@ OSS_ACCESS_KEY="seaweedfs_admin"
 OSS_SECRET_KEY="seaweedfs_admin"
 OSS_BUCKET="ruoyu-study"
 
+IDENTITY_AUTHORITY="http://ruoyu-identity:5002"
+
 docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
 
 if [ -n "$(docker ps -q --filter "name=^/${CONTAINER_NAME}$")" ]; then
@@ -44,6 +46,7 @@ docker run -d \
   -e Oss__AccessKey="${OSS_ACCESS_KEY}" \
   -e Oss__SecretKey="${OSS_SECRET_KEY}" \
   -e Oss__BucketName="${OSS_BUCKET}" \
+  -e IdentityService__Authority="${IDENTITY_AUTHORITY}" \
   -e APP_TITLE="${CONTAINER_NAME}" \
   "$IMAGE_NAME"
 

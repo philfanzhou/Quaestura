@@ -5,6 +5,8 @@ namespace Ruoyu.Study.QuestionBank.Service.Models;
 /// <summary>
 /// HTTP request DTOs for QuestionBank endpoints.
 /// All field names use camelCase to align with HTTP/JSON conventions.
+/// UserId is never read from the request body; it is always resolved from the
+/// authenticated JWT (sub claim) in the endpoint layer.
 /// </summary>
 public class CreateQuestionRequest
 {
@@ -32,7 +34,6 @@ public class CreateKnowledgeRequest
     public string? Description { get; set; }
     public int? Subject { get; set; }
     public int? Grade { get; set; }
-    public string UserId { get; set; } = string.Empty;
 }
 
 public class BatchTagKnowledgeRequest
@@ -41,7 +42,6 @@ public class BatchTagKnowledgeRequest
     public string KnowledgeId { get; set; } = string.Empty;
     public int Subject { get; set; }
     public int Grade { get; set; }
-    public string UserId { get; set; } = string.Empty;
 }
 
 public class CreateTagRequest
@@ -50,12 +50,10 @@ public class CreateTagRequest
     public string Name { get; set; } = string.Empty;
     public string? Color { get; set; }
     public string? Description { get; set; }
-    public string UserId { get; set; } = string.Empty;
 }
 
 public class BatchTagQuestionRequest
 {
     public List<string> QuestionIds { get; set; } = new();
     public List<string> TagIds { get; set; } = new();
-    public string UserId { get; set; } = string.Empty;
 }

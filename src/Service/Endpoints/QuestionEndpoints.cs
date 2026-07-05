@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Threading.Tasks;
 using FluentValidation;
@@ -10,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
+using Ruoyu.Study.Common.Authentication;
 using Ruoyu.Study.QuestionBank.Database.Entity;
 using Ruoyu.Study.QuestionBank.Domain.Services;
 using Ruoyu.Study.QuestionBank.Service.Middleware;
@@ -111,12 +113,14 @@ public static class QuestionEndpoints
 
     private static async Task<IResult> UploadQuestion(
         HttpRequest request,
+        ClaimsPrincipal user,
         IQuestionService service,
         IOssQuestionService ossService,
         IValidator<CreateQuestionRequest> validator,
         [FromServices] ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("QuestionEndpoints");
+        var userId = user.GetRequiredUserId();
 
         if (!request.HasFormContentType)
             throw new ValidationException("Request must be multipart/form-data");
@@ -125,9 +129,6 @@ public static class QuestionEndpoints
 
         if (!form.TryGetValue("question", out var questionJson) || string.IsNullOrWhiteSpace(questionJson))
             throw new ValidationException("question is required");
-
-        if (!form.TryGetValue("userId", out var userIdValues) || string.IsNullOrWhiteSpace(userIdValues))
-            throw new ValidationException("userId is required");
 
         if (!form.TryGetValue("subject", out var subjectValues) || !int.TryParse(subjectValues, out var subject) || subject <= 0)
             throw new ValidationException("subject is required and must be greater than 0");
@@ -220,7 +221,7 @@ public static class QuestionEndpoints
                     Type = questionPayload.Type,
                     Width = questionPayload.Width,
                     Height = questionPayload.Height,
-                    UserId = userIdValues.ToString(),
+                    UserId = userId,
                     StudentId = questionPayload.StudentId,
                     MistakeId = questionPayload.MistakeId,
                     Subject = subject,
@@ -237,7 +238,7 @@ public static class QuestionEndpoints
                     };
 
                 var (created, _) = await service.AddAsync(
-                    userIdValues.ToString(), entity, content, uploadedPaths, subject, grade);
+                    userId, entity, content, uploadedPaths, subject, grade);
                 resultId = created.Id.ToString();
             }
 

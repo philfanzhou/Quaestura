@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using FluentAssertions;
 using FluentValidation.TestHelper;
 using Ruoyu.Study.QuestionBank.Service.Models;
@@ -65,7 +66,6 @@ public class CreateKnowledgeRequestValidatorTests
         var request = new CreateKnowledgeRequest
         {
             Name = "",
-            UserId = "user-1",
             Subject = 1,
             Grade = 7
         };
@@ -76,23 +76,6 @@ public class CreateKnowledgeRequestValidatorTests
             .WithErrorMessage("Name is required");
     }
 
-    [Fact]
-    public void Validate_WithEmptyUserId_Fails()
-    {
-        var request = new CreateKnowledgeRequest
-        {
-            Name = "test",
-            UserId = "",
-            Subject = 1,
-            Grade = 7
-        };
-
-        var result = _validator.TestValidate(request);
-
-        result.ShouldHaveValidationErrorFor(x => x.UserId)
-            .WithErrorMessage("UserId is required");
-    }
-
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -101,7 +84,6 @@ public class CreateKnowledgeRequestValidatorTests
         var request = new CreateKnowledgeRequest
         {
             Name = "test",
-            UserId = "user-1",
             Subject = subject,
             Grade = 7
         };
@@ -120,7 +102,6 @@ public class CreateKnowledgeRequestValidatorTests
         var request = new CreateKnowledgeRequest
         {
             Name = "test",
-            UserId = "user-1",
             Subject = 1,
             Grade = grade
         };
@@ -137,7 +118,6 @@ public class CreateKnowledgeRequestValidatorTests
         var request = new CreateKnowledgeRequest
         {
             Name = "Algebra",
-            UserId = "user-1",
             Subject = 1,
             Grade = 7
         };
@@ -153,7 +133,6 @@ public class CreateKnowledgeRequestValidatorTests
         var request = new CreateKnowledgeRequest
         {
             Name = "Generic",
-            UserId = "user-1",
         };
 
         var result = _validator.TestValidate(request);
@@ -171,11 +150,10 @@ public class BatchTagKnowledgeRequestValidatorTests
     {
         var request = new BatchTagKnowledgeRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string>(),
+            QuestionIds = new List<string>(),
             KnowledgeId = "00000000-0000-0000-0000-000000000001",
             Subject = 1,
             Grade = 7,
-            UserId = "user-1"
         };
 
         var result = _validator.TestValidate(request);
@@ -189,11 +167,10 @@ public class BatchTagKnowledgeRequestValidatorTests
     {
         var request = new BatchTagKnowledgeRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
+            QuestionIds = new List<string> { "q1" },
             KnowledgeId = "",
             Subject = 1,
             Grade = 7,
-            UserId = "user-1"
         };
 
         var result = _validator.TestValidate(request);
@@ -207,11 +184,10 @@ public class BatchTagKnowledgeRequestValidatorTests
     {
         var request = new BatchTagKnowledgeRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
+            QuestionIds = new List<string> { "q1" },
             KnowledgeId = "00000000-0000-0000-0000-000000000001",
             Subject = 0,
             Grade = 7,
-            UserId = "user-1"
         };
 
         var result = _validator.TestValidate(request);
@@ -225,11 +201,10 @@ public class BatchTagKnowledgeRequestValidatorTests
     {
         var request = new BatchTagKnowledgeRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
+            QuestionIds = new List<string> { "q1" },
             KnowledgeId = "00000000-0000-0000-0000-000000000001",
             Subject = 1,
             Grade = 0,
-            UserId = "user-1"
         };
 
         var result = _validator.TestValidate(request);
@@ -239,33 +214,14 @@ public class BatchTagKnowledgeRequestValidatorTests
     }
 
     [Fact]
-    public void Validate_WithEmptyUserId_Fails()
-    {
-        var request = new BatchTagKnowledgeRequest
-        {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
-            KnowledgeId = "00000000-0000-0000-0000-000000000001",
-            Subject = 1,
-            Grade = 7,
-            UserId = ""
-        };
-
-        var result = _validator.TestValidate(request);
-
-        result.ShouldHaveValidationErrorFor(x => x.UserId)
-            .WithErrorMessage("UserId is required");
-    }
-
-    [Fact]
     public void Validate_WithAllValidFields_Succeeds()
     {
         var request = new BatchTagKnowledgeRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1", "q2" },
+            QuestionIds = new List<string> { "q1", "q2" },
             KnowledgeId = "00000000-0000-0000-0000-000000000001",
             Subject = 1,
             Grade = 7,
-            UserId = "user-1"
         };
 
         var result = _validator.TestValidate(request);
@@ -281,7 +237,7 @@ public class CreateTagRequestValidatorTests
     [Fact]
     public void Validate_WithEmptyName_Fails()
     {
-        var request = new CreateTagRequest { Name = "", UserId = "u1" };
+        var request = new CreateTagRequest { Name = "" };
 
         var result = _validator.TestValidate(request);
 
@@ -292,23 +248,12 @@ public class CreateTagRequestValidatorTests
     [Fact]
     public void Validate_WithOverLongName_Fails()
     {
-        var request = new CreateTagRequest { Name = new string('a', 101), UserId = "u1" };
+        var request = new CreateTagRequest { Name = new string('a', 101) };
 
         var result = _validator.TestValidate(request);
 
         result.ShouldHaveValidationErrorFor(x => x.Name)
             .WithErrorMessage("Name must not exceed 100 characters");
-    }
-
-    [Fact]
-    public void Validate_WithEmptyUserId_Fails()
-    {
-        var request = new CreateTagRequest { Name = "x", UserId = "" };
-
-        var result = _validator.TestValidate(request);
-
-        result.ShouldHaveValidationErrorFor(x => x.UserId)
-            .WithErrorMessage("UserId is required");
     }
 
     [Theory]
@@ -318,7 +263,7 @@ public class CreateTagRequestValidatorTests
     [InlineData("#GGGGGG")]
     public void Validate_WithInvalidColor_Fails(string color)
     {
-        var request = new CreateTagRequest { Name = "x", UserId = "u", Color = color };
+        var request = new CreateTagRequest { Name = "x", Color = color };
 
         var result = _validator.TestValidate(request);
 
@@ -333,7 +278,7 @@ public class CreateTagRequestValidatorTests
     [InlineData("#aBcDeF")]
     public void Validate_WithValidColor_Succeeds(string color)
     {
-        var request = new CreateTagRequest { Name = "x", UserId = "u", Color = color };
+        var request = new CreateTagRequest { Name = "x", Color = color };
 
         var result = _validator.TestValidate(request);
 
@@ -343,7 +288,7 @@ public class CreateTagRequestValidatorTests
     [Fact]
     public void Validate_WithoutColor_Succeeds()
     {
-        var request = new CreateTagRequest { Name = "x", UserId = "u" };
+        var request = new CreateTagRequest { Name = "x" };
 
         var result = _validator.TestValidate(request);
 
@@ -360,9 +305,8 @@ public class BatchTagQuestionRequestValidatorTests
     {
         var request = new BatchTagQuestionRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string>(),
-            TagIds = new System.Collections.Generic.List<string> { "t1" },
-            UserId = "u"
+            QuestionIds = new List<string>(),
+            TagIds = new List<string> { "t1" },
         };
 
         var result = _validator.TestValidate(request);
@@ -376,9 +320,8 @@ public class BatchTagQuestionRequestValidatorTests
     {
         var request = new BatchTagQuestionRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
-            TagIds = new System.Collections.Generic.List<string>(),
-            UserId = "u"
+            QuestionIds = new List<string> { "q1" },
+            TagIds = new List<string>(),
         };
 
         var result = _validator.TestValidate(request);
@@ -388,29 +331,12 @@ public class BatchTagQuestionRequestValidatorTests
     }
 
     [Fact]
-    public void Validate_WithEmptyUserId_Fails()
-    {
-        var request = new BatchTagQuestionRequest
-        {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1" },
-            TagIds = new System.Collections.Generic.List<string> { "t1" },
-            UserId = ""
-        };
-
-        var result = _validator.TestValidate(request);
-
-        result.ShouldHaveValidationErrorFor(x => x.UserId)
-            .WithErrorMessage("UserId is required");
-    }
-
-    [Fact]
     public void Validate_WithAllValidFields_Succeeds()
     {
         var request = new BatchTagQuestionRequest
         {
-            QuestionIds = new System.Collections.Generic.List<string> { "q1", "q2" },
-            TagIds = new System.Collections.Generic.List<string> { "t1" },
-            UserId = "u"
+            QuestionIds = new List<string> { "q1", "q2" },
+            TagIds = new List<string> { "t1" },
         };
 
         var result = _validator.TestValidate(request);

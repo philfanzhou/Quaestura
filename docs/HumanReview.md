@@ -31,19 +31,3 @@
 - **批复**：
 
 ---
-
-## 已解决（阶段 1 gRPC → WebAPI 迁移中处理）
-
-下列项已在阶段 1 迁移中通过重写对应代码层自动解决：
-
-- **HR-01**（DeleteQuestion 用 `_ = Task.Run(...)` + 空 catch）：新 `QuestionEndpoints.DeleteQuestion` 使用 `await _ossQuestionService.DeletePicturesAsync(...)` 同步等待，异常由中间件统一处理
-- **HR-03**（中文验证消息）：新 `Service/Validation/RequestValidators.cs` 全部使用英文错误消息
-- **HR-05**（`Guid.Parse` 无 try-catch）：新端点代码全部使用 `Guid.TryParse`，失败抛出 `ValidationException` 转为 HTTP 400
-- **HR-06**（硬编码 `.jpg` 和 `image/jpeg`）：新 `QuestionEndpoints.UploadQuestion` 从 `IFormFile.FileName` 提取扩展名、用 `IFormFile.ContentType` 取 MIME
-- **HR-08**（`EnableDetailedErrors = true`）：新 `Host/Program.cs` 无 gRPC 配置，问题自动消除
-
-## 阶段 1 额外变更
-
-迁移过程中对 Domain 层做了一处必要修复（不在原 HR 列表中）：
-
-- **`Domain/Services/KnowledgeService.cs:GetLikeAsync`**：原实现使用 `EF.Functions.ILike`（Npgsql 专属），不可移植。改为 `Contains` 以保证 PostgreSQL 兼容性。已通过端到端验证。

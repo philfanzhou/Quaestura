@@ -42,14 +42,6 @@ ruoyu.questionBank/                     # 后端服务
 └── README.md
 ```
 
-## 5. 端口
-
-- HTTP 5007（WebAPI + 管理前端 SPA，同进程）
-
-### 5.1 题目管理（Question）
-
-| 功能 | 端点 | 说明 |
-|------|------|------|
 ## 5. 核心功能
 
 ### 5.1 题目管理（Question）
@@ -80,6 +72,23 @@ ruoyu.questionBank/                     # 后端服务
 | 获取知识点题目 | `GET /admin/question-knowledges?knowledgeId=` | 获取关联到指定知识点的所有题目 |
 | 移除关联 | `DELETE /admin/question-knowledges?questionId=` | 移除题目的所有知识点关联 |
 
+### 5.4 Tag 管理
+
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 列表查询 | `GET /admin/tags` | 支持 name 模糊搜索、sortBy=usageCount |
+| 查询详情 | `GET /admin/tags/{id}` | 根据 ID 获取详情 |
+| 新增/更新 | `POST /admin/tags` | id 存在则更新，空则新增 |
+| 删除 Tag | `DELETE /admin/tags/{id}` | 被引用时拒绝删除 |
+
+### 5.5 题目-Tag 关联
+
+| 功能 | 端点 | 说明 |
+|------|------|------|
+| 批量打标签 | `POST /admin/question-tags/batch-tag` | 批量给多个题目打多个 Tag |
+| 查询关联 | `GET /admin/question-tags` | 按 questionId 或 tagId 查询 |
+| 移除关联 | `DELETE /admin/question-tags` | 移除单个或全部关联 |
+
 ## 6. 端口
 
-- HTTP 5007（WebAPI 入口）
+- HTTP 5007（WebAPI + 管理前端 SPA，同进程）

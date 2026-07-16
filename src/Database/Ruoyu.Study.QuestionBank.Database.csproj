@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\ruoyu.common\src\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
+    <ProjectReference Include="..\..\..\..\ruoyu.common\src\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
   </ItemGroup>
 
 </Project>

@@ -17,7 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
     <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
-    <ProjectReference Include="..\..\..\ruoyu.common\src\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
+    <ProjectReference Include="..\..\..\..\ruoyu.common\src\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
   </ItemGroup>
 
 </Project>

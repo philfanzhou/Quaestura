@@ -54,7 +54,7 @@ JWT 由 QuantumZhou.Identity 签发，包含 `sub`（userId）和 `role`（teach
 
 - 所有 ID 字段为 UUID 字符串（如 `00000000-0000-0000-0000-000000000001`）
 - 所有时间戳为 ISO 8601 UTC 字符串（如 `2026-07-02T10:00:00.000Z`）
-- `subject`（学科）和 `grade`（年级）为整数，由 [`ruoyu.common` 共享常量](../../../../services/ruoyu.common/) 定义
+- `subject`（学科）和 `grade`（年级）为整数，由 [`ruoyu.common` 共享常量](../../../../ruoyu.common/) 定义
 - 所有消息/错误信息使用英文
 
 ### 1.4 通用查询参数

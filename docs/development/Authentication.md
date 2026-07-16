@@ -35,7 +35,7 @@
 | `sub` / `ClaimTypes.NameIdentifier` | 当前用户 ID | `User.GetRequiredUserId()`（来自 `ClaimsPrincipalExtensions`） |
 | `role` / `ClaimTypes.Role` | 角色（teacher/assistant/admin/student） | `User.GetRoles()` / `User.IsInRole(...)` / `User.IsStaff()` |
 
-> 提取方法由 [`ruoyu.common` 认证共享组件](../../../../services/ruoyu.common/docs/authentication.md) 提供。
+> 提取方法由 [`ruoyu.common` 认证共享组件](../../../../ruoyu.common/docs/authentication.md) 提供。
 
 ## 2. 授权规则
 

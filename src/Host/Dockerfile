@@ -18,12 +18,12 @@ COPY src/services/ruoyu.questionBank/src/Database/Ruoyu.Study.QuestionBank.Datab
 COPY src/services/ruoyu.questionBank/src/Domain/Ruoyu.Study.QuestionBank.Domain.csproj src/services/ruoyu.questionBank/src/Domain/
 COPY src/services/ruoyu.questionBank/src/Service/Ruoyu.Study.QuestionBank.Service.csproj src/services/ruoyu.questionBank/src/Service/
 COPY src/services/ruoyu.questionBank/src/Host/Ruoyu.Study.QuestionBank.Host.csproj src/services/ruoyu.questionBank/src/Host/
-COPY src/ruoyu.common/src/Ruoyu.Study.Common/Ruoyu.Study.Common.csproj src/ruoyu.common/src/Ruoyu.Study.Common/
+COPY src/ruoyu.common/backend/Ruoyu.Study.Common/Ruoyu.Study.Common.csproj src/ruoyu.common/backend/Ruoyu.Study.Common/
 
 RUN dotnet restore "src/services/ruoyu.questionBank/src/Host/Ruoyu.Study.QuestionBank.Host.csproj"
 
 COPY src/services/ruoyu.questionBank/src/ src/services/ruoyu.questionBank/src/
-COPY src/ruoyu.common/src/ src/ruoyu.common/src/
+COPY src/ruoyu.common/backend/ src/ruoyu.common/backend/
 
 # Inject the admin frontend build artifacts into the Host's wwwroot
 COPY --from=frontend-build /app/dist src/services/ruoyu.questionBank/src/Host/wwwroot

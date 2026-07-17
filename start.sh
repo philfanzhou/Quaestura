@@ -9,20 +9,10 @@ NETWORK_NAME="ruoyu-net"
 
 LISTEN_URL="http://+:5007"
 
-DB_HOST="ruoyu-postgres"
-DB_PORT="5432"
+CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR:-host.docker.internal:8500}"
+CONSUL_TOKEN="${CONSUL_TOKEN:-}"
+
 DB_NAME="ruoyu_study_questionbank"
-DB_USER="postgres"
-DB_PASS="postgres"
-
-CONNECTION_STRING="Host=${DB_HOST};Port=${DB_PORT};Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASS};"
-
-OSS_ENDPOINT="ruoyu-seaweedfs:8333"
-OSS_ACCESS_KEY="seaweedfs_admin"
-OSS_SECRET_KEY="seaweedfs_admin"
-OSS_BUCKET="ruoyu-study"
-
-IDENTITY_AUTHORITY="http://ruoyu-identity:5002"
 
 docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
 
@@ -39,14 +29,12 @@ docker run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   --network "$NETWORK_NAME" \
+  --add-host=host.docker.internal:host-gateway \
   -e TZ=Asia/Shanghai \
   -e ASPNETCORE_URLS="${LISTEN_URL}" \
-  -e ConnectionStrings__Default="${CONNECTION_STRING}" \
-  -e Oss__Endpoint="${OSS_ENDPOINT}" \
-  -e Oss__AccessKey="${OSS_ACCESS_KEY}" \
-  -e Oss__SecretKey="${OSS_SECRET_KEY}" \
-  -e Oss__BucketName="${OSS_BUCKET}" \
-  -e IdentityService__Authority="${IDENTITY_AUTHORITY}" \
+  -e CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR}" \
+  -e CONSUL_TOKEN="${CONSUL_TOKEN}" \
+  -e Database__Name="${DB_NAME}" \
   -e APP_TITLE="${CONTAINER_NAME}" \
   "$IMAGE_NAME"
 

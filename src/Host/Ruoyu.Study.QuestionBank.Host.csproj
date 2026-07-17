@@ -18,6 +18,7 @@
     <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
     <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
     <ProjectReference Include="..\..\..\..\ruoyu.common\backend\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
+    <ProjectReference Include="..\..\..\..\ruoyu.common\backend\Ruoyu.Study.Consul.Shared\Ruoyu.Study.Consul.Shared.csproj" />
   </ItemGroup>
 
 </Project>

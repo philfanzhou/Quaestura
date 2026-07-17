@@ -14,6 +14,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Ruoyu.Study.Common.Authentication;
 using Ruoyu.Study.Common.Oss;
+using Ruoyu.Study.Consul.Shared;
 using Ruoyu.Study.QuestionBank.Database;
 using Ruoyu.Study.QuestionBank.Domain.Services;
 using Ruoyu.Study.QuestionBank.Service;
@@ -22,6 +23,16 @@ using Ruoyu.Study.QuestionBank.Service.Middleware;
 using Ruoyu.Study.QuestionBank.Service.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ========== Consul Configuration Source ==========
+builder.Configuration.AddRuoyuConsulConfiguration(builder.Configuration);
+var consulOptions = RuoyuConsulOptions.Bind(builder.Configuration);
+var consulRuntimeState = RuoyuConsulRuntimeState.Instance;
+
+// ========== Serilog (Console + Grafana Loki) ==========
+builder.Configuration.AddRuoyuLokiSink();
+builder.Host.UseRuoyuSerilog("Ruoyu.Study.QuestionBank");
+
 var config = builder.Configuration;
 
 // HTTP port for the only listener (single-port deployment: API + SPA on 5007)
@@ -81,6 +92,14 @@ var app = builder.Build();
 var appTitle = config["APP_TITLE"] ?? "Ruoyu.Study.QuestionBank.Admin";
 
 app.Logger.LogInformation("QuestionBank Service starting");
+app.Logger.LogInformation(
+    "Consul startup diagnostics: Address={Address}, Token={Token}, Source={Source}, KeyCount={KeyCount}, Prefixes={Prefixes}, LastError={LastError}",
+    $"{consulOptions.Host}:{consulOptions.Port}",
+    StartupDiagnosticsFormatter.MaskSecret(consulOptions.Token),
+    consulRuntimeState.Source,
+    consulRuntimeState.KeyCount,
+    StartupDiagnosticsFormatter.SummarizePrefixes(consulRuntimeState.LoadedPrefixes),
+    StartupDiagnosticsFormatter.SummarizeError(consulRuntimeState.LastError));
 app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
 var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
 app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);

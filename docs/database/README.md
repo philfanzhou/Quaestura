@@ -4,7 +4,9 @@
 
 ### 数据库
 
-本服务**仅支持 PostgreSQL**，由 `Program.cs` 通过 `UseNpgsql` 注册。开发、测试、生产统一使用 PostgreSQL 实例。
+本服务支持 PostgreSQL（生产）与 SQLite（本地 dev 回退）两种后端，由 `Program.cs` 通过 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建连接串：连接串包含 `Host=`/`Server=` 时走 `UseNpgsql`，否则走 `UseSqlite`（`Data Source=data/sqlite/ruoyu_study_questionbank.db`）。
+
+生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）注入；本地 `ConnectionStrings:Default` 仅保留无密码的 dev 连接串。
 
 启动时 `DatabaseInitializer.InitializeAsync` 自动建表（`CREATE TABLE IF NOT EXISTS`），无需手动执行迁移。
 

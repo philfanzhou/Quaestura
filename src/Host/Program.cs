@@ -38,14 +38,20 @@ var config = builder.Configuration;
 // HTTP port for the only listener (single-port deployment: API + SPA on 5007)
 var httpPort = 5007;
 
-// Get database connection string (missing = fail to start)
-var connectionString = config.GetConnectionString("Default");
-if (string.IsNullOrWhiteSpace(connectionString))
-{
-    throw new InvalidOperationException("ConnectionStrings:Default is required (PostgreSQL).");
-}
+// Get database connection string (Consul-shared PostgreSQL with local fallback)
+var connectionString = SharedPostgreSqlConnectionStringFactory.BuildOrFallback(
+    builder.Configuration,
+    builder.Configuration.GetConnectionString("Default"));
+var isPostgreSql = !string.IsNullOrWhiteSpace(connectionString)
+    && (connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
+        || connectionString.Contains("Server=", StringComparison.OrdinalIgnoreCase));
 builder.Services.AddDbContext<QuestionBankDbContext>(options =>
-    options.UseNpgsql(connectionString));
+{
+    if (isPostgreSql)
+        options.UseNpgsql(connectionString);
+    else
+        options.UseSqlite(connectionString ?? "Data Source=data/sqlite/ruoyu_study_questionbank.db");
+});
 
 var ossOptions = config.GetSection("Oss").Get<OssOptions>() ?? new OssOptions();
 builder.Services.AddSingleton<IOssService>(new S3OssService(
@@ -101,8 +107,22 @@ app.Logger.LogInformation(
     StartupDiagnosticsFormatter.SummarizePrefixes(consulRuntimeState.LoadedPrefixes),
     StartupDiagnosticsFormatter.SummarizeError(consulRuntimeState.LastError));
 app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
-var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
-app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
+if (isPostgreSql && !string.IsNullOrEmpty(connectionString))
+{
+    var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
+    app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
+}
+else
+{
+    app.Logger.LogInformation("Database: SQLite");
+}
+app.Logger.LogInformation(
+    "Effective configuration diagnostics: PostgreSqlHost={PostgreSqlHost}, PostgreSqlPort={PostgreSqlPort}, PostgreSqlUsername={PostgreSqlUsername}, PostgreSqlPassword={PostgreSqlPassword}, DatabaseName={DatabaseName}",
+    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Host"]),
+    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Port"]),
+    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Username"]),
+    StartupDiagnosticsFormatter.SummarizePassword(builder.Configuration["PostgreSql:Password"]),
+    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["Database:Name"]));
 app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOptions.BucketName);
 app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 

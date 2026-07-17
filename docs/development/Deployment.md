@@ -4,7 +4,7 @@
 
 ### 1.1 启动要求
 
-1. **数据库**：PostgreSQL（本地开发与容器化部署统一使用）
+1. **数据库**：PostgreSQL（生产，由 Consul 共享配置注入）；本地开发可回退 SQLite
 2. **对象存储**：SeaweedFS（S3 端口 8333）
 3. **认证服务**：QuantumZhou.Identity（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
 4. **网络端口**：HTTP 5007
@@ -29,7 +29,7 @@ cd src/services/ruoyu.questionBank
 ./start.sh
 ```
 
-`start.sh` 默认连接 PostgreSQL 容器 `ruoyu-postgres:5432`（库 `ruoyu_study_questionbank`）。
+`start.sh` 通过环境变量注入容器化部署所需的配置（数据库连接由 Consul 共享配置覆盖）。
 
 ### 1.3 验证启动
 
@@ -46,25 +46,36 @@ open http://localhost:5007/swagger
 
 ### 2.1 数据库连接
 
-`appsettings.json` 中 `ConnectionStrings:Default`：
+数据库连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 统一构建：优先从 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）合成生产连接串，无法合成时回退到本地 `ConnectionStrings:Default`。
+
+`appsettings.json` 中仅保留本地 dev 友好的连接串（无密码）与数据库名：
 
 ```json
 {
+  "Database": {
+    "Name": "ruoyu_study_questionbank"
+  },
   "ConnectionStrings": {
-    "Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
+    "Default": "Host=localhost;Port=5432;Database=ruoyu_study_questionbank;Username=phil"
   }
 }
 ```
 
-本服务仅支持 PostgreSQL（`Program.cs` 中通过 `UseNpgsql` 强制注册）。
+连接串包含 `Host=` 或 `Server=` 时走 PostgreSQL（`UseNpgsql`），否则走 SQLite 回退（`Data Source=data/sqlite/ruoyu_study_questionbank.db`）。生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 的 `PostgreSql:*` 键覆盖，无需写入 `appsettings.json`。
 
 数据库表由 `DatabaseInitializer` 启动时自动创建（`CREATE TABLE IF NOT EXISTS`），无需手动建库。
 
-#### 通过环境变量覆盖
+#### 通过 Consul 共享配置覆盖
 
-```bash
-export ConnectionStrings__Default="Host=...;Port=...;Database=...;Username=...;Password=...;"
-```
+生产环境通过 Consul KV（`config/ruoyu` 前缀）注入以下键，由 `SharedPostgreSqlConnectionStringFactory` 合成连接串：
+
+| Consul 键 | 作用 |
+|-----------|------|
+| `PostgreSql:Host` | PostgreSQL 主机 |
+| `PostgreSql:Port` | PostgreSQL 端口 |
+| `PostgreSql:Username` | PostgreSQL 用户名 |
+| `PostgreSql:Password` | PostgreSQL 密码 |
+| `Database:Name` | 数据库名（默认 `ruoyu_study_questionbank`） |
 
 ### 2.2 对象存储
 
@@ -142,12 +153,13 @@ cd src/services/ruoyu.questionBank
 |------|-----|
 | `TZ` | `Asia/Shanghai` |
 | `ASPNETCORE_URLS` | `http://+:5007` |
-| `ConnectionStrings__Default` | PostgreSQL 连接串 |
 | `Oss__Endpoint` | `ruoyu-seaweedfs:8333` |
 | `Oss__AccessKey` | `seaweedfs_admin` |
 | `Oss__SecretKey` | `seaweedfs_admin` |
 | `Oss__BucketName` | `ruoyu-study` |
 | `IdentityService__Authority` | `http://ruoyu-identity:5002`（JWT 签发方，用于 OIDC discovery） |
+
+> 数据库连接不再通过 `ConnectionStrings__Default` 环境变量注入，改由 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）在运行时合成。
 
 ## 4. 端口分配
 
@@ -164,16 +176,17 @@ cd src/services/ruoyu.questionBank
 ```
 QuestionBank Service starting
 Listening: http://+:5007
-Database: PostgreSQL ruoyu-postgres:5432/ruoyu_study_questionbank
-OSS: ruoyu-seaweedfs:8333/ruoyu-study
+Database: PostgreSQL <Host>:<Port>/<Database>   # 或 Database: SQLite
+Effective configuration diagnostics: PostgreSqlHost=..., PostgreSqlPort=..., PostgreSqlUsername=..., PostgreSqlPassword=..., DatabaseName=...
+OSS: <Endpoint>/<Bucket>
 ```
 
-数据库类型固定为 PostgreSQL，启动日志直接记录连接信息。
+数据库类型由连接串内容决定：包含 `Host=`/`Server=` 走 PostgreSQL，否则走 SQLite 回退。启动日志同时输出 Effective configuration diagnostics，反映 Consul 注入的 `PostgreSql:*` 与 `Database:Name` 实际值（密码脱敏）。
 
 ## 6. 依赖服务
 
 | 依赖 | 是否必需 | 启动失败行为 |
 |------|----------|--------------|
-| PostgreSQL | 是 | 启动失败 |
+| PostgreSQL | 生产必需 | 本地 dev 缺失时回退 SQLite（`data/sqlite/ruoyu_study_questionbank.db`）；生产环境 Consul 未注入 `PostgreSql:*` 时同样回退 SQLite |
 | SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |
 | QuantumZhou.Identity | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |

@@ -19,7 +19,7 @@ pipeline {
     }
 
     environment {
-        REPO_DIR         = '/mnt/data1/Ruoyu.Study'
+        REPO_DIR         = "${env.REPO_DIR ?: '/srv/repo'}"
         SERVICE_DIR      = "${env.REPO_DIR}/src/services/ruoyu.questionBank"
         BUILD_SCRIPT     = "${env.REPO_DIR}/script/build-script/06-questionbank.build.sh"
         START_SCRIPT     = "${env.SERVICE_DIR}/start.sh"

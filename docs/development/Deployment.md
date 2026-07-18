@@ -7,7 +7,7 @@
 1. **数据库**：PostgreSQL（生产，由 Consul 共享配置注入）；本地开发可回退 SQLite
 2. **对象存储**：SeaweedFS（S3 端口 8333）
 3. **认证服务**：QuantumZhou.Identity（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
-4. **网络端口**：HTTP 5007
+4. **网络端口**：HTTP 5007（容器内固定，host 映射端口由 `start.sh` 的 `Port` 变量控制）
 
 ### 1.2 启动方式
 
@@ -152,22 +152,22 @@ cd src/services/ruoyu.questionBank
 | 变量 | 值 |
 |------|-----|
 | `TZ` | `Asia/Shanghai` |
-| `ASPNETCORE_URLS` | `http://+:5007` |
 | `Oss__Endpoint` | `ruoyu-seaweedfs:8333` |
 | `Oss__AccessKey` | `seaweedfs_admin` |
 | `Oss__SecretKey` | `seaweedfs_admin` |
 | `Oss__BucketName` | `ruoyu-study` |
 | `IdentityService__Authority` | `http://ruoyu-identity:5002`（JWT 签发方，用于 OIDC discovery） |
 
+> HTTP 监听端口固定为 5007（`Program.cs` 硬编码），不再通过 `ASPNETCORE_URLS` 环境变量控制。host 端口映射通过 `start.sh` 的 `Port` 变量控制（`-p ${Port}:5007`）。
+>
 > 数据库连接不再通过 `ConnectionStrings__Default` 环境变量注入，改由 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）在运行时合成。
 
 ## 4. 端口分配
 
 | 端口 | 协议 | 用途 |
 |------|------|------|
-| 5007 | HTTP | WebAPI 入口 |
-| 5007 | HTTP | Swagger UI（仅开发环境） |
-| 5007 | HTTP | 健康检查 `/health` |
+| 5007（容器内固定） | HTTP | WebAPI 入口 + Swagger UI（仅开发环境） + 健康检查 `/health` + 管理前端 SPA |
+| host 映射端口 | — | host 访问容器服务的映射端口（`start.sh` 的 `Port` 变量，`-p ${Port}:5007`） |
 
 ## 5. 日志
 

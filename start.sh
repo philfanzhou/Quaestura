@@ -6,8 +6,9 @@ IMAGE_TAG="20260501"
 IMAGE_NAME="ruoyu.study.questionbank:${IMAGE_TAG}"
 CONTAINER_NAME="ruoyu-questionbank"
 NETWORK_NAME="ruoyu-net"
-
-LISTEN_URL="http://+:5007"
+# HTTP listen port is hardcoded to 5007 inside the container (Program.cs).
+# Port is the host port mapped to the container's 5007.
+Port="5007"
 
 CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR:-host.docker.internal:8500}"
 CONSUL_TOKEN="${CONSUL_TOKEN:-}"
@@ -30,8 +31,8 @@ docker run -d \
   --restart unless-stopped \
   --network "$NETWORK_NAME" \
   --add-host=host.docker.internal:host-gateway \
+  -p "${Port}:5007" \
   -e TZ=Asia/Shanghai \
-  -e ASPNETCORE_URLS="${LISTEN_URL}" \
   -e CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR}" \
   -e CONSUL_TOKEN="${CONSUL_TOKEN}" \
   -e Database__Name="${DB_NAME}" \

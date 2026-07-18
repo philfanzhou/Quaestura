@@ -34,7 +34,6 @@ RUN dotnet publish "src/services/ruoyu.questionBank/src/Host/Ruoyu.Study.Questio
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 EXPOSE 5007
-ENV ASPNETCORE_URLS=http://+:5007
 COPY --from=build /app/publish .
 
 ENTRYPOINT ["dotnet", "Ruoyu.Study.QuestionBank.Host.dll"]

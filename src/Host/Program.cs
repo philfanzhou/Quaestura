@@ -35,8 +35,9 @@ builder.Host.UseRuoyuSerilog("Ruoyu.Study.QuestionBank");
 
 var config = builder.Configuration;
 
-// HTTP port for the only listener (single-port deployment: API + SPA on 5007)
-var httpPort = 5007;
+// HTTP listen port is hardcoded to 5007 (not configurable via ASPNETCORE_URLS).
+// host port mapping is controlled by start.sh: -p ${Port}:5007.
+const int httpPort = 5007;
 
 // Get database connection string (Consul-shared PostgreSQL with local fallback)
 var connectionString = SharedPostgreSqlConnectionStringFactory.BuildOrFallback(

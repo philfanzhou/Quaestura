@@ -4,7 +4,7 @@
 
 ### 1.1 启动要求
 
-1. **数据库**：PostgreSQL（生产，由 Consul 共享配置注入）；本地开发可回退 SQLite
+1. **数据库**：PostgreSQL（由 Consul 共享配置注入）
 2. **对象存储**：SeaweedFS（S3 端口 8333）
 3. **认证服务**：QuantumZhou.Identity（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
 4. **网络端口**：HTTP 5007（容器内固定，host 映射端口由 `start.sh` 的 `Port` 变量控制）
@@ -61,7 +61,7 @@ open http://localhost:5007/swagger
 }
 ```
 
-连接串包含 `Host=` 或 `Server=` 时走 PostgreSQL（`UseNpgsql`），否则走 SQLite 回退（`Data Source=data/sqlite/ruoyu_study_questionbank.db`）。生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 的 `PostgreSql:*` 键覆盖，无需写入 `appsettings.json`。
+连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建：优先从 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）合成生产连接串，无法合成时回退到本地 `ConnectionStrings:Default`。生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 的 `PostgreSql:*` 键覆盖，无需写入 `appsettings.json`。
 
 数据库表由 `DatabaseInitializer` 启动时自动创建（`CREATE TABLE IF NOT EXISTS`），无需手动建库。
 
@@ -176,17 +176,17 @@ cd src/services/ruoyu.questionBank
 ```
 QuestionBank Service starting
 Listening: http://+:5007
-Database: PostgreSQL <Host>:<Port>/<Database>   # 或 Database: SQLite
+Database: PostgreSQL <Host>:<Port>/<Database>
 Effective configuration diagnostics: PostgreSqlHost=..., PostgreSqlPort=..., PostgreSqlUsername=..., PostgreSqlPassword=..., DatabaseName=...
 OSS: <Endpoint>/<Bucket>
 ```
 
-数据库类型由连接串内容决定：包含 `Host=`/`Server=` 走 PostgreSQL，否则走 SQLite 回退。启动日志同时输出 Effective configuration diagnostics，反映 Consul 注入的 `PostgreSql:*` 与 `Database:Name` 实际值（密码脱敏）。
+数据库固定使用 PostgreSQL，连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建。启动日志同时输出 Effective configuration diagnostics，反映 Consul 注入的 `PostgreSql:*` 与 `Database:Name` 实际值（密码脱敏）。
 
 ## 6. 依赖服务
 
 | 依赖 | 是否必需 | 启动失败行为 |
 |------|----------|--------------|
-| PostgreSQL | 生产必需 | 本地 dev 缺失时回退 SQLite（`data/sqlite/ruoyu_study_questionbank.db`）；生产环境 Consul 未注入 `PostgreSql:*` 时同样回退 SQLite |
+| PostgreSQL | 必需 | 连接失败时服务启动失败（`SharedPostgreSqlConnectionStringFactory` 无法构建连接串或数据库不可达） |
 | SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |
 | QuantumZhou.Identity | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |

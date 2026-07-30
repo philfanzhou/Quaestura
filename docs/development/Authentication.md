@@ -6,7 +6,9 @@
 
 ### 1.1 JWT Bearer
 
-服务使用 **JWT Bearer Token** 认证，信任由 [QuantumZhou.Identity](../../../QuantumZhou.Identity/) 服务签发的 JWT。
+服务使用 **JWT Bearer Token** 认证，信任由独立
+[QuantumZhou.Identity](https://github.com/philfanzhou/QuantumZhou.Identity)
+服务签发的 JWT。
 
 | 项 | 值 |
 |----|----|

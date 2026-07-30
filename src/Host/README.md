@@ -1,6 +1,6 @@
 # QuestionBank 部署与运行指南
 
-本文档涵盖了项目环境搭建、配置要求和 Docker 容器部署等指南。完整规范见 [`docs/development/Deployment.md`](../docs/development/Deployment.md)。
+本文档涵盖了项目环境搭建、配置要求和 Docker 容器部署等指南。完整规范见 [`docs/development/Deployment.md`](../../docs/development/Deployment.md)。
 
 ## 1. 快速启动
 
@@ -14,7 +14,7 @@
 - **HTTP**: 5007
 - **Swagger UI**: http://localhost:5007/swagger（仅开发环境）
 - **健康检查**: http://localhost:5007/health
-- **WebUI（管理前端）**: http://localhost:5007/（与 API 同端口同进程，详见 [`../frontend/docs/admin-frontend-spec.md`](../frontend/docs/admin-frontend-spec.md)）
+- **WebUI（管理前端）**: http://localhost:5007/（与 API 同端口同进程，详见 [`frontend/docs/admin-frontend-spec.md`](../../frontend/docs/admin-frontend-spec.md)）
 
 ### 1.3 配置项
 
@@ -47,7 +47,7 @@
 
 ## 2. 端点清单
 
-完整端点规范见 [`docs/overview/ApiSpec.md`](../docs/overview/ApiSpec.md)。
+完整端点规范见 [`docs/overview/ApiSpec.md`](../../docs/overview/ApiSpec.md)。
 
 ### 题目管理
 

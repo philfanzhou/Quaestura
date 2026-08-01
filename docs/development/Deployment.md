@@ -82,17 +82,19 @@ open http://localhost:5007/swagger
 ```json
 {
   "Oss": {
-    "Endpoint": "ruoyu-seaweedfs:8333",
+    "InternalEndpoint": "ruoyu-seaweedfs:8333",
+    "InternalSecure": false,
     "AccessKey": "seaweedfs_admin",
     "SecretKey": "seaweedfs_admin",
     "BucketName": "ruoyu-study",
-    "PublicEndpoint": "https://ry.zhoufan.asia"
+    "PublicBaseUrl": "https://ry.zhoufan.asia/oss"
   }
 }
 ```
 
-- `Endpoint`：内部通信地址（容器内用容器名 `ruoyu-seaweedfs:8333`，本地用 `localhost:8333`）
-- `PublicEndpoint`：外部访问地址，用于生成预签名 URL
+- `InternalEndpoint`：后端实际连接地址，格式为 `host:port`；同机容器可用 `ruoyu-seaweedfs:8333`，独立服务器使用 IP 和发布端口
+- `InternalSecure`：内部连接是否使用 HTTPS
+- `PublicBaseUrl`：浏览器使用的公共预签名基础 URL；当前 `/oss` 入口由 User Web Nginx 代理
 - `AccessKey` / `SecretKey`：S3 凭证
 
 启动时会自动检测 OSS 连通性（`Program.cs` 中的 `OssService.CheckConnectivityAsync`），失败时输出 Warning 但不阻断启动。
@@ -143,7 +145,7 @@ cd src/services/ruoyu.questionBank
 ./start.sh
 ```
 
-容器使用 `ruoyu-net` 网络，通过容器名解析其他服务（`ruoyu-postgres`、`ruoyu-seaweedfs`）。
+容器使用 `ruoyu-net` 网络访问同机服务；SeaweedFS 也可通过 Consul 配置的独立服务器 IP 和端口访问。
 
 ### 3.3 环境变量
 
@@ -152,10 +154,8 @@ cd src/services/ruoyu.questionBank
 | 变量 | 值 |
 |------|-----|
 | `TZ` | `Asia/Shanghai` |
-| `Oss__Endpoint` | `ruoyu-seaweedfs:8333` |
-| `Oss__AccessKey` | `seaweedfs_admin` |
-| `Oss__SecretKey` | `seaweedfs_admin` |
-| `Oss__BucketName` | `ruoyu-study` |
+| `CONSUL_HTTP_ADDR` | Consul 地址；OSS 配置从 `config/ruoyu/shared.json` 加载 |
+| `CONSUL_TOKEN` | Consul ACL Token |
 | `IdentityService__Authority` | `http://ruoyu-identity:5002`（JWT 签发方，用于 OIDC discovery） |
 
 > HTTP 监听端口固定为 5007（`Program.cs` 硬编码），不再通过 `ASPNETCORE_URLS` 环境变量控制。host 端口映射通过 `start.sh` 的 `Port` 变量控制（`-p ${Port}:5007`）。
@@ -178,7 +178,7 @@ QuestionBank Service starting
 Listening: http://+:5007
 Database: PostgreSQL <Host>:<Port>/<Database>
 Effective configuration diagnostics: PostgreSqlHost=..., PostgreSqlPort=..., PostgreSqlUsername=..., PostgreSqlPassword=..., DatabaseName=...
-OSS: <Endpoint>/<Bucket>
+OSS: <InternalEndpoint>/<Bucket>
 ```
 
 数据库固定使用 PostgreSQL，连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建。启动日志同时输出 Effective configuration diagnostics，反映 Consul 注入的 `PostgreSql:*` 与 `Database:Name` 实际值（密码脱敏）。

@@ -26,11 +26,12 @@
     "Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
   },
   "Oss": {
-    "Endpoint": "ruoyu-seaweedfs:8333",
+    "InternalEndpoint": "ruoyu-seaweedfs:8333",
+    "InternalSecure": false,
     "AccessKey": "seaweedfs_admin",
     "SecretKey": "seaweedfs_admin",
     "BucketName": "ruoyu-study",
-    "PublicEndpoint": "https://ry.zhoufan.asia"
+    "PublicBaseUrl": "https://ry.zhoufan.asia/oss"
   }
 }
 ```

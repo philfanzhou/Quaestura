@@ -49,9 +49,7 @@ builder.Services.AddDbContext<QuestionBankDbContext>(options =>
 });
 
 var ossOptions = config.GetSection("Oss").Get<OssOptions>() ?? new OssOptions();
-builder.Services.AddSingleton<IOssService>(new S3OssService(
-    ossOptions.Endpoint, ossOptions.AccessKey, ossOptions.SecretKey, ossOptions.BucketName,
-    publicEndpoint: ossOptions.PublicEndpoint));
+builder.Services.AddSingleton<IOssService>(new S3OssService(ossOptions));
 
 // Register domain services
 builder.Services.AddScoped<IQuestionService, QuestionService>();
@@ -114,7 +112,7 @@ app.Logger.LogInformation(
     StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Username"]),
     StartupDiagnosticsFormatter.SummarizePassword(builder.Configuration["PostgreSql:Password"]),
     StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["Database:Name"]));
-app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.Endpoint, ossOptions.BucketName);
+app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.InternalEndpoint, ossOptions.BucketName);
 app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 
 // Apply database initialization

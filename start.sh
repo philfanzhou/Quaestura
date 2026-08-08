@@ -40,4 +40,3 @@ docker run -d \
   "$IMAGE_NAME"
 
 echo "${CONTAINER_NAME} started"
-docker logs -f -t "$CONTAINER_NAME"

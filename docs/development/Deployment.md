@@ -1,4 +1,4 @@
-# 部署与运行
+﻿# 部署与运行
 
 ## 1. 快速启动
 
@@ -6,7 +6,7 @@
 
 1. **数据库**：PostgreSQL（由 Consul 共享配置注入）
 2. **对象存储**：SeaweedFS（S3 端口 8333）
-3. **认证服务**：QuantumZhou.Identity（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
+3. **认证服务**：SignaCore（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
 4. **网络端口**：HTTP 5007（容器内固定，host 映射端口由 `start.sh` 的 `Port` 变量控制）
 
 ### 1.2 启动方式
@@ -101,23 +101,28 @@ open http://localhost:5007/swagger
 
 ### 2.3 认证服务（JWT）
 
-服务通过 JWT Bearer Token 认证，信任由 QuantumZhou.Identity 签发的 JWT。详见 [Authentication.md](./Authentication.md)。
+服务通过 JWT Bearer Token 认证，信任由 SignaCore 签发的 JWT。详见 [Authentication.md](./Authentication.md)。
 
 ```json
 {
   "IdentityService": {
-    "Authority": "http://ruoyu-identity:8080",
+    "Authority": "https://identity.test.ruoyu.study",
+    "Issuer": "https://identity.test.ruoyu.study",
+    "AdditionalValidIssuers": ["QuantumZhou.Identity"],
     "Audience": "QuantumZhou.microservices",
-    "RequireHttpsMetadata": false
+    "RequireHttpsMetadata": true,
+    "ClockSkewSeconds": 30
   }
 }
 ```
 
 - `Authority`：Identity 服务基础 URL，用于 OIDC discovery（拉取 `/.well-known/openid-configuration` 和 `/.well-known/jwks`）
-- `Audience`：预期 audience，默认 `QuantumZhou.microservices`
-- `RequireHttpsMetadata`：是否强制 HTTPS 元数据，开发环境可设为 false
+- `Issuer`：新 Token 的精确签发者；迁移期间旧值只放在 `AdditionalValidIssuers`
+- `Audience`：预期 audience，必须显式配置
+- `RequireHttpsMetadata`：默认 `true`；只有 SignaCore 数据库设置也显式允许 HTTP 时才设为 `false`，不按环境名或地址推断
+- `ClockSkewSeconds`：Token 时间校验容差
 
-**必需**：`IdentityService:Authority` 必须配置，否则服务启动时抛 `InvalidOperationException`。
+**必需**：Authority、Issuer、Audience、RequireHttpsMetadata 与 ClockSkewSeconds 都必须形成完整信任快照；缺失配置或 HTTP 未显式 opt-in 会使服务启动失败。
 
 签名公钥通过 OIDC discovery 自动获取，无需手动配置密钥。
 
@@ -156,7 +161,7 @@ cd src/services/ruoyu.questionBank
 | `TZ` | `Asia/Shanghai` |
 | `CONSUL_HTTP_ADDR` | Consul 地址；OSS 配置从 `config/ruoyu/shared.json` 加载 |
 | `CONSUL_TOKEN` | Consul ACL Token |
-| `IdentityService__Authority` | `http://ruoyu-identity:5002`（JWT 签发方，用于 OIDC discovery） |
+| `IdentityService__Authority` | 通常不由 `start.sh` 注入；从 Consul 读取稳定 HTTPS Authority |
 
 > HTTP 监听端口固定为 5007（`Program.cs` 硬编码），不再通过 `ASPNETCORE_URLS` 环境变量控制。host 端口映射通过 `start.sh` 的 `Port` 变量控制（`-p ${Port}:5007`）。
 >
@@ -189,4 +194,4 @@ OSS: <InternalEndpoint>/<Bucket>
 |------|----------|--------------|
 | PostgreSQL | 必需 | 连接失败时服务启动失败（`SharedPostgreSqlConnectionStringFactory` 无法构建连接串或数据库不可达） |
 | SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |
-| QuantumZhou.Identity | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |
+| SignaCore | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |

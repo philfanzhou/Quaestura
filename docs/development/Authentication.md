@@ -1,4 +1,4 @@
-# 认证与授权规范
+﻿# 认证与授权规范
 
 本文件定义 `ruoyu.questionBank` 服务的认证（Authentication）与授权（Authorization）规则。所有 HTTP 端点必须遵循本规范。
 
@@ -7,13 +7,13 @@
 ### 1.1 JWT Bearer
 
 服务使用 **JWT Bearer Token** 认证，信任由独立
-[QuantumZhou.Identity](https://github.com/philfanzhou/QuantumZhou.Identity)
+[SignaCore](https://github.com/philfanzhou/SignaCore)
 服务签发的 JWT。
 
 | 项 | 值 |
 |----|----|
 | 算法 | RS256（RSA 2048 非对称） |
-| Issuer | `QuantumZhou.Identity` |
+| Issuer | `https://identity.test.ruoyu.study`（按环境配置） |
 | Audience | `QuantumZhou.microservices` |
 | 公钥分发 | OIDC discovery（`/.well-known/openid-configuration`）+ JWKS（`/.well-known/jwks`） |
 | 过期容差 | 30 秒（ClockSkew） |
@@ -24,9 +24,12 @@
 
 | 配置键 | 环境变量 | 必填 | 说明 |
 |--------|---------|------|------|
-| `IdentityService:Authority` | `IdentityService__Authority` | 是 | Identity 服务 URL（如 `http://ruoyu-identity:8080`） |
-| `IdentityService:Audience` | `IdentityService__Audience` | 否 | 默认 `QuantumZhou.microservices` |
-| `IdentityService:RequireHttpsMetadata` | `IdentityService__RequireHttpsMetadata` | 否 | 默认 `false` |
+| `IdentityService:Authority` | `IdentityService__Authority` | 是 | OIDC metadata URL；默认 HTTPS，HTTP 部署必须显式 opt-in |
+| `IdentityService:Issuer` | `IdentityService__Issuer` | 是 | 新 Token 的精确 Issuer，不从 Authority 推导 |
+| `IdentityService:AdditionalValidIssuers` | `IdentityService__AdditionalValidIssuers__0` | 否 | 迁移窗口内允许的旧 Issuer；迁移结束后删除 |
+| `IdentityService:Audience` | `IdentityService__Audience` | 是 | 必须与 SignaCore App 的 Shared Audience 一致 |
+| `IdentityService:RequireHttpsMetadata` | `IdentityService__RequireHttpsMetadata` | 是 | 默认 `true`；仅在 SignaCore 也显式允许 HTTP 时设为 `false` |
+| `IdentityService:ClockSkewSeconds` | `IdentityService__ClockSkewSeconds` | 是 | Token 时间校验容差，当前为 30 秒 |
 
 ### 1.3 JWT Claim 规范
 
@@ -108,12 +111,12 @@
 
 ### 4.1 单元测试
 
-- `ClaimsPrincipalExtensions` / `RoleConstants` 的测试由 `ruoyu.common` 项目覆盖（245 个 UT 全过）
-- Tag endpoint 鉴权逻辑（角色校验 + 归属校验）目前通过编译时类型检查和代码 review 保证；端到端鉴权测试作为后续技术债
+- `ClaimsPrincipalExtensions`、角色映射、Issuer/Audience/签名/时间边界和 Cookie/Header 优先级由 `ruoyu.common` 测试覆盖
+- `JwtBearerApiTests` 通过实际 JwtBearer 管线覆盖受保护 API 的有效 Token、未知 Issuer 401，以及 `/health` 匿名访问
 
 ### 4.2 集成测试
 
-如需端到端测试鉴权，使用 `WebApplicationFactory<Program>` + 测试用 JWT（参考 `ruoyu.common` 的 `TestAuthHandler`）。
+API 级鉴权测试使用 `WebApplicationFactory<Program>` 和测试签名密钥，不替换 JwtBearer Handler；业务 Controller 的细粒度授权测试仍可使用测试认证 Handler。
 
 ## 5. 历史背景
 

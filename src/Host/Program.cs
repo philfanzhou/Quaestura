@@ -68,10 +68,10 @@ builder.Services.AddMemoryCache(options =>
     options.SizeLimit = 1024;
 });
 
-// JWT Bearer authentication (validates tokens issued by QuantumZhou.Identity).
+// JWT Bearer authentication uses the shared IdentityService trust contract.
 // FallbackPolicy = RequireAuthenticatedUser, so every /admin/* endpoint requires
 // a valid JWT unless explicitly decorated with [AllowAnonymous].
-builder.Services.AddRuoyuJwtBearer(config);
+builder.Services.AddRuoyuJwtBearer(config, builder.Environment);
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -87,10 +87,19 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+var identityTrust = app.Services
+    .GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityAuthenticationOptions>>()
+    .Value;
 
 var appTitle = config["APP_TITLE"] ?? "Ruoyu.Study.QuestionBank.Admin";
 
 app.Logger.LogInformation("QuestionBank Service starting");
+app.Logger.LogInformation(
+    "Identity trust: Authority={Authority}, Issuers={Issuers}, Audience={Audience}, RequireHttpsMetadata={RequireHttpsMetadata}",
+    identityTrust.Authority,
+    string.Join(",", identityTrust.GetValidIssuers()),
+    identityTrust.Audience,
+    identityTrust.RequireHttpsMetadata);
 app.Logger.LogInformation(
     "Consul startup diagnostics: Address={Address}, Token={Token}, Source={Source}, KeyCount={KeyCount}, Prefixes={Prefixes}, LastError={LastError}",
     $"{consulOptions.Host}:{consulOptions.Port}",
@@ -120,12 +129,20 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<QuestionBankDbContext>();
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-    await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory);
+    if (dbContext.Database.IsRelational())
+    {
+        await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory);
+    }
+    else
+    {
+        await dbContext.Database.EnsureCreatedAsync();
+    }
 }
 
 // OSS connectivity check
-using (var scope = app.Services.CreateScope())
+if (!app.Environment.IsEnvironment("Testing"))
 {
+    using var scope = app.Services.CreateScope();
     var ossService = scope.ServiceProvider.GetRequiredService<IOssService>();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var connected = await ossService.CheckConnectivityAsync();
@@ -212,3 +229,5 @@ app.MapWhen(
     });
 
 app.Run();
+
+public partial class Program;

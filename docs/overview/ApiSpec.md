@@ -1,4 +1,4 @@
-# QuestionBank API 规范
+﻿# QuestionBank API 规范
 
 本文档定义 `ruoyu.questionBank` 服务的完整 HTTP API。所有端点统一返回结构化 JSON 响应，遵循 [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md) 规范。
 
@@ -12,7 +12,7 @@
 Authorization: Bearer <jwt-token>
 ```
 
-JWT 由 QuantumZhou.Identity 签发，包含 `sub`（userId）和 `role`（teacher/assistant/admin/student）claim。服务端从 JWT 读取 userId，**请求体不再包含 userId 字段**。
+JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistant/admin/student）claim。服务端从 JWT 读取 userId，**请求体不再包含 userId 字段**。
 
 未提供或提供无效 JWT → 401 Unauthorized（由认证中间件返回）。
 

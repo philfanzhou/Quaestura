@@ -102,9 +102,15 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
 
         if (orphanedIds.Count > 0)
         {
-            await _dbContext.Knowledges
+            var orphanedKnowledge = await _dbContext.Knowledges
                 .Where(k => orphanedIds.Contains(k.Id))
-                .ExecuteUpdateAsync(s => s.SetProperty(k => k.IsReferenced, false));
+                .ToListAsync();
+            foreach (var knowledge in orphanedKnowledge)
+            {
+                knowledge.IsReferenced = false;
+            }
+
+            await _dbContext.SaveChangesAsync();
         }
 
         return true;

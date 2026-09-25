@@ -1,12 +1,12 @@
 # 单元测试规范
 
-本文件描述 `ruoyu.questionBank` 服务的单元测试项目结构、覆盖范围与约定。
+本文件描述 `Quaestura` 服务的单元测试项目结构、覆盖范围与约定。
 
 ## 测试项目结构
 
 | 项目 | 路径 | 覆盖范围 |
 |------|------|---------|
-| `QuestionBank.Test` | `src/Tests/` | Domain 层服务 + Service 层 Validation 组件 + 端点集成测试（可选） |
+| `Quaestura.Tests` | `src/Tests/` | Domain 层服务 + Service 层 Validation 组件 + 端点集成测试（可选） |
 
 ## 测试框架与依赖
 
@@ -112,13 +112,13 @@ Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 Web
 
 | 场景 | 期望 |
 |------|------|
-| 学生调用 `POST /admin/tags` | 403 `QUESTIONBANK_FORBIDDEN` |
+| 学生调用 `POST /admin/tags` | 403 `QUAESTURA_FORBIDDEN` |
 | 教师调用 `POST /admin/tags`（创建） | 200 成功 |
 | 助教调用 `POST /admin/tags`（创建） | 200 成功 |
 | 教师更新自己创建的 tag | 200 成功 |
-| 教师更新他人创建的 tag | 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
+| 教师更新他人创建的 tag | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
 | 助教删除自己创建的 tag（usage_count=0） | 200 成功 |
-| 助教删除他人创建的 tag | 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
+| 助教删除他人创建的 tag | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
 | 学生调用 `GET /admin/tags` | 200 成功（学生可查询） |
 | 学生调用 `POST /admin/question-tags/batch-tag` | 200 成功（学生可打标） |
 
@@ -151,8 +151,8 @@ public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Progra
 ## 运行方式
 
 ```bash
-cd src/services/ruoyu.questionBank/src
-dotnet test Tests/QuestionBank.Test.csproj --configuration Release
+cd src
+dotnet test Tests/Quaestura.Tests.csproj --configuration Release
 ```
 
 ## 约定

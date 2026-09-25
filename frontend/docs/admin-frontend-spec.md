@@ -1,12 +1,12 @@
-# QuestionBank Admin Frontend Spec
+# Quaestura Admin Frontend Spec
 
 本文档定义题库管理前端的技术栈、目录结构、路由、与后端 API 的集成方式。
 
 ## 1. 概述
 
-管理前端是 Vue 3 单页应用,与 QuestionBank 后端服务在**同一个 Docker 容器**中运行(端口 5007 同时提供 API 和 SPA)。**未集成鉴权**(沿用内网环境假设)。
+管理前端是 Vue 3 单页应用,与 Quaestura 后端服务在**同一个 Docker 容器**中运行(端口 5007 同时提供 API 和 SPA)。**未集成鉴权**(沿用内网环境假设)。
 
-**目录位置**:`src/services/ruoyu.questionBank/frontend/`(与后端服务同目录,参考 doclibrary 前端布局)。
+**目录位置**:`frontend/`(与后端服务同目录,参考 doclibrary 前端布局)。
 
 ## 2. 技术栈
 
@@ -27,7 +27,7 @@
 ## 3. 目录结构
 
 ```
-src/services/ruoyu.questionBank/frontend/     # 与后端服务同目录
+frontend/     # 与后端服务同目录
 ├── package.json
 ├── package-lock.json
 ├── vite.config.ts                            # 端口 8091,proxy /admin → :5007
@@ -139,7 +139,7 @@ server: {
 ### 9.1 Dev
 
 ```bash
-cd src/services/ruoyu.questionBank/frontend
+cd frontend
 npm install
 npm run dev   # Vite dev server :8091,代理 /admin 到 :5007
 ```
@@ -147,27 +147,27 @@ npm run dev   # Vite dev server :8091,代理 /admin 到 :5007
 ### 9.2 生产构建
 
 ```bash
-cd src/services/ruoyu.questionBank/frontend
+cd frontend
 npm run build  # 输出 dist/,由 Dockerfile 复制到 Host/wwwroot/
 ```
 
 ### 9.3 Docker
 
 ```bash
-./script/build-script/06-questionbank.build.sh
-# 镜像:ruoyu.study.questionbank:<tag>
-# Dockerfile COPY 路径:src/services/ruoyu.questionBank/frontend/
+docker build -t quaestura:latest .
+# 镜像:quaestura:<tag>
+# Dockerfile COPY 路径:frontend/
 ```
 
 ## 10. 环境变量
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `APP_TITLE` | `Ruoyu.Study.QuestionBank.Admin` | 浏览器 tab 标题 |
+| `APP_TITLE` | `Quaestura Admin` | 浏览器 tab 标题 |
 
 ## 11. 重构记录(2026-07-04)
 
-- 路径迁移:`src/questionbank_portal/frontend/` → `src/services/ruoyu.questionBank/frontend/`
+- 路径迁移:迁出到 Quaestura 独立仓库后,前端固定在仓库根 `frontend/`(此前在 monorepo 内历经 `src/questionbank_portal/frontend/` → `src/services/ruoyu.questionBank/frontend/`)
 - 移除 element-plus / @element-plus/icons-vue 依赖
 - style.css 从 10 行扩展为完整设计系统(复用 doclibrary CSS 变量 + 通用组件类)
 - App.vue 重写:el-container/el-menu → 手写侧边栏 + router-view

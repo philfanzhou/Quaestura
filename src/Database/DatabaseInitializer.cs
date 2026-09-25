@@ -1,11 +1,11 @@
 using System.Threading.Tasks;
-using Ruoyu.Study.Common.Database;
+using Quaestura.Common.Database;
 
-namespace Ruoyu.Study.QuestionBank.Database;
+namespace Quaestura.Database;
 
 public static class DatabaseInitializer
 {
-    public static async Task InitializeAsync(QuestionBankDbContext context, Microsoft.Extensions.Logging.ILoggerFactory loggerFactory)
+    public static async Task InitializeAsync(QuaesturaDbContext context, Microsoft.Extensions.Logging.ILoggerFactory loggerFactory)
     {
         await Common.Database.DatabaseInitializer.InitializeAsync(context, loggerFactory, GetTableCreationSql);
     }

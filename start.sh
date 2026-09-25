@@ -2,10 +2,10 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-IMAGE_TAG="20260501"
-IMAGE_NAME="ruoyu.study.questionbank:${IMAGE_TAG}"
-CONTAINER_NAME="ruoyu-questionbank"
-NETWORK_NAME="ruoyu-net"
+IMAGE_TAG="${IMAGE_TAG:-latest}"
+IMAGE_NAME="quaestura:${IMAGE_TAG}"
+CONTAINER_NAME="quaestura"
+NETWORK_NAME="quaestura-net"
 # HTTP listen port is hardcoded to 5007 inside the container (Program.cs).
 # Port is the host port mapped to the container's 5007.
 Port="5007"
@@ -13,7 +13,7 @@ Port="5007"
 CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR:-host.docker.internal:8500}"
 CONSUL_TOKEN="${CONSUL_TOKEN:-}"
 
-DB_NAME="ruoyu_study_questionbank"
+DB_NAME="quaestura"
 
 docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
 

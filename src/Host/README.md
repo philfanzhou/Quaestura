@@ -1,4 +1,4 @@
-# QuestionBank 部署与运行指南
+# Quaestura 部署与运行指南
 
 本文档涵盖了项目环境搭建、配置要求和 Docker 容器部署等指南。完整规范见 [`docs/development/Deployment.md`](../../docs/development/Deployment.md)。
 
@@ -23,7 +23,7 @@
 ```json
 {
   "ConnectionStrings": {
-    "Default": "Host=ruoyu-postgres;Port=5432;Database=ruoyu_study_questionbank;Username=postgres;Password=postgres;"
+    "Default": "Host=ruoyu-postgres;Port=5432;Database=quaestura;Username=postgres;Password=postgres;"
   },
   "Oss": {
     "InternalEndpoint": "ruoyu-seaweedfs:8333",
@@ -36,11 +36,11 @@
 }
 ```
 
-`APP_TITLE` 配置（**可选**，默认 `Ruoyu.Study.QuestionBank.Admin`）：
+`APP_TITLE` 配置（**可选**，默认 `Quaestura Admin`）：
 
 ```json
 {
-  "APP_TITLE": "ruoyu-questionbank"
+  "APP_TITLE": "quaestura"
 }
 ```
 
@@ -110,17 +110,17 @@ SPA fallback 由 ASP.NET Core `MapWhen` 实现（详见 `Program.cs`），仅在
 
 ### 4.1 部署 SeaweedFS
 
-SeaweedFS 部署脚本见仓库根目录 `script/env-script/02-seaweedfs/start.sh`。
+Quaestura 依赖一个 S3 兼容对象存储（如 SeaweedFS，S3 端口 8333）存放题目图片，其部署不属于本仓库；连接信息经 `Oss:*` 配置或 Consul KV 注入。
 
 ### 4.2 构建与部署
 
-Docker 镜像是**单 docker 同时包含 backend + questionbank_portal/frontend**（4 阶段多阶段构建），使用仓库统一的构建脚本：
+Docker 镜像是**单 docker 同时包含 backend + frontend**（多阶段构建，`Dockerfile` 位于仓库根目录，build context 为仓库根）：
 
 ```bash
-./script/build-script/06-questionbank.build.sh
+docker build -t quaestura:latest .
 ```
 
-部署网络：`ruoyu-net` 桥接网络，所有容器通过容器名解析通信。
+部署网络：`start.sh` 默认使用 `quaestura-net` 桥接网络；与 Ruoyu.Study 平台同机部署时可改用平台网络，SeaweedFS 等依赖也可通过 Consul 配置的独立服务器地址访问。
 
 ### 4.3 本地开发
 

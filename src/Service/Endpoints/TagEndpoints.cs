@@ -6,13 +6,13 @@ using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Ruoyu.Study.Common.Authentication;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Domain.Services;
-using Ruoyu.Study.QuestionBank.Service.Middleware;
-using Ruoyu.Study.QuestionBank.Service.Models;
+using Quaestura.Common.Authentication;
+using Quaestura.Database.Entity;
+using Quaestura.Domain.Services;
+using Quaestura.Service.Middleware;
+using Quaestura.Service.Models;
 
-namespace Ruoyu.Study.QuestionBank.Service.Endpoints;
+namespace Quaestura.Service.Endpoints;
 
 public static class TagEndpoints
 {
@@ -75,7 +75,7 @@ public static class TagEndpoints
         {
             throw new ForbiddenException(
                 "Only staff members can create or modify tags",
-                "QUESTIONBANK_FORBIDDEN");
+                "QUAESTURA_FORBIDDEN");
         }
         var userId = user.GetRequiredUserId();
 
@@ -101,11 +101,11 @@ public static class TagEndpoints
             if (isDuplicate)
                 throw new DomainException(
                     "Tag with same name already exists",
-                    "QUESTIONBANK_TAG_DUPLICATE",
+                    "QUAESTURA_TAG_DUPLICATE",
                     System.Net.HttpStatusCode.Conflict);
             if (!success)
                 throw new DomainException(
-                    "Create failed", "QUESTIONBANK_TAG_CREATE_FAILED",
+                    "Create failed", "QUAESTURA_TAG_CREATE_FAILED",
                     System.Net.HttpStatusCode.InternalServerError);
         }
         else
@@ -117,14 +117,14 @@ public static class TagEndpoints
             {
                 throw new ForbiddenException(
                     "You can only modify tags you created",
-                    "QUESTIONBANK_FORBIDDEN_NOT_OWNER");
+                    "QUAESTURA_FORBIDDEN_NOT_OWNER");
             }
 
             var (success, isDuplicate) = await service.UpdateAsync(tag, userId);
             if (isDuplicate)
                 throw new DomainException(
                     "Tag with same name already exists",
-                    "QUESTIONBANK_TAG_DUPLICATE",
+                    "QUAESTURA_TAG_DUPLICATE",
                     System.Net.HttpStatusCode.Conflict);
             if (!success)
                 throw new EntityNotFoundException("Tag", request.Id!);
@@ -142,7 +142,7 @@ public static class TagEndpoints
         {
             throw new ForbiddenException(
                 "Only staff members can delete tags",
-                "QUESTIONBANK_FORBIDDEN");
+                "QUAESTURA_FORBIDDEN");
         }
         var userId = user.GetRequiredUserId();
 
@@ -153,14 +153,14 @@ public static class TagEndpoints
         {
             throw new ForbiddenException(
                 "You can only delete tags you created",
-                "QUESTIONBANK_FORBIDDEN_NOT_OWNER");
+                "QUAESTURA_FORBIDDEN_NOT_OWNER");
         }
 
         var (success, isReferenced) = await service.DeleteAsync(id);
         if (isReferenced)
             throw new BusinessPreconditionException(
                 "Tag is referenced by questions and cannot be deleted",
-                "QUESTIONBANK_TAG_REFERENCED");
+                "QUAESTURA_TAG_REFERENCED");
         if (!success)
             throw new EntityNotFoundException("Tag", id.ToString());
 

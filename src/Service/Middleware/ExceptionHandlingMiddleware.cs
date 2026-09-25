@@ -7,7 +7,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Ruoyu.Study.QuestionBank.Service.Middleware;
+namespace Quaestura.Service.Middleware;
 
 /// <summary>
 /// Domain-specific exceptions thrown by services and endpoints.
@@ -28,7 +28,7 @@ public class DomainException : Exception
 public class EntityNotFoundException : DomainException
 {
     public EntityNotFoundException(string resource, string id)
-        : base($"{resource} not found", $"QUESTIONBANK_{resource.ToUpperInvariant()}_NOT_FOUND", HttpStatusCode.NotFound)
+        : base($"{resource} not found", $"QUAESTURA_{resource.ToUpperInvariant()}_NOT_FOUND", HttpStatusCode.NotFound)
     {
     }
 }
@@ -89,11 +89,11 @@ public class ExceptionHandlingMiddleware
         catch (ValidationException ex)
         {
             var detail = string.Join("; ", ex.Errors.Select(e => e.ErrorMessage));
-            await WriteError(context, HttpStatusCode.BadRequest, detail, "QUESTIONBANK_VALIDATION_FAILED");
+            await WriteError(context, HttpStatusCode.BadRequest, detail, "QUAESTURA_VALIDATION_FAILED");
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Image", StringComparison.OrdinalIgnoreCase))
         {
-            await WriteError(context, HttpStatusCode.BadRequest, ex.Message, "QUESTIONBANK_VALIDATION_INVALID_IMAGE");
+            await WriteError(context, HttpStatusCode.BadRequest, ex.Message, "QUAESTURA_VALIDATION_INVALID_IMAGE");
         }
         catch (DomainException ex)
         {
@@ -102,7 +102,7 @@ public class ExceptionHandlingMiddleware
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled exception in {Path}", context.Request.Path);
-            await WriteError(context, HttpStatusCode.InternalServerError, "Internal server error", "QUESTIONBANK_INTERNAL_ERROR");
+            await WriteError(context, HttpStatusCode.InternalServerError, "Internal server error", "QUAESTURA_INTERNAL_ERROR");
         }
     }
 

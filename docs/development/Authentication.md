@@ -1,6 +1,6 @@
 ﻿# 认证与授权规范
 
-本文件定义 `ruoyu.questionBank` 服务的认证（Authentication）与授权（Authorization）规则。所有 HTTP 端点必须遵循本规范。
+本文件定义 `Quaestura` 服务的认证（Authentication）与授权（Authorization）规则。所有 HTTP 端点必须遵循本规范。
 
 ## 1. 认证机制
 
@@ -40,7 +40,7 @@
 | `sub` / `ClaimTypes.NameIdentifier` | 当前用户 ID | `User.GetRequiredUserId()`（来自 `ClaimsPrincipalExtensions`） |
 | `role` / `ClaimTypes.Role` | 角色（teacher/assistant/admin/student） | `User.GetRoles()` / `User.IsInRole(...)` / `User.IsStaff()` |
 
-> 提取方法由 [`ruoyu.common` 认证共享组件](../../../../ruoyu.common/docs/authentication.md) 提供。
+> 提取方法由 [`Quaestura.Common` 认证共享组件](../../src/Common/Authentication/) 提供。
 
 ## 2. 授权规则
 
@@ -98,20 +98,20 @@
 {
   "success": false,
   "message": "Only staff can create tags",
-  "errorCode": "QUESTIONBANK_FORBIDDEN"
+  "errorCode": "QUAESTURA_FORBIDDEN"
 }
 ```
 
 | errorCode | HTTP | 触发场景 |
 |-----------|------|---------|
-| `QUESTIONBANK_FORBIDDEN` | 403 | 角色不足（如学生调用写接口） |
-| `QUESTIONBANK_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
+| `QUAESTURA_FORBIDDEN` | 403 | 角色不足（如学生调用写接口） |
+| `QUAESTURA_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
 
 ## 4. 测试
 
 ### 4.1 单元测试
 
-- `ClaimsPrincipalExtensions`、角色映射、Issuer/Audience/签名/时间边界和 Cookie/Header 优先级由 `ruoyu.common` 测试覆盖
+- `ClaimsPrincipalExtensions`、角色映射、Issuer/Audience/签名/时间边界和 Cookie/Header 优先级由 `Quaestura.Common`（自 `ruoyu.common` 复制的认证共享组件）提供
 - `JwtBearerApiTests` 通过实际 JwtBearer 管线覆盖受保护 API 的有效 Token、未知 Issuer 401，以及 `/health` 匿名访问
 
 ### 4.2 集成测试

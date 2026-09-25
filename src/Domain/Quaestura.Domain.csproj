@@ -11,7 +11,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Database\Ruoyu.Study.QuestionBank.Database.csproj" />
+    <ProjectReference Include="..\Database\Quaestura.Database.csproj" />
   </ItemGroup>
 
 </Project>

@@ -11,14 +11,14 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
-using Ruoyu.Study.Common.Authentication;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Domain.Services;
-using Ruoyu.Study.QuestionBank.Service.Middleware;
-using Ruoyu.Study.QuestionBank.Service.Models;
-using Ruoyu.Study.QuestionBank.Service.Validation;
+using Quaestura.Common.Authentication;
+using Quaestura.Database.Entity;
+using Quaestura.Domain.Services;
+using Quaestura.Service.Middleware;
+using Quaestura.Service.Models;
+using Quaestura.Service.Validation;
 
-namespace Ruoyu.Study.QuestionBank.Service.Endpoints;
+namespace Quaestura.Service.Endpoints;
 
 public static class QuestionEndpoints
 {
@@ -273,7 +273,7 @@ public static class QuestionEndpoints
 
         var deleted = await service.DeleteAsync(id);
         if (!deleted)
-            throw new DomainException("Delete failed", "QUESTIONBANK_QUESTION_DELETE_FAILED", System.Net.HttpStatusCode.InternalServerError);
+            throw new DomainException("Delete failed", "QUAESTURA_QUESTION_DELETE_FAILED", System.Net.HttpStatusCode.InternalServerError);
 
         // Await OSS deletion so failures are surfaced
         if (picturePaths.Count > 0)

@@ -5,11 +5,11 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.Common.Oss;
+using Quaestura.Database;
+using Quaestura.Database.Entity;
+using Quaestura.Common.Oss;
 
-namespace Ruoyu.Study.QuestionBank.Domain.Services;
+namespace Quaestura.Domain.Services;
 
 public interface IQuestionService
 {
@@ -23,9 +23,9 @@ public interface IQuestionService
 
 public class QuestionService : IQuestionService
 {
-    private readonly QuestionBankDbContext _dbContext;
+    private readonly QuaesturaDbContext _dbContext;
 
-    public QuestionService(QuestionBankDbContext dbContext)
+    public QuestionService(QuaesturaDbContext dbContext)
     {
         _dbContext = dbContext;
     }

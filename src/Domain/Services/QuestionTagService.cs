@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database;
-using Ruoyu.Study.QuestionBank.Database.Entity;
+using Quaestura.Database;
+using Quaestura.Database.Entity;
 
-namespace Ruoyu.Study.QuestionBank.Domain.Services;
+namespace Quaestura.Domain.Services;
 
 public interface IQuestionTagService
 {
@@ -39,9 +39,9 @@ public interface IQuestionTagService
 
 public class QuestionTagService : IQuestionTagService
 {
-    private readonly QuestionBankDbContext _dbContext;
+    private readonly QuaesturaDbContext _dbContext;
 
-    public QuestionTagService(QuestionBankDbContext dbContext)
+    public QuestionTagService(QuaesturaDbContext dbContext)
     {
         _dbContext = dbContext;
     }

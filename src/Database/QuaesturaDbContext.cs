@@ -1,11 +1,11 @@
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database.Entity;
+using Quaestura.Database.Entity;
 
-namespace Ruoyu.Study.QuestionBank.Database;
+namespace Quaestura.Database;
 
-public class QuestionBankDbContext : DbContext
+public class QuaesturaDbContext : DbContext
 {
-    public QuestionBankDbContext(DbContextOptions<QuestionBankDbContext> options) : base(options)
+    public QuaesturaDbContext(DbContextOptions<QuaesturaDbContext> options) : base(options)
     {
     }
 

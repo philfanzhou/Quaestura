@@ -1,0 +1,93 @@
+# IDE and OS
+.vs
+.DS_Store
+Thumbs.db
+~$*
+*.DotSettings
+*.sln.docstates
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+TestResults/
+publish/
+
+# .NET user/temp files
+*.suo
+*.user
+*.dbmdl
+*.Cache
+*.tmp
+
+# Visual Studio profiler & ReSharper
+*.psess
+*.vsp
+_ReSharper*/
+
+# Database runtime files
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Frontend shared B 级组件目录名为 data/，与上方 data/ 规则冲突，需显式取消忽略
+!src/ruoyu.common/frontend/shared/components/data/
+!src/ruoyu.common/frontend/shared/components/data/**
+
+# Frontend
+node_modules/
+dist/
+coverage/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# AI agent workspace files should be versioned
+!AGENTS.md
+!.claude/
+!.claude/**
+!.trae/
+!.trae/**
+!.agent/
+!.agent/**
+
+# Agent temporary credential helpers (hold plaintext secrets, never versioned).
+# Must stay after the .agent/** negation above, or it is overridden.
+.agent/.tmp_*
+
+# Trae IDE temporary scratch files (not versioned)
+.trae/tmp/
+
+# Local Git worktrees used for isolated agent tasks
+.worktrees/
+
+# Windows null device artifact (Git Bash treats "nul" as regular file)
+nul
+
+# Environment data directories (postgres, redis, seaweedfs, opensearch, qdrant)
+script/env-script/*/data/
+script/env-script/*/runtime/
+
+# Integration test runtime data
+tests/integration/data/
+
+# Frontend build output (generated during Docker build)
+**/wwwroot/
+
+# local git credentials (never commit)
+.git-credentials

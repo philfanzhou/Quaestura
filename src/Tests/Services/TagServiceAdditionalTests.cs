@@ -1,11 +1,11 @@
 using System;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Domain.Services;
+using Quaestura.Database.Entity;
+using Quaestura.Domain.Services;
 using Xunit;
 
-namespace QuestionBank.Test.Services;
+namespace Quaestura.Tests.Services;
 
 public class TagServiceAdditionalTests : TestBase
 {

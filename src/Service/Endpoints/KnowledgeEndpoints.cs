@@ -7,13 +7,13 @@ using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Ruoyu.Study.Common.Authentication;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Domain.Services;
-using Ruoyu.Study.QuestionBank.Service.Middleware;
-using Ruoyu.Study.QuestionBank.Service.Models;
+using Quaestura.Common.Authentication;
+using Quaestura.Database.Entity;
+using Quaestura.Domain.Services;
+using Quaestura.Service.Middleware;
+using Quaestura.Service.Models;
 
-namespace Ruoyu.Study.QuestionBank.Service.Endpoints;
+namespace Quaestura.Service.Endpoints;
 
 public static class KnowledgeEndpoints
 {
@@ -140,11 +140,11 @@ public static class KnowledgeEndpoints
             if (isDuplicate)
                 throw new DomainException(
                     "Knowledge with same (subject, grade, name) already exists",
-                    "QUESTIONBANK_KNOWLEDGE_DUPLICATE",
+                    "QUAESTURA_KNOWLEDGE_DUPLICATE",
                     System.Net.HttpStatusCode.Conflict);
             if (!success)
                 throw new DomainException(
-                    "Create failed", "QUESTIONBANK_KNOWLEDGE_CREATE_FAILED",
+                    "Create failed", "QUAESTURA_KNOWLEDGE_CREATE_FAILED",
                     System.Net.HttpStatusCode.InternalServerError);
         }
         else
@@ -152,10 +152,10 @@ public static class KnowledgeEndpoints
             var (success, isReferenced, wouldCreateCycle) = await service.UpdateAsync(knowledge, userId);
             if (isReferenced)
                 throw new BusinessPreconditionException(
-                    "Knowledge is referenced and cannot be updated", "QUESTIONBANK_KNOWLEDGE_REFERENCED");
+                    "Knowledge is referenced and cannot be updated", "QUAESTURA_KNOWLEDGE_REFERENCED");
             if (wouldCreateCycle)
                 throw new BusinessPreconditionException(
-                    "Cannot update: would create circular parent reference", "QUESTIONBANK_KNOWLEDGE_CYCLE");
+                    "Cannot update: would create circular parent reference", "QUAESTURA_KNOWLEDGE_CYCLE");
             if (!success)
                 throw new EntityNotFoundException("Knowledge", request.Id!);
         }
@@ -168,7 +168,7 @@ public static class KnowledgeEndpoints
         var (success, isReferenced) = await service.DeleteAsync(id.ToString());
         if (isReferenced)
             throw new BusinessPreconditionException(
-                "Knowledge is referenced and cannot be deleted", "QUESTIONBANK_KNOWLEDGE_REFERENCED");
+                "Knowledge is referenced and cannot be deleted", "QUAESTURA_KNOWLEDGE_REFERENCED");
         if (!success)
             throw new EntityNotFoundException("Knowledge", id.ToString());
 

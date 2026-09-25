@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
-const appTitle = computed(() => window.__APP_TITLE__ || 'QuestionBank Admin')
+const appTitle = computed(() => window.__APP_TITLE__ || 'Quaestura Admin')
 
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem('qbSidebarCollapsed') === 'true')

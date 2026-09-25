@@ -1,7 +1,7 @@
 using FluentValidation;
-using Ruoyu.Study.QuestionBank.Service.Models;
+using Quaestura.Service.Models;
 
-namespace Ruoyu.Study.QuestionBank.Service.Validation;
+namespace Quaestura.Service.Validation;
 
 public class CreateQuestionRequestValidator : AbstractValidator<CreateQuestionRequest>
 {

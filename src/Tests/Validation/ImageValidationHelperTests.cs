@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using FluentAssertions;
-using Ruoyu.Study.QuestionBank.Service.Validation;
+using Quaestura.Service.Validation;
 using Xunit;
 
-namespace QuestionBank.Test.Validation;
+namespace Quaestura.Tests.Validation;
 
 public class ImageValidationHelperTests
 {

@@ -8,11 +8,11 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
-using Ruoyu.Study.QuestionBank.Domain.Services;
-using Ruoyu.Study.QuestionBank.Service.Middleware;
-using Ruoyu.Study.QuestionBank.Service.Models;
+using Quaestura.Domain.Services;
+using Quaestura.Service.Middleware;
+using Quaestura.Service.Models;
 
-namespace Ruoyu.Study.QuestionBank.Service.Endpoints;
+namespace Quaestura.Service.Endpoints;
 
 public static class QuestionKnowledgeEndpoints
 {
@@ -150,7 +150,7 @@ public static class QuestionKnowledgeEndpoints
         if (!success)
             throw new DomainException(
                 "Failed to remove all question knowledges",
-                "QUESTIONBANK_QUESTION_KNOWLEDGE_REMOVE_FAILED",
+                "QUAESTURA_QUESTION_KNOWLEDGE_REMOVE_FAILED",
                 System.Net.HttpStatusCode.InternalServerError);
 
         return Results.Ok(new { success = true, data = new { questionId, removed = true } });

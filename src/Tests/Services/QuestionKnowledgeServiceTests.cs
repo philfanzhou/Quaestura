@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database;
-using Ruoyu.Study.QuestionBank.Database.Entity;
-using Ruoyu.Study.QuestionBank.Domain.Services;
+using Quaestura.Database;
+using Quaestura.Database.Entity;
+using Quaestura.Domain.Services;
 using Xunit;
 
-namespace QuestionBank.Test.Services;
+namespace Quaestura.Tests.Services;
 
 public class QuestionKnowledgeServiceTests : TestBase
 {

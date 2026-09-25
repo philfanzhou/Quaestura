@@ -27,25 +27,25 @@
 {
   "success": false,
   "message": "Human-readable error message in English",
-  "errorCode": "QUESTIONBANK_XXX_YYY"
+  "errorCode": "QUAESTURA_XXX_YYY"
 }
 ```
 
-错误码命名规范：`QUESTIONBANK_<资源>_<错误类型>`，全大写，下划线分隔。
+错误码命名规范：`QUAESTURA_<资源>_<错误类型>`，全大写，下划线分隔。
 
 ## HTTP 状态码使用规则
 
 | 状态码 | 使用场景 | errorCode 前缀 | 示例 |
 |--------|----------|---------------|------|
 | `200 OK` | 请求成功 | — | 成功查询、新增、更新、删除 |
-| `400 Bad Request` | 请求参数验证失败 | `QUESTIONBANK_VALIDATION_*` | ID 格式无效、必填字段为空、文件过大 |
+| `400 Bad Request` | 请求参数验证失败 | `QUAESTURA_VALIDATION_*` | ID 格式无效、必填字段为空、文件过大 |
 | `401 Unauthorized` | 未提供 JWT 或 JWT 无效/过期 | —（由认证中间件返回） | token 过期、签名无效 |
-| `403 Forbidden` | 已认证但角色不足或归属校验失败 | `QUESTIONBANK_FORBIDDEN*` | 学生调用 tag 写接口、修改他人创建的 tag |
-| `404 Not Found` | 资源不存在 | `QUESTIONBANK_<RESOURCE>_NOT_FOUND` | Question not found |
-| `409 Conflict` | 资源冲突 | `QUESTIONBANK_<RESOURCE>_CONFLICT` | 重复创建 |
-| `422 Unprocessable Entity` | 业务前置条件不满足 | `QUESTIONBANK_PRECONDITION_*` | 删除被引用的知识点 |
-| `500 Internal Server Error` | 服务内部错误 | `QUESTIONBANK_INTERNAL_ERROR` | 数据库异常、未捕获异常 |
-| `503 Service Unavailable` | 依赖不可用 | `QUESTIONBANK_UNAVAILABLE` | OSS 不可达 |
+| `403 Forbidden` | 已认证但角色不足或归属校验失败 | `QUAESTURA_FORBIDDEN*` | 学生调用 tag 写接口、修改他人创建的 tag |
+| `404 Not Found` | 资源不存在 | `QUAESTURA_<RESOURCE>_NOT_FOUND` | Question not found |
+| `409 Conflict` | 资源冲突 | `QUAESTURA_<RESOURCE>_CONFLICT` | 重复创建 |
+| `422 Unprocessable Entity` | 业务前置条件不满足 | `QUAESTURA_PRECONDITION_*` | 删除被引用的知识点 |
+| `500 Internal Server Error` | 服务内部错误 | `QUAESTURA_INTERNAL_ERROR` | 数据库异常、未捕获异常 |
+| `503 Service Unavailable` | 依赖不可用 | `QUAESTURA_UNAVAILABLE` | OSS 不可达 |
 
 ## 异常处理
 
@@ -54,20 +54,20 @@
 | 异常 | 用途 | HTTP 状态码 | errorCode |
 |------|------|-------------|-----------|
 | `DomainException` (含子类) | 业务规则违反 | 视子类而定 | 视子类而定 |
-| `EntityNotFoundException` | 实体不存在 | 404 | `QUESTIONBANK_<RESOURCE>_NOT_FOUND` |
-| `ValidationException` | 参数验证失败 | 400 | `QUESTIONBANK_VALIDATION_*` |
-| `BusinessPreconditionException` | 业务前置条件不满足 | 422 | `QUESTIONBANK_PRECONDITION_*` |
-| `ForbiddenException` | 角色不足或归属校验失败 | 403 | `QUESTIONBANK_FORBIDDEN` 或 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` |
+| `EntityNotFoundException` | 实体不存在 | 404 | `QUAESTURA_<RESOURCE>_NOT_FOUND` |
+| `ValidationException` | 参数验证失败 | 400 | `QUAESTURA_VALIDATION_*` |
+| `BusinessPreconditionException` | 业务前置条件不满足 | 422 | `QUAESTURA_PRECONDITION_*` |
+| `ForbiddenException` | 角色不足或归属校验失败 | 403 | `QUAESTURA_FORBIDDEN` 或 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
 
 ### 全局异常中间件
 
 所有 WebAPI 端点必须经 `ExceptionHandlingMiddleware`（位于 `src/Service/Middleware/ExceptionHandlingMiddleware.cs`）统一处理：
 
 - `DomainException` 子类 → 映射为对应 HTTP 状态码 + 业务错误码
-- `ValidationException`（FluentValidation） → 400 + `QUESTIONBANK_VALIDATION_FAILED`，message 为校验错误列表
-- `InvalidOperationException`（由 `ImageValidationHelper` 抛出）→ 400 + `QUESTIONBANK_VALIDATION_INVALID_IMAGE`
+- `ValidationException`（FluentValidation） → 400 + `QUAESTURA_VALIDATION_FAILED`，message 为校验错误列表
+- `InvalidOperationException`（由 `ImageValidationHelper` 抛出）→ 400 + `QUAESTURA_VALIDATION_INVALID_IMAGE`
 - `BadHttpRequestException` → 400
-- 其他未捕获异常 → 500 + `QUESTIONBANK_INTERNAL_ERROR`，原始 message 脱敏（仅显示 "Internal server error"），详细异常信息写入日志
+- 其他未捕获异常 → 500 + `QUAESTURA_INTERNAL_ERROR`，原始 message 脱敏（仅显示 "Internal server error"），详细异常信息写入日志
 
 ## 错误信息规范
 
@@ -80,7 +80,7 @@
 
 - 使用 FluentValidation 验证 HTTP 请求 DTO
 - 验证失败抛出 `ValidationException`（由全局中间件转为 400）
-- ID 解析使用 `Guid.TryParse`，失败抛出 `ValidationException` 含 errorCode `QUESTIONBANK_VALIDATION_INVALID_ID`
+- ID 解析使用 `Guid.TryParse`，失败抛出 `ValidationException` 含 errorCode `QUAESTURA_VALIDATION_INVALID_ID`
 
 ## 日志规范
 

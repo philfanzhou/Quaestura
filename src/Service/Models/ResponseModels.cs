@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Ruoyu.Study.QuestionBank.Service.Models;
+namespace Quaestura.Service.Models;
 
 /// <summary>
 /// HTTP response DTOs for QuestionBank endpoints.

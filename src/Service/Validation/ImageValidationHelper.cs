@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using System.IO;
 using Microsoft.AspNetCore.Http;
 
-namespace Ruoyu.Study.QuestionBank.Service.Validation;
+namespace Quaestura.Service.Validation;
 
 /// <summary>
 /// Image upload validation: file size limit + magic number check.
 /// Throws <see cref="InvalidOperationException"/> with English message; the global
 /// <c>ExceptionHandlingMiddleware</c> maps it to HTTP 400 + errorCode
-/// <c>QUESTIONBANK_VALIDATION_INVALID_IMAGE</c>.
+/// <c>QUAESTURA_VALIDATION_INVALID_IMAGE</c>.
 /// </summary>
 public static class ImageValidationHelper
 {

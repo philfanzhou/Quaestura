@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
+    <ProjectReference Include="..\Domain\Quaestura.Domain.csproj" />
   </ItemGroup>
 
 </Project>

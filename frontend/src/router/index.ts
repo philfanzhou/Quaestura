@@ -26,7 +26,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, _from, next) => {
-  const baseTitle = window.__APP_TITLE__ || 'Ruoyu.Study.QuestionBank.Admin'
+  const baseTitle = window.__APP_TITLE__ || 'Quaestura Admin'
   document.title = to.meta.title ? `${to.meta.title} - ${baseTitle}` : baseTitle
   next()
 })

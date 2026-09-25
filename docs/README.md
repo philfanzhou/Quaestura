@@ -1,6 +1,6 @@
-# ruoyu.questionBank 文档
+# Quaestura 文档
 
-ruoyu.questionBank 负责可复用题目、题目内容、知识点和标签管理。
+Quaestura 负责可复用题目、题目内容、知识点和标签管理。
 
 ## 入口
 

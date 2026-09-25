@@ -15,10 +15,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
-    <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
-    <ProjectReference Include="..\..\..\..\ruoyu.common\backend\Ruoyu.Study.Common\Ruoyu.Study.Common.csproj" />
-    <ProjectReference Include="..\..\..\..\ruoyu.common\backend\Ruoyu.Study.Consul.Shared\Ruoyu.Study.Consul.Shared.csproj" />
+    <ProjectReference Include="..\Domain\Quaestura.Domain.csproj" />
+    <ProjectReference Include="..\Service\Quaestura.Service.csproj" />
+    <ProjectReference Include="..\Common\Quaestura.Common.csproj" />
+    <ProjectReference Include="..\Consul\Quaestura.Consul.csproj" />
   </ItemGroup>
 
 </Project>

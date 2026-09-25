@@ -1,10 +1,10 @@
-# QuestionBank 题库核心服务
+# Quaestura 题库核心服务
 
 ## 1. 项目概述
 
-QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管理微服务，专注于**题目管理**和**知识点管理**，为教育系统提供稳定的题库检索、组卷和基础静态数据服务。本服务在单一 docker 容器中同时提供 **WebAPI（端口 5007）** 和 **管理前端 SPA**。
+Quaestura 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管理微服务，专注于**题目管理**和**知识点管理**，为教育系统提供稳定的题库检索、组卷和基础静态数据服务。本服务在单一 docker 容器中同时提供 **WebAPI（端口 5007）** 和 **管理前端 SPA**。
 
-**注：** 错题管理相关业务（包括学生上传错题、错因分析、错题重练等动态数据）已解耦并拆分至专门的 `ruoyu.mistake` 微服务中。
+**注：** 错题管理相关业务（学生上传错题、错因分析、错题重练等学习者特定动态数据）不属于本服务，由 Ruoyu.Study 平台的独立 `Mistake` 服务负责。Quaestura 只管理可复用的题目、知识点与标签。
 
 ## 2. 文档导航
 
@@ -29,16 +29,28 @@ QuestionBank 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管�
 ## 4. 项目结构
 
 ```
-ruoyu.questionBank/                     # 后端服务
-├── frontend/                           # 管理前端（与后端同目录）
+Quaestura/
+├── frontend/                           # 管理前端（Vue 3 + TS + Vite）
 │   ├── package.json
 │   ├── vite.config.ts
 │   ├── index.html
 │   ├── docs/admin-frontend-spec.md
 │   └── src/
-├── src/                                # .NET 源码（Database/Domain/Service/Host）
+├── src/                                # .NET 源码
+│   ├── Common/                         # Quaestura.Common（自 ruoyu.common 复制的快照）
+│   ├── Consul/                         # Quaestura.Consul（Consul KV + Serilog/Loki）
+│   ├── Database/                       # EF Core 实体与 Migrations
+│   ├── Domain/                         # 领域服务
+│   ├── Service/                        # 最小 API 端点与校验
+│   ├── Host/                           # 宿主组合、认证、wwwroot SPA
+│   ├── Tests/                          # 单元与集成测试
+│   └── Quaestura.sln
 ├── docs/                               # 后端正式文档
+├── Dockerfile                          # 单镜像多阶段构建（backend + frontend）
 ├── start.sh                            # Docker 启动脚本
+├── CONTEXT.md                          # 领域语言（Question Catalog）
+├── AGENTS.md                           # AI 协作规范
+├── LICENSE                             # MIT
 └── README.md
 ```
 

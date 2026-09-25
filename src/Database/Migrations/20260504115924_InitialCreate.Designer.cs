@@ -5,13 +5,13 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using Ruoyu.Study.QuestionBank.Database;
+using Quaestura.Database;
 
 #nullable disable
 
-namespace Ruoyu.Study.QuestionBank.Database.Migrations
+namespace Quaestura.Database.Migrations
 {
-    [DbContext(typeof(QuestionBankDbContext))]
+    [DbContext(typeof(QuaesturaDbContext))]
     [Migration("20260504115924_InitialCreate")]
     partial class InitialCreate
     {
@@ -25,7 +25,7 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.Knowledge", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.Knowledge", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -89,7 +89,7 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.ToTable("knowledge");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.Question", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.Question", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -163,7 +163,7 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.ToTable("question");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.QuestionContent", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionContent", b =>
                 {
                     b.Property<Guid>("QuestionId")
                         .HasColumnType("uuid")
@@ -188,7 +188,7 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.ToTable("question_content");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.QuestionKnowledge", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionKnowledge", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -217,9 +217,9 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.ToTable("question_knowledge");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.Knowledge", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.Knowledge", b =>
                 {
-                    b.HasOne("Ruoyu.Study.QuestionBank.Database.Entity.Knowledge", "Parent")
+                    b.HasOne("Quaestura.Database.Entity.Knowledge", "Parent")
                         .WithMany("Children")
                         .HasForeignKey("ParentId")
                         .OnDelete(DeleteBehavior.Restrict);
@@ -227,26 +227,26 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.Navigation("Parent");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.QuestionContent", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionContent", b =>
                 {
-                    b.HasOne("Ruoyu.Study.QuestionBank.Database.Entity.Question", "Question")
+                    b.HasOne("Quaestura.Database.Entity.Question", "Question")
                         .WithOne()
-                        .HasForeignKey("Ruoyu.Study.QuestionBank.Database.Entity.QuestionContent", "QuestionId")
+                        .HasForeignKey("Quaestura.Database.Entity.QuestionContent", "QuestionId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Question");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.QuestionKnowledge", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionKnowledge", b =>
                 {
-                    b.HasOne("Ruoyu.Study.QuestionBank.Database.Entity.Knowledge", "Knowledge")
+                    b.HasOne("Quaestura.Database.Entity.Knowledge", "Knowledge")
                         .WithMany("QuestionKnowledges")
                         .HasForeignKey("KnowledgeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Ruoyu.Study.QuestionBank.Database.Entity.Question", "Question")
+                    b.HasOne("Quaestura.Database.Entity.Question", "Question")
                         .WithMany("QuestionKnowledges")
                         .HasForeignKey("QuestionId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -257,14 +257,14 @@ namespace Ruoyu.Study.QuestionBank.Database.Migrations
                     b.Navigation("Question");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.Knowledge", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.Knowledge", b =>
                 {
                     b.Navigation("Children");
 
                     b.Navigation("QuestionKnowledges");
                 });
 
-            modelBuilder.Entity("Ruoyu.Study.QuestionBank.Database.Entity.Question", b =>
+            modelBuilder.Entity("Quaestura.Database.Entity.Question", b =>
                 {
                     b.Navigation("QuestionKnowledges");
                 });

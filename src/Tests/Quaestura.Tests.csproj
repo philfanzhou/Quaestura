@@ -27,10 +27,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Database\Ruoyu.Study.QuestionBank.Database.csproj" />
-    <ProjectReference Include="..\Domain\Ruoyu.Study.QuestionBank.Domain.csproj" />
-    <ProjectReference Include="..\Service\Ruoyu.Study.QuestionBank.Service.csproj" />
-    <ProjectReference Include="..\Host\Ruoyu.Study.QuestionBank.Host.csproj" />
+    <ProjectReference Include="..\Database\Quaestura.Database.csproj" />
+    <ProjectReference Include="..\Domain\Quaestura.Domain.csproj" />
+    <ProjectReference Include="..\Service\Quaestura.Service.csproj" />
+    <ProjectReference Include="..\Host\Quaestura.Host.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database;
-using Ruoyu.Study.QuestionBank.Database.Entity;
+using Quaestura.Database;
+using Quaestura.Database.Entity;
 
-namespace Ruoyu.Study.QuestionBank.Domain.Services;
+namespace Quaestura.Domain.Services;
 
 public interface IKnowledgeService
 {
@@ -22,9 +22,9 @@ public interface IKnowledgeService
 
 public class KnowledgeService : IKnowledgeService
 {
-    private readonly QuestionBankDbContext _dbContext;
+    private readonly QuaesturaDbContext _dbContext;
 
-    public KnowledgeService(QuestionBankDbContext dbContext)
+    public KnowledgeService(QuaesturaDbContext dbContext)
     {
         _dbContext = dbContext;
     }

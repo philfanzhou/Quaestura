@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using FluentAssertions;
 using FluentValidation.TestHelper;
-using Ruoyu.Study.QuestionBank.Service.Models;
-using Ruoyu.Study.QuestionBank.Service.Validation;
+using Quaestura.Service.Models;
+using Quaestura.Service.Validation;
 using Xunit;
 
-namespace QuestionBank.Test.Validation;
+namespace Quaestura.Tests.Validation;
 
 public class CreateQuestionRequestValidatorTests
 {

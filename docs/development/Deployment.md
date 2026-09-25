@@ -14,18 +14,16 @@
 #### 方式一：本地 .NET 启动
 
 ```bash
-cd src/services/ruoyu.questionBank/src/Host
-dotnet run --configuration Release
+dotnet run --project src/Host --configuration Release
 ```
 
 #### 方式二：Docker 启动
 
 ```bash
-# 1. 构建镜像
-./script/build-script/06-questionbank.build.sh
+# 1. 构建镜像（build context 为仓库根目录）
+docker build -t quaestura:latest .
 
 # 2. 启动容器
-cd src/services/ruoyu.questionBank
 ./start.sh
 ```
 
@@ -53,10 +51,10 @@ open http://localhost:5007/swagger
 ```json
 {
   "Database": {
-    "Name": "ruoyu_study_questionbank"
+    "Name": "quaestura"
   },
   "ConnectionStrings": {
-    "Default": "Host=localhost;Port=5432;Database=ruoyu_study_questionbank;Username=phil"
+    "Default": "Host=localhost;Port=5432;Database=quaestura;Username=phil"
   }
 }
 ```
@@ -75,7 +73,7 @@ open http://localhost:5007/swagger
 | `PostgreSql:Port` | PostgreSQL 端口 |
 | `PostgreSql:Username` | PostgreSQL 用户名 |
 | `PostgreSql:Password` | PostgreSQL 密码 |
-| `Database:Name` | 数据库名（默认 `ruoyu_study_questionbank`） |
+| `Database:Name` | 数据库名（默认 `quaestura`） |
 
 ### 2.2 对象存储
 
@@ -130,7 +128,7 @@ open http://localhost:5007/swagger
 
 ### 3.1 镜像构建（4 阶段多阶段构建）
 
-Dockerfile 位于 `src/Host/Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ frontend（Vue 3 构建产物）**：
+Dockerfile 位于仓库根目录 `Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ frontend（Vue 3 构建产物）**：
 
 | 阶段 | 基镜像 | 作用 |
 |------|--------|------|
@@ -139,18 +137,17 @@ Dockerfile 位于 `src/Host/Dockerfile`，**单个镜像同时包含 backend（.
 | 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | 运行时镜像，仅含 .NET 运行时 + 发布产物 |
 
 **关键点**：
-- build context 是仓库根 `$REPO_ROOT`（与 `Identity` 服务的 3 阶段构建对齐）
+- build context 是仓库根目录（与 `Identity` 服务的 3 阶段构建对齐）
 - 阶段 1 独立：frontend 构建失败不会污染 backend 镜像
 - 阶段 2 的 `COPY --from=frontend-build /app/dist .../Host/wwwroot` 是把 Vite 产物注入 ASP.NET Core 默认 web root 的关键一行
 
 ### 3.2 启动
 
 ```bash
-cd src/services/ruoyu.questionBank
 ./start.sh
 ```
 
-容器使用 `ruoyu-net` 网络访问同机服务；SeaweedFS 也可通过 Consul 配置的独立服务器 IP 和端口访问。
+容器使用 `quaestura-net` 网络访问同机服务；SeaweedFS 也可通过 Consul 配置的独立服务器 IP 和端口访问。
 
 ### 3.3 环境变量
 
@@ -179,7 +176,7 @@ cd src/services/ruoyu.questionBank
 启动日志格式：
 
 ```
-QuestionBank Service starting
+Quaestura Service starting
 Listening: http://+:5007
 Database: PostgreSQL <Host>:<Port>/<Database>
 Effective configuration diagnostics: PostgreSqlHost=..., PostgreSqlPort=..., PostgreSqlUsername=..., PostgreSqlPassword=..., DatabaseName=...

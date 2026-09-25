@@ -12,15 +12,15 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Ruoyu.Study.Common.Authentication;
-using Ruoyu.Study.Common.Oss;
-using Ruoyu.Study.Consul.Shared;
-using Ruoyu.Study.QuestionBank.Database;
-using Ruoyu.Study.QuestionBank.Domain.Services;
-using Ruoyu.Study.QuestionBank.Service;
-using Ruoyu.Study.QuestionBank.Service.Endpoints;
-using Ruoyu.Study.QuestionBank.Service.Middleware;
-using Ruoyu.Study.QuestionBank.Service.Validation;
+using Quaestura.Common.Authentication;
+using Quaestura.Common.Oss;
+using Quaestura.Consul;
+using Quaestura.Database;
+using Quaestura.Domain.Services;
+using Quaestura.Service;
+using Quaestura.Service.Endpoints;
+using Quaestura.Service.Middleware;
+using Quaestura.Service.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,7 +31,7 @@ var consulRuntimeState = RuoyuConsulRuntimeState.Instance;
 
 // ========== Serilog (Console + Grafana Loki) ==========
 builder.Configuration.AddRuoyuLokiSink();
-builder.Host.UseRuoyuSerilog("Ruoyu.Study.QuestionBank");
+builder.Host.UseRuoyuSerilog("Quaestura");
 
 var config = builder.Configuration;
 
@@ -43,7 +43,7 @@ const int httpPort = 5007;
 var connectionString = SharedPostgreSqlConnectionStringFactory.BuildOrFallback(
     builder.Configuration,
     builder.Configuration.GetConnectionString("Default"));
-builder.Services.AddDbContext<QuestionBankDbContext>(options =>
+builder.Services.AddDbContext<QuaesturaDbContext>(options =>
 {
     options.UseNpgsql(connectionString);
 });
@@ -77,7 +77,7 @@ builder.Services.AddRuoyuJwtBearer(config, builder.Environment);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new() { Title = "QuestionBank WebAPI", Version = "v1" });
+    c.SwaggerDoc("v1", new() { Title = "Quaestura WebAPI", Version = "v1" });
 });
 
 // Bind Kestrel explicitly to the configured httpPort
@@ -91,9 +91,9 @@ var identityTrust = app.Services
     .GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityAuthenticationOptions>>()
     .Value;
 
-var appTitle = config["APP_TITLE"] ?? "Ruoyu.Study.QuestionBank.Admin";
+var appTitle = config["APP_TITLE"] ?? "Quaestura.Admin";
 
-app.Logger.LogInformation("QuestionBank Service starting");
+app.Logger.LogInformation("Quaestura Service starting");
 app.Logger.LogInformation(
     "Identity trust: Authority={Authority}, Issuers={Issuers}, Audience={Audience}, RequireHttpsMetadata={RequireHttpsMetadata}",
     identityTrust.Authority,
@@ -127,7 +127,7 @@ app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 // Apply database initialization
 using (var scope = app.Services.CreateScope())
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<QuestionBankDbContext>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
     if (dbContext.Database.IsRelational())
     {
@@ -160,7 +160,7 @@ if (!app.Environment.IsEnvironment("Testing"))
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "QuestionBank WebAPI v1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Quaestura WebAPI v1"));
 }
 
 // Global exception handling

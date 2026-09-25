@@ -1,6 +1,6 @@
-﻿# QuestionBank API 规范
+﻿# Quaestura API 规范
 
-本文档定义 `ruoyu.questionBank` 服务的完整 HTTP API。所有端点统一返回结构化 JSON 响应，遵循 [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md) 规范。
+本文档定义 `Quaestura` 服务的完整 HTTP API。所有端点统一返回结构化 JSON 响应，遵循 [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md) 规范。
 
 ## 1. 通用约定
 
@@ -46,7 +46,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 {
   "success": false,
   "message": "Human-readable error message in English",
-  "errorCode": "QUESTIONBANK_XXX_YYY"
+  "errorCode": "QUAESTURA_XXX_YYY"
 }
 ```
 
@@ -54,7 +54,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 
 - 所有 ID 字段为 UUID 字符串（如 `00000000-0000-0000-0000-000000000001`）
 - 所有时间戳为 ISO 8601 UTC 字符串（如 `2026-07-02T10:00:00.000Z`）
-- `subject`（学科）和 `grade`（年级）为整数，由 [`ruoyu.common` 共享常量](../../../../ruoyu.common/) 定义
+- `subject`（学科）和 `grade`（年级）为整数，由 [`Quaestura.Common` 共享常量](../../src/Common/Constants/) 定义
 - 所有消息/错误信息使用英文
 
 ### 1.4 通用查询参数
@@ -118,7 +118,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — subject/grade 缺失或非法
+- 400 `QUAESTURA_VALIDATION_FAILED` — subject/grade 缺失或非法
 
 #### GET `/admin/questions/{id}`
 
@@ -157,8 +157,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID` — ID 格式错误
-- 404 `QUESTIONBANK_QUESTION_NOT_FOUND` — 题目不存在
+- 400 `QUAESTURA_VALIDATION_INVALID_ID` — ID 格式错误
+- 404 `QUAESTURA_QUESTION_NOT_FOUND` — 题目不存在
 
 #### POST `/admin/questions`
 
@@ -210,8 +210,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — 字段验证失败
-- 400 `QUESTIONBANK_VALIDATION_INVALID_IMAGE` — 图片格式/大小不符
+- 400 `QUAESTURA_VALIDATION_FAILED` — 字段验证失败
+- 400 `QUAESTURA_VALIDATION_INVALID_IMAGE` — 图片格式/大小不符
 
 #### DELETE `/admin/questions/{id}`
 
@@ -233,8 +233,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID` — ID 格式错误
-- 404 `QUESTIONBANK_QUESTION_NOT_FOUND` — 题目不存在
+- 400 `QUAESTURA_VALIDATION_INVALID_ID` — ID 格式错误
+- 404 `QUAESTURA_QUESTION_NOT_FOUND` — 题目不存在
 
 ### 2.2 知识点管理 `/admin/knowledges`
 
@@ -299,8 +299,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID`
-- 404 `QUESTIONBANK_KNOWLEDGE_NOT_FOUND`
+- 400 `QUAESTURA_VALIDATION_INVALID_ID`
+- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND`
 
 #### POST `/admin/knowledges`
 
@@ -331,10 +331,10 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED`
-- 409 `QUESTIONBANK_KNOWLEDGE_DUPLICATE` — 同 (subject, grade, name) 已存在
-- 422 `QUESTIONBANK_KNOWLEDGE_REFERENCED` — 已被题目引用，不能更新
-- 422 `QUESTIONBANK_KNOWLEDGE_CYCLE` — 父节点变更会形成环
+- 400 `QUAESTURA_VALIDATION_FAILED`
+- 409 `QUAESTURA_KNOWLEDGE_DUPLICATE` — 同 (subject, grade, name) 已存在
+- 422 `QUAESTURA_KNOWLEDGE_REFERENCED` — 已被题目引用，不能更新
+- 422 `QUAESTURA_KNOWLEDGE_CYCLE` — 父节点变更会形成环
 
 #### DELETE `/admin/knowledges/{id}`
 
@@ -350,9 +350,9 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID`
-- 404 `QUESTIONBANK_KNOWLEDGE_NOT_FOUND`
-- 422 `QUESTIONBANK_KNOWLEDGE_REFERENCED`
+- 400 `QUAESTURA_VALIDATION_INVALID_ID`
+- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND`
+- 422 `QUAESTURA_KNOWLEDGE_REFERENCED`
 
 ### 2.3 题目-知识点关联 `/admin/question-knowledges`
 
@@ -381,8 +381,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED`
-- 404 `QUESTIONBANK_KNOWLEDGE_NOT_FOUND` — 知识点不存在或 subject/grade 不匹配
+- 400 `QUAESTURA_VALIDATION_FAILED`
+- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND` — 知识点不存在或 subject/grade 不匹配
 
 #### GET `/admin/question-knowledges`
 
@@ -441,7 +441,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — 未提供 questionId/knowledgeId
+- 400 `QUAESTURA_VALIDATION_FAILED` — 未提供 questionId/knowledgeId
 
 #### DELETE `/admin/question-knowledges`
 
@@ -534,8 +534,8 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID`
-- 404 `QUESTIONBANK_TAG_NOT_FOUND`
+- 400 `QUAESTURA_VALIDATION_INVALID_ID`
+- 404 `QUAESTURA_TAG_NOT_FOUND`
 
 #### POST `/admin/tags`
 
@@ -568,10 +568,10 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — name 缺失或 color 格式非法
-- 403 `QUESTIONBANK_FORBIDDEN` — 学生角色调用
-- 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` — 更新他人创建的 tag
-- 409 `QUESTIONBANK_TAG_DUPLICATE` — 同名 Tag 已存在
+- 400 `QUAESTURA_VALIDATION_FAILED` — name 缺失或 color 格式非法
+- 403 `QUAESTURA_FORBIDDEN` — 学生角色调用
+- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — 更新他人创建的 tag
+- 409 `QUAESTURA_TAG_DUPLICATE` — 同名 Tag 已存在
 
 #### DELETE `/admin/tags/{id}`
 
@@ -591,11 +591,11 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_INVALID_ID`
-- 403 `QUESTIONBANK_FORBIDDEN` — 学生角色调用
-- 403 `QUESTIONBANK_FORBIDDEN_NOT_OWNER` — 删除他人创建的 tag
-- 404 `QUESTIONBANK_TAG_NOT_FOUND`
-- 422 `QUESTIONBANK_TAG_REFERENCED` — Tag 仍被题目引用
+- 400 `QUAESTURA_VALIDATION_INVALID_ID`
+- 403 `QUAESTURA_FORBIDDEN` — 学生角色调用
+- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — 删除他人创建的 tag
+- 404 `QUAESTURA_TAG_NOT_FOUND`
+- 422 `QUAESTURA_TAG_REFERENCED` — Tag 仍被题目引用
 
 ### 2.5 题目-Tag 关联 `/admin/question-tags`
 
@@ -624,8 +624,8 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — questionIds/tagIds 为空
-- 404 `QUESTIONBANK_TAG_NOT_FOUND` — 任一 tagId 不存在
+- 400 `QUAESTURA_VALIDATION_FAILED` — questionIds/tagIds 为空
+- 404 `QUAESTURA_TAG_NOT_FOUND` — 任一 tagId 不存在
 
 #### GET `/admin/question-tags`
 
@@ -684,7 +684,7 @@ Tag 详情。
 ```
 
 **错误**：
-- 400 `QUESTIONBANK_VALIDATION_FAILED` — 未提供 questionId/tagId
+- 400 `QUAESTURA_VALIDATION_FAILED` — 未提供 questionId/tagId
 
 #### DELETE `/admin/question-tags`
 
@@ -710,21 +710,21 @@ Tag 详情。
 
 | errorCode | HTTP 状态 | 说明 |
 |-----------|----------|------|
-| `QUESTIONBANK_VALIDATION_FAILED` | 400 | 请求参数验证失败（FluentValidation） |
-| `QUESTIONBANK_VALIDATION_INVALID_ID` | 400 | ID 格式非 UUID |
-| `QUESTIONBANK_VALIDATION_INVALID_IMAGE` | 400 | 图片格式/大小不符 |
-| `QUESTIONBANK_FORBIDDEN` | 403 | 已认证但角色不足（如学生调用 tag 写接口） |
-| `QUESTIONBANK_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
-| `QUESTIONBANK_QUESTION_NOT_FOUND` | 404 | 题目不存在 |
-| `QUESTIONBANK_KNOWLEDGE_NOT_FOUND` | 404 | 知识点不存在 |
-| `QUESTIONBANK_KNOWLEDGE_DUPLICATE` | 409 | 同 (subject, grade, name) 已存在 |
-| `QUESTIONBANK_KNOWLEDGE_REFERENCED` | 422 | 知识点已被引用，不能修改/删除 |
-| `QUESTIONBANK_KNOWLEDGE_CYCLE` | 422 | 父节点变更会形成循环引用 |
-| `QUESTIONBANK_TAG_NOT_FOUND` | 404 | Tag 不存在 |
-| `QUESTIONBANK_TAG_DUPLICATE` | 409 | 同名 Tag 已存在 |
-| `QUESTIONBANK_TAG_REFERENCED` | 422 | Tag 仍被题目引用，不能删除 |
-| `QUESTIONBANK_INTERNAL_ERROR` | 500 | 服务内部错误（已脱敏） |
-| `QUESTIONBANK_UNAVAILABLE` | 503 | 依赖服务不可用 |
+| `QUAESTURA_VALIDATION_FAILED` | 400 | 请求参数验证失败（FluentValidation） |
+| `QUAESTURA_VALIDATION_INVALID_ID` | 400 | ID 格式非 UUID |
+| `QUAESTURA_VALIDATION_INVALID_IMAGE` | 400 | 图片格式/大小不符 |
+| `QUAESTURA_FORBIDDEN` | 403 | 已认证但角色不足（如学生调用 tag 写接口） |
+| `QUAESTURA_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
+| `QUAESTURA_QUESTION_NOT_FOUND` | 404 | 题目不存在 |
+| `QUAESTURA_KNOWLEDGE_NOT_FOUND` | 404 | 知识点不存在 |
+| `QUAESTURA_KNOWLEDGE_DUPLICATE` | 409 | 同 (subject, grade, name) 已存在 |
+| `QUAESTURA_KNOWLEDGE_REFERENCED` | 422 | 知识点已被引用，不能修改/删除 |
+| `QUAESTURA_KNOWLEDGE_CYCLE` | 422 | 父节点变更会形成循环引用 |
+| `QUAESTURA_TAG_NOT_FOUND` | 404 | Tag 不存在 |
+| `QUAESTURA_TAG_DUPLICATE` | 409 | 同名 Tag 已存在 |
+| `QUAESTURA_TAG_REFERENCED` | 422 | Tag 仍被题目引用，不能删除 |
+| `QUAESTURA_INTERNAL_ERROR` | 500 | 服务内部错误（已脱敏） |
+| `QUAESTURA_UNAVAILABLE` | 503 | 依赖服务不可用 |
 
 > 401 Unauthorized 由认证中间件直接返回，无 errorCode（响应体为空）。
 

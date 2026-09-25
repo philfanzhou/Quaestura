@@ -13,19 +13,19 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Ruoyu.Study.Common.Authentication;
-using Ruoyu.Study.QuestionBank.Database;
+using Quaestura.Common.Authentication;
+using Quaestura.Database;
 using Xunit;
 
-namespace QuestionBank.Test.Authentication;
+namespace Quaestura.Tests.Authentication;
 
-public sealed class JwtBearerApiTests : IClassFixture<QuestionBankApiFactory>
+public sealed class JwtBearerApiTests : IClassFixture<QuaesturaApiFactory>
 {
     private const string Issuer = "https://identity.test.ruoyu.study";
     private const string Audience = "QuantumZhou.microservices";
     private readonly HttpClient _client;
 
-    public JwtBearerApiTests(QuestionBankApiFactory factory)
+    public JwtBearerApiTests(QuaesturaApiFactory factory)
     {
         _client = factory.CreateClient();
     }
@@ -36,7 +36,7 @@ public sealed class JwtBearerApiTests : IClassFixture<QuestionBankApiFactory>
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/tags");
         request.Headers.Authorization = new AuthenticationHeaderValue(
             JwtBearerDefaults.AuthenticationScheme,
-            QuestionBankApiFactory.CreateToken(Issuer));
+            QuaesturaApiFactory.CreateToken(Issuer));
 
         var response = await _client.SendAsync(request);
 
@@ -49,7 +49,7 @@ public sealed class JwtBearerApiTests : IClassFixture<QuestionBankApiFactory>
         using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/tags");
         request.Headers.Authorization = new AuthenticationHeaderValue(
             JwtBearerDefaults.AuthenticationScheme,
-            QuestionBankApiFactory.CreateToken("https://untrusted-issuer.invalid"));
+            QuaesturaApiFactory.CreateToken("https://untrusted-issuer.invalid"));
 
         var response = await _client.SendAsync(request);
 
@@ -65,13 +65,13 @@ public sealed class JwtBearerApiTests : IClassFixture<QuestionBankApiFactory>
     }
 }
 
-public sealed class QuestionBankApiFactory : WebApplicationFactory<Program>
+public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
 {
     private const string Issuer = "https://identity.test.ruoyu.study";
     private const string Audience = "QuantumZhou.microservices";
     private static readonly SymmetricSecurityKey SigningKey = new(
         Encoding.UTF8.GetBytes("question-bank-api-contract-signing-key-32-bytes"));
-    private readonly string _databaseName = $"QuestionBankApi_{Guid.NewGuid()}";
+    private readonly string _databaseName = $"QuaesturaApi_{Guid.NewGuid()}";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -89,8 +89,8 @@ public sealed class QuestionBankApiFactory : WebApplicationFactory<Program>
         });
         builder.ConfigureServices(services =>
         {
-            services.RemoveAll<DbContextOptions<QuestionBankDbContext>>();
-            services.AddDbContext<QuestionBankDbContext>(options =>
+            services.RemoveAll<DbContextOptions<QuaesturaDbContext>>();
+            services.AddDbContext<QuaesturaDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
             services.PostConfigure<JwtBearerOptions>(
                 JwtBearerDefaults.AuthenticationScheme,

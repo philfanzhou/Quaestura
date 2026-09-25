@@ -1,20 +1,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
-using Ruoyu.Study.QuestionBank.Database;
+using Quaestura.Database;
 
-namespace QuestionBank.Test;
+namespace Quaestura.Tests;
 
 public class TestBase : IDisposable
 {
-    protected readonly QuestionBankDbContext _dbContext;
+    protected readonly QuaesturaDbContext _dbContext;
 
     public TestBase()
     {
-        var options = new DbContextOptionsBuilder<QuestionBankDbContext>()
-            .UseInMemoryDatabase($"QuestionBankTest_{Guid.NewGuid()}")
+        var options = new DbContextOptionsBuilder<QuaesturaDbContext>()
+            .UseInMemoryDatabase($"QuaesturaTest_{Guid.NewGuid()}")
             .Options;
 
-        _dbContext = new QuestionBankDbContext(options);
+        _dbContext = new QuaesturaDbContext(options);
     }
 
     public void Dispose()

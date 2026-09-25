@@ -2,7 +2,7 @@ using System;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
-namespace Ruoyu.Study.QuestionBank.Database.Entity;
+namespace Quaestura.Database.Entity;
 
 [Table("question_tag")]
 public class QuestionTag

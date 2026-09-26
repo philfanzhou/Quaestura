@@ -144,13 +144,13 @@ Without AppId/AppSecret the service still starts and every other endpoint works;
 
 ### 3.1 Image build (4-stage multi-stage build)
 
-The Dockerfile is `Dockerfile` in the repository root. **A single image contains both the backend (.NET 8 ASP.NET Core) and the frontend (Vue 3 build output)**:
+The Dockerfile is `Dockerfile` in the repository root. **A single image contains both the backend (.NET 10 ASP.NET Core) and the frontend (Vue 3 build output)**:
 
 | Stage | Base image | Purpose |
 |------|--------|------|
 | 1. `frontend-build` | `node:20-alpine` | Builds the Vue 3 frontend and outputs `dist/` |
-| 2. `build` | `mcr.microsoft.com/dotnet/sdk:8.0` | Restores and publishes the .NET Host, **copying `dist/` from stage 1 into `Host/wwwroot/`** |
-| 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | Runtime image containing only the .NET runtime and the published output |
+| 2. `build` | `mcr.microsoft.com/dotnet/sdk:10.0` | Restores and publishes the .NET Host, **copying `dist/` from stage 1 into `Host/wwwroot/`** |
+| 3. `final` | `mcr.microsoft.com/dotnet/aspnet:10.0` | Runtime image containing only the .NET runtime and the published output |
 
 **Key points**:
 - The build context is the repository root (aligned with the 3-stage build of the `Identity` service)

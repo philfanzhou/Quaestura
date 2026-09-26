@@ -33,7 +33,7 @@ Project references flow one way: Host → Service → Domain → Database → Co
 
 ## Build and test
 
-Requirements: .NET SDK 8, Node.js 20+ with npm, and Docker to build the container image.
+Requirements: .NET SDK 10, Node.js 20+ with npm, and Docker to build the container image.
 
 ```bash
 dotnet build src/Quaestura.sln --configuration Release

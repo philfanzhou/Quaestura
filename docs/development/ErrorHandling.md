@@ -1,10 +1,10 @@
-# 错误处理规范
+# Error Handling
 
-## 响应格式
+## Response format
 
-所有 HTTP 端点统一返回以下结构：
+Every HTTP endpoint returns the following structure:
 
-### 成功响应
+### Success response
 
 ```json
 {
@@ -17,11 +17,11 @@
 }
 ```
 
-- `data`：业务数据（对象或数组）
-- `total`、`page`、`pageSize`、`totalPages`：仅在分页场景出现
-- 单条记录查询场景：`{success: true, data: { ... }}`
+- `data`: business data (object or array)
+- `total`, `page`, `pageSize`, `totalPages`: only present for paginated results
+- Single-record queries: `{success: true, data: { ... }}`
 
-### 错误响应
+### Error response
 
 ```json
 {
@@ -31,62 +31,62 @@
 }
 ```
 
-错误码命名规范：`QUAESTURA_<资源>_<错误类型>`，全大写，下划线分隔。
+Error code naming convention: `QUAESTURA_<RESOURCE>_<ERROR_TYPE>`, all uppercase, separated by underscores.
 
-## HTTP 状态码使用规则
+## HTTP status code rules
 
-| 状态码 | 使用场景 | errorCode 前缀 | 示例 |
+| Status code | When to use | errorCode prefix | Examples |
 |--------|----------|---------------|------|
-| `200 OK` | 请求成功 | — | 成功查询、新增、更新、删除 |
-| `400 Bad Request` | 请求参数验证失败 | `QUAESTURA_VALIDATION_*` | ID 格式无效、必填字段为空、文件过大 |
-| `401 Unauthorized` | 未提供 JWT 或 JWT 无效/过期 | —（由认证中间件返回） | token 过期、签名无效 |
-| `403 Forbidden` | 已认证但角色不足或归属校验失败 | `QUAESTURA_FORBIDDEN*` | 学生调用 tag 写接口、修改他人创建的 tag |
-| `404 Not Found` | 资源不存在 | `QUAESTURA_<RESOURCE>_NOT_FOUND` | Question not found |
-| `409 Conflict` | 资源冲突 | `QUAESTURA_<RESOURCE>_CONFLICT` | 重复创建 |
-| `422 Unprocessable Entity` | 业务前置条件不满足 | `QUAESTURA_PRECONDITION_*` | 删除被引用的知识点 |
-| `500 Internal Server Error` | 服务内部错误 | `QUAESTURA_INTERNAL_ERROR` | 数据库异常、未捕获异常 |
-| `503 Service Unavailable` | 依赖不可用 | `QUAESTURA_UNAVAILABLE` | OSS 不可达 |
+| `200 OK` | Request succeeded | — | Successful query, create, update, delete |
+| `400 Bad Request` | Request parameter validation failed | `QUAESTURA_VALIDATION_*` | Invalid ID format, required field empty, file too large |
+| `401 Unauthorized` | JWT missing, invalid, or expired | — (returned by the authentication middleware) | Expired token, invalid signature |
+| `403 Forbidden` | Authenticated but insufficient role or failed ownership check | `QUAESTURA_FORBIDDEN*` | Student calling a tag write endpoint, updating a tag created by someone else |
+| `404 Not Found` | Resource does not exist | `QUAESTURA_<RESOURCE>_NOT_FOUND` | Question not found |
+| `409 Conflict` | Resource conflict | `QUAESTURA_<RESOURCE>_CONFLICT` | Duplicate creation |
+| `422 Unprocessable Entity` | Business precondition not met | `QUAESTURA_PRECONDITION_*` | Deleting a referenced knowledge point |
+| `500 Internal Server Error` | Internal service error | `QUAESTURA_INTERNAL_ERROR` | Database exception, unhandled exception |
+| `503 Service Unavailable` | Dependency unavailable | `QUAESTURA_UNAVAILABLE` | OSS unreachable |
 
-## 异常处理
+## Exception handling
 
-### 自定义异常类型
+### Custom exception types
 
-| 异常 | 用途 | HTTP 状态码 | errorCode |
+| Exception | Purpose | HTTP status code | errorCode |
 |------|------|-------------|-----------|
-| `DomainException` (含子类) | 业务规则违反 | 视子类而定 | 视子类而定 |
-| `EntityNotFoundException` | 实体不存在 | 404 | `QUAESTURA_<RESOURCE>_NOT_FOUND` |
-| `ValidationException` | 参数验证失败 | 400 | `QUAESTURA_VALIDATION_*` |
-| `BusinessPreconditionException` | 业务前置条件不满足 | 422 | `QUAESTURA_PRECONDITION_*` |
-| `ForbiddenException` | 角色不足或归属校验失败 | 403 | `QUAESTURA_FORBIDDEN` 或 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
+| `DomainException` (and subclasses) | Business rule violation | Depends on the subclass | Depends on the subclass |
+| `EntityNotFoundException` | Entity does not exist | 404 | `QUAESTURA_<RESOURCE>_NOT_FOUND` |
+| `ValidationException` | Parameter validation failed | 400 | `QUAESTURA_VALIDATION_*` |
+| `BusinessPreconditionException` | Business precondition not met | 422 | `QUAESTURA_PRECONDITION_*` |
+| `ForbiddenException` | Insufficient role or failed ownership check | 403 | `QUAESTURA_FORBIDDEN` or `QUAESTURA_FORBIDDEN_NOT_OWNER` |
 
-### 全局异常中间件
+### Global exception middleware
 
-所有 WebAPI 端点必须经 `ExceptionHandlingMiddleware`（位于 `src/Service/Middleware/ExceptionHandlingMiddleware.cs`）统一处理：
+Every WebAPI endpoint must be handled by `ExceptionHandlingMiddleware` (in `src/Service/Middleware/ExceptionHandlingMiddleware.cs`):
 
-- `DomainException` 子类 → 映射为对应 HTTP 状态码 + 业务错误码
-- `ValidationException`（FluentValidation） → 400 + `QUAESTURA_VALIDATION_FAILED`，message 为校验错误列表
-- `InvalidOperationException`（由 `ImageValidationHelper` 抛出）→ 400 + `QUAESTURA_VALIDATION_INVALID_IMAGE`
+- `DomainException` subclasses → mapped to the corresponding HTTP status code + business error code
+- `ValidationException` (FluentValidation) → 400 + `QUAESTURA_VALIDATION_FAILED`; the message is the list of validation errors
+- `InvalidOperationException` (thrown by `ImageValidationHelper`) → 400 + `QUAESTURA_VALIDATION_INVALID_IMAGE`
 - `BadHttpRequestException` → 400
-- 其他未捕获异常 → 500 + `QUAESTURA_INTERNAL_ERROR`，原始 message 脱敏（仅显示 "Internal server error"），详细异常信息写入日志
+- Any other unhandled exception → 500 + `QUAESTURA_INTERNAL_ERROR`; the original message is redacted (only "Internal server error" is shown) and the exception details are written to the log
 
-## 错误信息规范
+## Error message conventions
 
-1. 错误信息使用**英文**（按 `30-backend-routing.md` 编码规范）
-2. 错误信息应简洁明确，不包含技术细节（如 SQL 语句、堆栈）
-3. 同一类错误在各服务中使用相同措辞
-4. 用户可见的业务提示可以本地化，但 API 响应 message 一律英文
+1. Error messages are in **English** (per the `30-backend-routing.md` coding conventions)
+2. Error messages should be concise and clear, without technical details (such as SQL statements or stack traces)
+3. The same kind of error uses the same wording across services
+4. User-facing business hints may be localized, but API response messages are always in English
 
-## 参数验证
+## Parameter validation
 
-- 使用 FluentValidation 验证 HTTP 请求 DTO
-- 验证失败抛出 `ValidationException`（由全局中间件转为 400）
-- ID 解析使用 `Guid.TryParse`，失败抛出 `ValidationException` 含 errorCode `QUAESTURA_VALIDATION_INVALID_ID`
+- Use FluentValidation to validate HTTP request DTOs
+- Validation failures throw `ValidationException` (converted to 400 by the global middleware)
+- IDs are parsed with `Guid.TryParse`; failures throw `ValidationException` with errorCode `QUAESTURA_VALIDATION_INVALID_ID`
 
-## 日志规范
+## Logging conventions
 
-- 使用结构化日志占位符：`logger.LogInformation("Created question {QuestionId}", id)` 而非字符串插值
-- 异常对象必须传入：`logger.LogError(ex, "...")` 而非 `logger.LogError(ex.Message, ...)`
-- 预期内的 `EntityNotFoundException` 使用 `Warning` 级别
-- 未捕获异常使用 `Error` 级别
-- 不记录图片二进制内容、Token、密码等敏感信息
-- OSS 删除失败等"软失败"使用 `Warning` 级别，主流程失败使用 `Error`
+- Use structured logging placeholders: `logger.LogInformation("Created question {QuestionId}", id)` rather than string interpolation
+- Always pass the exception object: `logger.LogError(ex, "...")` rather than `logger.LogError(ex.Message, ...)`
+- Expected `EntityNotFoundException`s are logged at `Warning` level
+- Unhandled exceptions are logged at `Error` level
+- Do not log image binary content, tokens, passwords, or other sensitive information
+- "Soft failures" such as a failed OSS delete use `Warning`; failures of the main flow use `Error`

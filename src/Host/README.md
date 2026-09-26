@@ -1,24 +1,24 @@
-# Quaestura 部署与运行指南
+# Quaestura Deployment and Operation Guide
 
-本文档涵盖了项目环境搭建、配置要求和 Docker 容器部署等指南。完整规范见 [`docs/development/Deployment.md`](../../docs/development/Deployment.md)。
+This document covers environment setup, configuration requirements, and Docker container deployment. See [`docs/development/Deployment.md`](../../docs/development/Deployment.md) for the complete specification.
 
-## 1. 快速启动
+## 1. Quick start
 
-### 1.1 启动要求
+### 1.1 Requirements
 
-1. **SeaweedFS**: 必须先启动 SeaweedFS 服务（S3 端口 8333）
-2. **数据库**: PostgreSQL，启动时自动建表
+1. **SeaweedFS**: the SeaweedFS service (S3 port 8333) must be started first
+2. **Database**: PostgreSQL; tables are created automatically on startup
 
-### 1.2 WebAPI 端口
+### 1.2 WebAPI ports
 
 - **HTTP**: 5007
-- **Swagger UI**: http://localhost:5007/swagger（仅开发环境）
-- **健康检查**: http://localhost:5007/health
-- **WebUI（管理前端）**: http://localhost:5007/（与 API 同端口同进程，详见 [`frontend/docs/admin-frontend-spec.md`](../../frontend/docs/admin-frontend-spec.md)）
+- **Swagger UI**: http://localhost:5007/swagger (Development only)
+- **Health check**: http://localhost:5007/health
+- **WebUI (admin frontend)**: http://localhost:5007/ (same port and process as the API; see [`frontend/docs/admin-frontend-spec.md`](../../frontend/docs/admin-frontend-spec.md))
 
-### 1.3 配置项
+### 1.3 Configuration
 
-在 `appsettings.json` 中需要配置如下关键连接信息：
+Configure the following key connection settings in `appsettings.json`:
 
 ```json
 {
@@ -36,7 +36,7 @@
 }
 ```
 
-`APP_TITLE` 配置（**可选**，默认 `Quaestura Admin`）：
+`APP_TITLE` setting (**optional**, defaults to `Quaestura Admin`):
 
 ```json
 {
@@ -44,91 +44,91 @@
 }
 ```
 
-后端启动时把 `index.html` 中的 `__APP_TITLE__` 占位符替换为该值，同时把 `window.__APP_TITLE__` 注入到 `<head>` 供前端 JS 读取。`start.sh` 默认传 `-e APP_TITLE="${CONTAINER_NAME}"`。
+On startup, the backend replaces the `__APP_TITLE__` placeholder in `index.html` with this value and injects `window.__APP_TITLE__` into `<head>` for the frontend JS to read. `start.sh` passes `-e APP_TITLE="${CONTAINER_NAME}"` by default.
 
-## 2. 端点清单
+## 2. Endpoints
 
-完整端点规范见 [`docs/overview/ApiSpec.md`](../../docs/overview/ApiSpec.md)。
+See [`docs/overview/ApiSpec.md`](../../docs/overview/ApiSpec.md) for the complete endpoint specification.
 
-### 题目管理
+### Question management
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |------|------|------|
-| GET | `/admin/questions` | 搜索/分页 |
-| GET | `/admin/questions/{id}` | 详情 |
-| POST | `/admin/questions` | 上传题目（multipart/form-data） |
-| DELETE | `/admin/questions/{id}` | 删除 |
+| GET | `/admin/questions` | Search/paginate |
+| GET | `/admin/questions/{id}` | Details |
+| POST | `/admin/questions` | Upload a question (multipart/form-data) |
+| DELETE | `/admin/questions/{id}` | Delete |
 
-### 知识点管理
+### Knowledge point management
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |------|------|------|
-| GET | `/admin/knowledges` | 列表/搜索/分页 |
-| GET | `/admin/knowledges/{id}` | 详情 |
-| POST | `/admin/knowledges` | 新增/更新 |
-| DELETE | `/admin/knowledges/{id}` | 删除 |
+| GET | `/admin/knowledges` | List/search/paginate |
+| GET | `/admin/knowledges/{id}` | Details |
+| POST | `/admin/knowledges` | Create/update |
+| DELETE | `/admin/knowledges/{id}` | Delete |
 
-### 题目-知识点关联
+### Question–knowledge point associations
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |------|------|------|
-| POST | `/admin/question-knowledges/batch-tag` | 批量打标签 |
-| GET | `/admin/question-knowledges` | 查询关联 |
-| DELETE | `/admin/question-knowledges` | 移除（按 questionId） |
+| POST | `/admin/question-knowledges/batch-tag` | Batch tag |
+| GET | `/admin/question-knowledges` | Query associations |
+| DELETE | `/admin/question-knowledges` | Remove (by questionId) |
 
-### Tag 管理
+### Tag management
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |------|------|------|
-| GET | `/admin/tags` | 列表/搜索/排序 |
-| GET | `/admin/tags/{id}` | 详情 |
-| POST | `/admin/tags` | 新增/更新 |
-| DELETE | `/admin/tags/{id}` | 删除（无引用时） |
+| GET | `/admin/tags` | List/search/sort |
+| GET | `/admin/tags/{id}` | Details |
+| POST | `/admin/tags` | Create/update |
+| DELETE | `/admin/tags/{id}` | Delete (only when unreferenced) |
 
-### 题目-Tag 关联
+### Question–tag associations
 
-| 方法 | 路径 | 说明 |
+| Method | Path | Description |
 |------|------|------|
-| POST | `/admin/question-tags/batch-tag` | 批量打标签 |
-| GET | `/admin/question-tags` | 查询关联（按 questionId 或 tagId） |
-| DELETE | `/admin/question-tags` | 移除（按 questionId，可选 tagId） |
+| POST | `/admin/question-tags/batch-tag` | Batch tag |
+| GET | `/admin/question-tags` | Query associations (by questionId or tagId) |
+| DELETE | `/admin/question-tags` | Remove (by questionId, optionally tagId) |
 
-## 3. 路径分流
+## 3. Path routing
 
-后端在同一 HTTP 端口（5007）同时提供 **WebAPI**、**管理前端 SPA** 和 **健康检查**：
+The backend serves the **WebAPI**, the **admin frontend SPA**, and the **health check** on the same HTTP port (5007):
 
-| 路径前缀 | 服务方 |
+| Path prefix | Served by |
 |---------|--------|
-| `/admin/*` | WebAPI（题目/知识点/Tag 增删改查） |
-| `/health` | 健康检查 |
-| `/swagger` | Swagger UI（仅开发环境） |
-| `/` 等其他 | 管理前端 SPA（Vue Router history fallback） |
+| `/admin/*` | WebAPI (question/knowledge point/tag CRUD) |
+| `/health` | Health check |
+| `/swagger` | Swagger UI (Development only) |
+| `/` and everything else | Admin frontend SPA (Vue Router history fallback) |
 
-SPA fallback 由 ASP.NET Core `MapWhen` 实现（详见 `Program.cs`），仅在 HTTP 端口生效；不存在 `__APP_TITLE__` 注入失败导致 SPA 不可用的情况（注入失败时返回原始 index.html）。 The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid JWT.
+The SPA fallback is implemented with ASP.NET Core `MapWhen` (see `Program.cs`) and only applies to the HTTP port; a failed `__APP_TITLE__` injection never makes the SPA unavailable (the original index.html is returned when injection fails). The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid JWT.
 
-## 4. Docker 环境部署
+## 4. Docker deployment
 
-### 4.1 部署 SeaweedFS
+### 4.1 Deploying SeaweedFS
 
-Quaestura 依赖一个 S3 兼容对象存储（如 SeaweedFS，S3 端口 8333）存放题目图片，其部署不属于本仓库；连接信息经 `Oss:*` 配置或 Consul KV 注入。
+Quaestura depends on an S3-compatible object store (such as SeaweedFS, S3 port 8333) for question images. Deploying it is outside the scope of this repository; connection details are injected through the `Oss:*` configuration or Consul KV.
 
-### 4.2 构建与部署
+### 4.2 Build and deploy
 
-Docker 镜像是**单 docker 同时包含 backend + frontend**（多阶段构建，`Dockerfile` 位于仓库根目录，build context 为仓库根）：
+The Docker image is **a single image containing both the backend and the frontend** (multi-stage build; `Dockerfile` is in the repository root, and the build context is the repository root):
 
 ```bash
 docker build -t quaestura:latest .
 ```
 
-部署网络：`start.sh` 默认使用 `quaestura-net` 桥接网络；与 Ruoyu.Study 平台同机部署时可改用平台网络，SeaweedFS 等依赖也可通过 Consul 配置的独立服务器地址访问。
+Deployment network: `start.sh` uses the `quaestura-net` bridge network by default; when deployed on the same host as the Ruoyu.Study platform, the platform network can be used instead, and dependencies such as SeaweedFS can also be reached through standalone server addresses configured in Consul.
 
-### 4.3 本地开发
+### 4.3 Local development
 
-如需修改管理前端并立即看到效果，单独构建前端即可（开发模式 `npm run dev` 走 vite proxy 5173 → 5007）：
+To change the admin frontend and see the result immediately, build the frontend on its own (dev mode `npm run dev` goes through the Vite proxy 5173 → 5007):
 
 ```bash
 cd ../frontend
 npm install
-npm run dev   # 开发模式（Vite dev server + 代理到 :5007）
-npm run build # 生产构建（生成 dist/，由 Docker 阶段 1 复制到 wwwroot/）
+npm run dev   # Dev mode (Vite dev server + proxy to :5007)
+npm run build # Production build (outputs dist/, copied into wwwroot/ by Docker stage 1)
 ```

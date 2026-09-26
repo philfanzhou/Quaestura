@@ -1,122 +1,122 @@
-# 数据库与存储设计
+# Database and Storage Design
 
-## 数据库设计
+## Database design
 
-### 数据库
+### Database
 
-本服务使用 PostgreSQL（Npgsql 提供程序）作为唯一数据库，由 `Program.cs` 通过 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建连接串：优先从 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）合成生产连接串，无法合成时回退到本地 `ConnectionStrings:Default`。
+The service uses PostgreSQL (Npgsql provider) as its only database. `Program.cs` builds the connection string through `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible.
 
-生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 共享配置注入；本地 `ConnectionStrings:Default` 仅保留无密码的 dev 连接串。
+In production, the PostgreSQL host/port/username/password are injected through the Consul shared configuration; the local `ConnectionStrings:Default` only keeps a password-less dev connection string.
 
 On startup, `DatabaseInitializer.InitializeAsync` applies the EF Core migrations in `src/Database/Migrations/`; no manual migration step is required.
 
 The raw SQL in `DatabaseInitializer` only recreates missing tables when there are no pending migrations.
 
-### 表结构
+### Table structure
 
-#### knowledge 知识点表
+#### knowledge (knowledge points)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `id` | UUID | PK | 主键 |
-| `parent_id` | UUID | FK → knowledge(id), ON DELETE RESTRICT | 父知识点（层级结构） |
-| `name` | VARCHAR(255) | NOT NULL | 知识点名称 |
-| `description` | TEXT | NULL | 描述 |
-| `created_by` | VARCHAR(36) | NULL | 创建者 ID |
-| `created_at` | TIMESTAMPTZ | NOT NULL | 创建时间 |
-| `is_referenced` | BOOLEAN | NOT NULL | 是否被题目引用 |
-| `subject` | INT | NULL | 学科 |
-| `grade` | INT | NULL | 年级 |
-| `updated_by` | VARCHAR(36) | NULL | 更新者 ID |
-| `updated_at` | TIMESTAMPTZ | NULL | 更新时间 |
+| `id` | UUID | PK | Primary key |
+| `parent_id` | UUID | FK → knowledge(id), ON DELETE RESTRICT | Parent knowledge point (hierarchy) |
+| `name` | VARCHAR(255) | NOT NULL | Knowledge point name |
+| `description` | TEXT | NULL | Description |
+| `created_by` | VARCHAR(36) | NULL | Creator ID |
+| `created_at` | TIMESTAMPTZ | NOT NULL | Creation time |
+| `is_referenced` | BOOLEAN | NOT NULL | Whether referenced by any question |
+| `subject` | INT | NULL | Subject |
+| `grade` | INT | NULL | Grade |
+| `updated_by` | VARCHAR(36) | NULL | Last updater ID |
+| `updated_at` | TIMESTAMPTZ | NULL | Last update time |
 
-**索引**：
+**Indexes**:
 - `IX_knowledge_subject_grade_name` UNIQUE (subject, grade, name)
 - `IX_knowledge_subject_grade` (subject, grade)
 - `IX_knowledge_parent_id` (parent_id)
 
-#### question 题目表
+#### question (questions)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `id` | UUID | PK | 主键 |
-| `created_at` | TIMESTAMPTZ | NOT NULL | 创建时间 |
-| `updated_at` | TIMESTAMPTZ | NOT NULL | 更新时间（并发检查） |
-| `level` | INT | NOT NULL | 难度等级 |
-| `type` | INT | NOT NULL | 题目类型 |
-| `width` | INT | NOT NULL | 图片宽度 |
-| `height` | INT | NOT NULL | 图片高度 |
-| `picture_paths` | TEXT | NULL | 图片路径列表（JSON 数组） |
-| `user_id` | VARCHAR(36) | NULL | 上传者 ID |
-| `student_id` | VARCHAR(36) | NULL | 关联学生 ID |
-| `mistake_id` | VARCHAR(36) | NULL | 关联错题 ID |
-| `subject` | INT | NOT NULL | 学科 |
-| `grade` | INT | NOT NULL | 年级 |
+| `id` | UUID | PK | Primary key |
+| `created_at` | TIMESTAMPTZ | NOT NULL | Creation time |
+| `updated_at` | TIMESTAMPTZ | NOT NULL | Last update time (concurrency check) |
+| `level` | INT | NOT NULL | Difficulty level |
+| `type` | INT | NOT NULL | Question type |
+| `width` | INT | NOT NULL | Image width |
+| `height` | INT | NOT NULL | Image height |
+| `picture_paths` | TEXT | NULL | Image path list (JSON array) |
+| `user_id` | VARCHAR(36) | NULL | Uploader ID |
+| `student_id` | VARCHAR(36) | NULL | Associated student ID |
+| `mistake_id` | VARCHAR(36) | NULL | Associated mistake ID |
+| `subject` | INT | NOT NULL | Subject |
+| `grade` | INT | NOT NULL | Grade |
 
-**索引**：
+**Indexes**:
 - `IX_question_subject_grade` (subject, grade)
 - `IX_question_subject_grade_level` (subject, grade, level)
 - `IX_question_subject_grade_type` (subject, grade, type)
 - `IX_question_created_at` (created_at)
 - `IX_question_user_id` (user_id)
 
-#### question_content 题目正文表
+#### question_content (question body)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `question_id` | UUID | PK, FK → question(id) ON DELETE CASCADE | 关联题目 |
-| `content` | TEXT | NULL | 题目内容 |
-| `correct_answer` | TEXT | NULL | 正确答案 |
-| `analysis` | TEXT | NULL | 解析 |
+| `question_id` | UUID | PK, FK → question(id) ON DELETE CASCADE | Associated question |
+| `content` | TEXT | NULL | Question content |
+| `correct_answer` | TEXT | NULL | Correct answer |
+| `analysis` | TEXT | NULL | Explanation |
 
-#### question_knowledge 题目知识点关联表
+#### question_knowledge (question–knowledge point association)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `id` | UUID | PK | 主键 |
-| `question_id` | UUID | NOT NULL, FK → question(id) ON DELETE CASCADE | 题目 |
-| `knowledge_id` | UUID | NOT NULL, FK → knowledge(id) ON DELETE CASCADE | 知识点 |
-| `weight` | DOUBLE PRECISION | NOT NULL DEFAULT 1.0 | 权重 |
+| `id` | UUID | PK | Primary key |
+| `question_id` | UUID | NOT NULL, FK → question(id) ON DELETE CASCADE | Question |
+| `knowledge_id` | UUID | NOT NULL, FK → knowledge(id) ON DELETE CASCADE | Knowledge point |
+| `weight` | DOUBLE PRECISION | NOT NULL DEFAULT 1.0 | Weight |
 
-**索引**：
+**Indexes**:
 - `IX_question_knowledge_question_id_knowledge_id` UNIQUE (question_id, knowledge_id)
 - `IX_question_knowledge_knowledge_id` (knowledge_id)
 
-#### tag 标签表
+#### tag (tags)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `id` | UUID | PK | 主键 |
-| `name` | VARCHAR(100) | NOT NULL, UNIQUE | 标签名（不区分大小写唯一） |
-| `color` | VARCHAR(20) | NULL | 显示颜色（HEX 格式，如 `#FF6B6B`） |
-| `description` | TEXT | NULL | 描述 |
-| `created_by` | VARCHAR(36) | NULL | 创建者 ID（从 JWT `sub` claim 写入，用于归属校验） |
-| `created_at` | TIMESTAMPTZ | NOT NULL | 创建时间 |
-| `usage_count` | INT | NOT NULL DEFAULT 0 | 引用次数（用于按热度排序、删除前检查） |
+| `id` | UUID | PK | Primary key |
+| `name` | VARCHAR(100) | NOT NULL, UNIQUE | Tag name (unique, case-insensitive) |
+| `color` | VARCHAR(20) | NULL | Display color (HEX format, such as `#FF6B6B`) |
+| `description` | TEXT | NULL | Description |
+| `created_by` | VARCHAR(36) | NULL | Creator ID (written from the JWT `sub` claim; used for ownership checks) |
+| `created_at` | TIMESTAMPTZ | NOT NULL | Creation time |
+| `usage_count` | INT | NOT NULL DEFAULT 0 | Reference count (used for popularity sorting and pre-delete checks) |
 
-**索引**：
+**Indexes**:
 - `IX_tag_name` UNIQUE (name) — a plain, case-sensitive unique index; case-insensitive uniqueness is enforced by the application-level check in `TagService`
 
-**设计说明**：
-- 与 `knowledge` 平行（不与 subject/grade 强绑定），便于跨学科年级复用
-- 无层级（无 parent_id）
-- `usage_count` 由 `question_tag` 增/减自动维护，删除前检查 `usage_count == 0`
-- `created_by` 由服务端从 JWT 写入，客户端无法伪造；修改/删除时校验 `created_by == 当前 userId`（严格归属制，详见 [Authentication.md](../development/Authentication.md)）
+**Design notes**:
+- Parallel to `knowledge` (not tied to subject/grade), so tags can be reused across subjects and grades
+- No hierarchy (no parent_id)
+- `usage_count` is maintained automatically as `question_tag` rows are added/removed; deletion requires `usage_count == 0`
+- `created_by` is written by the server from the JWT and cannot be forged by clients; updates/deletes require `created_by == current userId` (strict ownership, see [Authentication.md](../development/Authentication.md))
 
-#### question_tag 题目标签关联表
+#### question_tag (question–tag association)
 
-| 字段 | 类型 | 约束 | 说明 |
+| Column | Type | Constraints | Description |
 |------|------|------|------|
-| `id` | UUID | PK | 主键 |
-| `question_id` | UUID | NOT NULL, FK → question(id) ON DELETE CASCADE | 题目 |
-| `tag_id` | UUID | NOT NULL, FK → tag(id) ON DELETE CASCADE | 标签 |
-| `created_at` | TIMESTAMPTZ | NOT NULL | 关联创建时间 |
+| `id` | UUID | PK | Primary key |
+| `question_id` | UUID | NOT NULL, FK → question(id) ON DELETE CASCADE | Question |
+| `tag_id` | UUID | NOT NULL, FK → tag(id) ON DELETE CASCADE | Tag |
+| `created_at` | TIMESTAMPTZ | NOT NULL | Association creation time |
 
-**索引**：
+**Indexes**:
 - `IX_question_tag_question_id_tag_id` UNIQUE (question_id, tag_id)
 - `IX_question_tag_tag_id` (tag_id)
 
-### ER 图
+### ER diagram
 
 ```
 ┌────────────────┐
@@ -179,22 +179,22 @@ The raw SQL in `DatabaseInitializer` only recreates missing tables when there ar
                                         │ 0..N
                                         ▼
                                    ┌─────────┐
-                                   │ question│ (复用上方)
+                                   │ question│ (same as above)
                                    └─────────┘
 ```
 
-## 对象存储 (SeaweedFS)
+## Object storage (SeaweedFS)
 
-图片等二进制文件存储在 SeaweedFS（S3 兼容，端口 8333）中，数据库只存储对象路径。
+Images and other binary files are stored in SeaweedFS (S3-compatible, port 8333); the database only stores object paths.
 
-### 存储路径格式
+### Storage path format
 
 ```
 {year}/{month}/{day}/{guid}/{filename}
 ```
 
-由 `IOssService.UploadAsync` 自动生成，调用方无需关心。
+Generated automatically by `IOssService.UploadAsync`; callers do not need to handle it.
 
-### Bucket 命名空间
+### Bucket namespace
 
-通过 `OssBucket.Questions` 常量隔离题库图片与其他服务的对象存储。
+The `OssBucket.Questions` constant isolates question-bank images from other services' object storage.

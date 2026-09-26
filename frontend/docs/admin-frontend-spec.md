@@ -1,98 +1,98 @@
 # Quaestura Admin Frontend Spec
 
-本文档定义题库管理前端的技术栈、目录结构、路由、与后端 API 的集成方式。
+This document defines the tech stack, directory structure, routes, and backend API integration of the question-bank admin frontend.
 
-## 1. 概述
+## 1. Overview
 
-管理前端是 Vue 3 单页应用,与 Quaestura 后端服务在**同一个 Docker 容器**中运行(端口 5007 同时提供 API 和 SPA)。**未集成鉴权**(沿用内网环境假设)。
+The admin frontend is a Vue 3 single-page application that runs in the **same Docker container** as the Quaestura backend (port 5007 serves both the API and the SPA). **Authentication is not integrated** (it keeps the intranet assumption).
 
-**目录位置**:`frontend/`(与后端服务同目录,参考 doclibrary 前端布局)。
+**Location**: `frontend/` (next to the backend service, following the doclibrary frontend layout).
 
-## 2. 技术栈
+## 2. Tech stack
 
-| 项目 | 技术 |
+| Item | Technology |
 |------|------|
-| 框架 | Vue 3.5 + Composition API (`<script setup>`) |
-| 语言 | TypeScript |
-| 构建工具 | Vite |
-| UI 方案 | **纯手写 CSS**(不使用 UI 组件库,复用 doclibrary 设计系统) |
-| 路由 | vue-router(history 模式) |
-| HTTP 客户端 | Axios |
+| Framework | Vue 3.5 + Composition API (`<script setup>`) |
+| Language | TypeScript |
+| Build tool | Vite |
+| UI approach | **Hand-written CSS** (no UI component library; reuses the doclibrary design system) |
+| Routing | vue-router (history mode) |
+| HTTP client | Axios |
 
-### 已移除的依赖(历史遗留)
+### Removed dependencies (legacy)
 
-- `element-plus` / `@element-plus/icons-vue` — 全部 UI 改为手写 CSS,ElMessage 改为原生 toast
-- 历史版本曾全量引入 Element Plus,现已移除以保持轻量
+- `element-plus` / `@element-plus/icons-vue` — all UI moved to hand-written CSS, and ElMessage was replaced by a native toast
+- Earlier versions imported all of Element Plus; it has been removed to keep the frontend lightweight
 
-## 3. 目录结构
+## 3. Directory structure
 
 ```
-frontend/     # 与后端服务同目录
+frontend/     # Next to the backend service
 ├── package.json
 ├── package-lock.json
-├── vite.config.ts                            # 端口 8091,proxy /admin → :5007
+├── vite.config.ts                            # Port 8091, proxy /admin → :5007
 ├── tsconfig.json / .app.json / .node.json
-├── index.html                                # 含 <title>__APP_TITLE__</title>
+├── index.html                                # Contains <title>__APP_TITLE__</title>
 ├── public/favicon.svg
-├── docs/admin-frontend-spec.md               # 本文件
+├── docs/admin-frontend-spec.md               # This file
 └── src/
-    ├── main.ts                               # createApp + router(无 ElementPlus)
-    ├── App.vue                               # 布局(手写侧边栏 + router-view)
-    ├── style.css                             # 全局样式(复用 doclibrary 设计系统)
-    ├── env.d.ts                              # import.meta.env 类型
-    ├── router/index.ts                       # 3 个路由
+    ├── main.ts                               # createApp + router (no ElementPlus)
+    ├── App.vue                               # Layout (hand-written sidebar + router-view)
+    ├── style.css                             # Global styles (reuses the doclibrary design system)
+    ├── env.d.ts                              # import.meta.env types
+    ├── router/index.ts                       # 3 routes
     ├── views/
-    │   ├── QuestionView.vue                  # 题目管理(列表+搜索+查看+删除)
-    │   ├── KnowledgeView.vue                 # 知识点管理(列表+增删改)
-    │   └── TagView.vue                       # 标签管理(列表+增删改)
+    │   ├── QuestionView.vue                  # Question management (list + search + view + delete)
+    │   ├── KnowledgeView.vue                 # Knowledge point management (list + create/update/delete)
+    │   └── TagView.vue                       # Tag management (list + create/update/delete)
     ├── services/
     │   ├── questionApi.ts
     │   ├── knowledgeApi.ts
     │   └── tagApi.ts
     ├── types/
-    │   └── index.ts                          # 响应 DTO 类型
+    │   └── index.ts                          # Response DTO types
     └── components/
-        └── ApiErrorHandler.ts                # getApiErrorMessage 工具函数
+        └── ApiErrorHandler.ts                # getApiErrorMessage utility
 ```
 
-## 4. 样式规范
+## 4. Styling conventions
 
-### 4.1 复用 doclibrary 设计系统
+### 4.1 Reuse the doclibrary design system
 
-`style.css` 复用 doclibrary 的 CSS 变量 + 通用组件类,包括:
+`style.css` reuses doclibrary's CSS variables and shared component classes, including:
 
-- CSS 变量:`--primary-color`、`--text-primary`、`--card-bg`、`--border-color`、`--radius-md`、`--shadow-sm` 等
-- 通用类:`.btn`/`.btn-primary`/`.btn-secondary`/`.btn-danger`/`.btn-small`、`.card`/`.card-header`/`.card-body`、`.data-table`、`.pagination-bar`、`.tag`、`.form-group`/`.input-wrap`/`.select-wrap`、`.empty-state`、`.spinner`、`.status-badge`
-- 布局类:`.admin-layout`/`.sidebar`/`.main-content`/`.top-header`/`.content-area`/`.page-header`
+- CSS variables: `--primary-color`, `--text-primary`, `--card-bg`, `--border-color`, `--radius-md`, `--shadow-sm`, etc.
+- Shared classes: `.btn`/`.btn-primary`/`.btn-secondary`/`.btn-danger`/`.btn-small`, `.card`/`.card-header`/`.card-body`, `.data-table`, `.pagination-bar`, `.tag`, `.form-group`/`.input-wrap`/`.select-wrap`, `.empty-state`, `.spinner`, `.status-badge`
+- Layout classes: `.admin-layout`/`.sidebar`/`.main-content`/`.top-header`/`.content-area`/`.page-header`
 
-### 4.2 禁止内联样式
+### 4.2 No inline styles
 
-除动态绑定(`:style` 用于颜色色块、进度条宽度等)外,禁止使用 `style="..."` 静态内联样式。
+Apart from dynamic bindings (`:style` for color swatches, progress bar widths, and similar), static inline `style="..."` attributes are not allowed.
 
-### 4.3 原生 toast 替代 ElMessage
+### 4.3 Native toast instead of ElMessage
 
-移除 Element Plus 后,`ElMessage`/`ElMessageBox` 改为:
-- 消息提示:原生 toast 函数(创建 DOM 元素挂到 body,3 秒自动消失)
-- 确认弹窗:自实现 ConfirmDialog 组件(遮罩 + 卡片 + 确认/取消按钮)
+After removing Element Plus, `ElMessage`/`ElMessageBox` were replaced by:
+- Messages: a native toast function (creates a DOM element attached to body that disappears after 3 seconds)
+- Confirmation dialogs: a custom ConfirmDialog component (overlay + card + confirm/cancel buttons)
 
-## 5. 路由
+## 5. Routes
 
-| 路径 | 视图 | meta.title |
+| Path | View | meta.title |
 |------|------|-----------|
 | `/` | redirect to `/questions` | — |
-| `/questions` | QuestionView | `题目管理` |
-| `/knowledges` | KnowledgeView | `知识点管理` |
-| `/tags` | TagView | `标签管理` |
+| `/questions` | QuestionView | `题目管理` (Question management) |
+| `/knowledges` | KnowledgeView | `知识点管理` (Knowledge point management) |
+| `/tags` | TagView | `标签管理` (Tag management) |
 
-`router.beforeEach` 设置 `document.title = ${to.meta.title} - ${__APP_TITLE__}`。
+`router.beforeEach` sets `document.title = ${to.meta.title} - ${__APP_TITLE__}`.
 
-## 6. 与后端 API 的集成
+## 6. Backend API integration
 
-### 6.1 API 路径约定
+### 6.1 API path convention
 
-前端代码使用相对路径 `/admin/...`,dev 走 vite proxy,prod 走后端同源静态服务。
+Frontend code uses relative `/admin/...` paths; in dev they go through the Vite proxy, in production they are served same-origin by the backend.
 
-### 6.2 Vite 代理(dev)
+### 6.2 Vite proxy (dev)
 
 ```ts
 server: {
@@ -103,76 +103,76 @@ server: {
 }
 ```
 
-### 6.3 后端集成(生产)
+### 6.3 Backend integration (production)
 
-由 `Program.cs` 的 `MapWhen` 块提供静态文件服务(排除 `/admin`、`/health`、`/swagger`),`Dockerfile` 第 2 阶段把 `dist/` 复制到 `Host/wwwroot/`。
+Static files are served by the `MapWhen` block in `Program.cs` (excluding `/admin`, `/health`, `/swagger`), and stage 2 of the `Dockerfile` copies `dist/` into `Host/wwwroot/`.
 
-## 7. 页面功能
+## 7. Page features
 
-### 7.1 QuestionView(题目管理)
+### 7.1 QuestionView (question management)
 
-- 列表(搜索:subject、grade、level、type、keyword、tagId)
-- 详情:弹窗显示题干/答案/解析(`pre` 原文)+ 图片(OSS presigned URL)
-- 删除(确认弹窗)
-- 不做新增/编辑(v1 范围)
+- List (search by subject, grade, level, type, keyword, tagId)
+- Details: a dialog showing the stem/answer/explanation (raw text in `pre`) + images (OSS presigned URLs)
+- Delete (with a confirmation dialog)
+- No create/edit (v1 scope)
 
-### 7.2 KnowledgeView(知识点管理)
+### 7.2 KnowledgeView (knowledge point management)
 
-- 列表(扁平展示,按 parent_id 层级缩进)
-- 新增/编辑:弹窗表单(name、parentId、subject、grade、description、userId)
-- 删除:仅当 is_referenced == false(后端 422 拒绝)
+- List (flat, indented by parent_id hierarchy)
+- Create/edit: dialog form (name, parentId, subject, grade, description, userId)
+- Delete: only when is_referenced == false (the backend rejects with 422)
 
-### 7.3 TagView(标签管理)
+### 7.3 TagView (tag management)
 
-- 列表(按 name 升序 或 usageCount 降序)
-- 模糊搜索
-- 新增/编辑:弹窗表单(name、color、description、userId)
-- 颜色:用 `<input type="color">`
-- 删除:仅当 usageCount == 0(后端 422 拒绝)
+- List (by name ascending or usageCount descending)
+- Fuzzy search
+- Create/edit: dialog form (name, color, description, userId)
+- Color: uses `<input type="color">`
+- Delete: only when usageCount == 0 (the backend rejects with 422)
 
-## 8. 错误处理
+## 8. Error handling
 
-`ApiErrorHandler.ts` 暴露 `getApiErrorMessage(error: unknown): string`,从 `error.response?.data?.message` 提取后端消息。视图层用原生 toast 显示。
+`ApiErrorHandler.ts` exposes `getApiErrorMessage(error: unknown): string`, which extracts the backend message from `error.response?.data?.message`. Views display it with the native toast.
 
-## 9. 构建与运行
+## 9. Build and run
 
 ### 9.1 Dev
 
 ```bash
 cd frontend
 npm install
-npm run dev   # Vite dev server :8091,代理 /admin 到 :5007
+npm run dev   # Vite dev server :8091, proxies /admin to :5007
 ```
 
-### 9.2 生产构建
+### 9.2 Production build
 
 ```bash
 cd frontend
-npm run build  # 输出 dist/,由 Dockerfile 复制到 Host/wwwroot/
+npm run build  # Outputs dist/, copied into Host/wwwroot/ by the Dockerfile
 ```
 
 ### 9.3 Docker
 
 ```bash
 docker build -t quaestura:latest .
-# 镜像:quaestura:<tag>
-# Dockerfile COPY 路径:frontend/
+# Image: quaestura:<tag>
+# Dockerfile COPY path: frontend/
 ```
 
-## 10. 环境变量
+## 10. Environment variables
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Description |
 |------|------|------|
-| `APP_TITLE` | `Quaestura Admin` | 浏览器 tab 标题 |
+| `APP_TITLE` | `Quaestura Admin` | Browser tab title |
 
-## 11. 重构记录(2026-07-04)
+## 11. Refactoring log (2026-07-04)
 
-- 路径迁移:迁出到 Quaestura 独立仓库后,前端固定在仓库根 `frontend/`(此前在 monorepo 内历经 `src/questionbank_portal/frontend/` → `src/services/ruoyu.questionBank/frontend/`)
-- 移除 element-plus / @element-plus/icons-vue 依赖
-- style.css 从 10 行扩展为完整设计系统(复用 doclibrary CSS 变量 + 通用组件类)
-- App.vue 重写:el-container/el-menu → 手写侧边栏 + router-view
-- 3 个视图重写:el-table/el-form/el-dialog/el-pagination → 手写 data-table/form/confirm-dialog/pagination-bar
-- ElMessage/ElMessageBox → 原生 toast + 自实现 ConfirmDialog
-- 清理死代码:3 个 API 文件未使用的单例导出、QuestionView 死导入、ErrorResponse 未使用类型、KnowledgeView tree-props 半成品
-- 统一 API timeout 为 20000ms
-- 保留 vue-router(history 模式,3 路由)
+- Path migration: after moving out into the standalone Quaestura repository, the frontend lives at the repository root in `frontend/` (inside the monorepo it had moved from `src/questionbank_portal/frontend/` → `src/services/ruoyu.questionBank/frontend/`)
+- Removed the element-plus / @element-plus/icons-vue dependencies
+- Expanded style.css from 10 lines into a complete design system (reusing doclibrary CSS variables + shared component classes)
+- Rewrote App.vue: el-container/el-menu → hand-written sidebar + router-view
+- Rewrote the 3 views: el-table/el-form/el-dialog/el-pagination → hand-written data-table/form/confirm-dialog/pagination-bar
+- ElMessage/ElMessageBox → native toast + custom ConfirmDialog
+- Removed dead code: unused singleton exports in the 3 API files, a dead import in QuestionView, the unused ErrorResponse type, and the half-finished tree-props in KnowledgeView
+- Unified the API timeout to 20000ms
+- Kept vue-router (history mode, 3 routes)

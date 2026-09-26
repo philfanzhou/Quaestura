@@ -166,23 +166,12 @@ if (app.Environment.IsDevelopment())
 // Global exception handling
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-// Authentication & authorization (JWT Bearer)
-app.UseAuthentication();
-app.UseAuthorization();
-
-// Map endpoints
-app.MapQuestionEndpoints();
-app.MapKnowledgeEndpoints();
-app.MapQuestionKnowledgeEndpoints();
-app.MapTagEndpoints();
-app.MapQuestionTagEndpoints();
-
-// Health check (public, no auth required)
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
-
 // ========== Static files & SPA for Admin Web (HTTP port only) ==========
 // Serves Vue 3 frontend SPA built into wwwroot/.
 // Excludes /admin (API), /health, /swagger so the API still works.
+// Registered before authentication on purpose: the admin frontend (including its login page)
+// must load without a token, otherwise signed-out users could never sign in.
+// Requests handled by this branch never reach UseAuthentication/UseAuthorization.
 var escapedAppTitle = appTitle.Replace("'", "\\'");
 app.MapWhen(
     context => !context.Request.Path.StartsWithSegments("/admin")
@@ -227,6 +216,20 @@ app.MapWhen(
             innerSpa.UseStaticFiles();
         });
     });
+
+// Authentication & authorization (JWT Bearer)
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Map endpoints
+app.MapQuestionEndpoints();
+app.MapKnowledgeEndpoints();
+app.MapQuestionKnowledgeEndpoints();
+app.MapTagEndpoints();
+app.MapQuestionTagEndpoints();
+
+// Health check (public, no auth required)
+app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
 
 app.Run();
 

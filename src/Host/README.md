@@ -104,7 +104,7 @@
 | `/swagger` | Swagger UI（仅开发环境） |
 | `/` 等其他 | 管理前端 SPA（Vue Router history fallback） |
 
-SPA fallback 由 ASP.NET Core `MapWhen` 实现（详见 `Program.cs`），仅在 HTTP 端口生效；不存在 `__APP_TITLE__` 注入失败导致 SPA 不可用的情况（注入失败时返回原始 index.html）。
+SPA fallback 由 ASP.NET Core `MapWhen` 实现（详见 `Program.cs`），仅在 HTTP 端口生效；不存在 `__APP_TITLE__` 注入失败导致 SPA 不可用的情况（注入失败时返回原始 index.html）。 The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid JWT.
 
 ## 4. Docker 环境部署
 

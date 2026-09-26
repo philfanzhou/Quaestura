@@ -4,7 +4,7 @@ Thank you for improving Quaestura. Keep changes focused, preserve public contrac
 
 ## Development workflow
 
-1. Create a branch from `main`. Direct pushes to `main` are blocked; every change lands through a pull request.
+1. Direct pushes to `main` are blocked; every change lands through a pull request.
 2. Build and test the solution and the admin console.
 3. Add or update tests for behavior changes.
 4. Update documentation and configuration examples when behavior changes.

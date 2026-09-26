@@ -16,6 +16,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 
 未提供或提供无效 JWT → 401 Unauthorized（由认证中间件返回）。
 
+> Exception: `POST /admin/auth/login` and `POST /admin/auth/callback` are anonymous (see [§2.6](#26-admin-authentication-adminauth)).
+
 ### 1.2 响应格式
 
 **成功响应（单条）**：
@@ -705,6 +707,68 @@ Tag 详情。
   "data": { "questionId": "uuid", "tagId": "uuid (if specified)", "removed": true }
 }
 ```
+
+### 2.6 Admin authentication `/admin/auth`
+
+Both endpoints are anonymous. See [Authentication.md §6](../development/Authentication.md#6-admin-login) for the flow and configuration. Unlike the other endpoints, failures return `{"success": false, "message": "..."}` without an `errorCode`.
+
+#### POST `/admin/auth/login`
+
+Exchanges an admin's username and password for a SignaCore access token. The username and password are forwarded to SignaCore as-is (no trimming or case folding).
+
+**Request body**:
+
+```json
+{
+  "username": "admin",
+  "password": "********"
+}
+```
+
+**Response 200**:
+
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "accessToken": "<jwt>",
+  "expiresIn": 3600,
+  "expiresAt": 1790000000
+}
+```
+
+`expiresIn` is in seconds; `expiresAt` is a Unix timestamp in seconds. No refresh token or user info is returned.
+
+**Errors**:
+
+| HTTP | message | When |
+|------|---------|------|
+| 400 | `Username and password are required.` | `username` or `password` is missing, empty, or whitespace |
+| 400 | SignaCore's message, or `Login failed.` when it is empty | SignaCore rejected the credentials (`success: false`) |
+| 502 | `Identity service unavailable.` | SignaCore returned a non-2xx status, an empty or unreadable body, or no access token; or the request failed or timed out (30 seconds) |
+| 503 | `Admin login is not configured.` | `IdentityService:AppId` or `IdentityService:AppSecret` is not configured |
+
+#### POST `/admin/auth/callback`
+
+Role callback invoked by SignaCore while it issues a token for the Quaestura application.
+
+**Request body** (as sent by SignaCore):
+
+```json
+{
+  "user_id": "<SignaCore user id>"
+}
+```
+
+**Response 200**:
+
+```json
+{
+  "roles": ["admin"]
+}
+```
+
+`roles` is `["admin"]` when `user_id` is listed in `AdminPortal:AdminUserIds` (case-insensitive); otherwise, including a missing body or empty `user_id`, it is `[]`.
 
 ## 3. 错误码字典
 

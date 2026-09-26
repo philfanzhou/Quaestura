@@ -37,6 +37,8 @@ docker run -d \
   -e TZ=Asia/Shanghai \
   -e CONSUL_HTTP_ADDR="${CONSUL_HTTP_ADDR}" \
   -e CONSUL_TOKEN="${CONSUL_TOKEN}" \
+  -e IdentityService__AppId="${IDENTITY_APP_ID:-}" \
+  -e IdentityService__AppSecret="${IDENTITY_APP_SECRET:-}" \
   -e Database__Name="${DB_NAME}" \
   -e APP_TITLE="${CONTAINER_NAME}" \
   "$IMAGE_NAME"

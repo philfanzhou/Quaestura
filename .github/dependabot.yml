@@ -1,0 +1,60 @@
+version: 2
+
+updates:
+  - package-ecosystem: nuget
+    directory: /src
+    schedule:
+      interval: weekly
+    groups:
+      dotnet-dependencies:
+        patterns:
+          - "*"
+    # The 10.x lines of these packages require net10.0. Remove once the .NET 10 migration (#1) lands.
+    ignore:
+      - dependency-name: "Microsoft.*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "Npgsql*"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    # Runtime majors move deliberately: .NET via #1, Node to the next even-numbered LTS line.
+    ignore:
+      - dependency-name: "*dotnet/sdk"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "*dotnet/aspnet"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "*node"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"

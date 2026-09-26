@@ -164,6 +164,42 @@ Dockerfile 位于仓库根目录 `Dockerfile`，**单个镜像同时包含 backe
 >
 > 数据库连接不再通过 `ConnectionStrings__Default` 环境变量注入，改由 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）在运行时合成。
 
+`start.sh` 默认运行本地构建的 `quaestura:latest`；使用已发布镜像时指定 `IMAGE_REPO` 与 `IMAGE_TAG`：
+
+```bash
+docker pull ghcr.io/philfanzhou/quaestura:0.1.0
+IMAGE_REPO=ghcr.io/philfanzhou/quaestura IMAGE_TAG=0.1.0 ./start.sh
+```
+
+### 3.4 预构建镜像与版本发布
+
+GitHub Actions（`.github/workflows/ci.yml`）在 PR、`main` 推送和 release tag 上运行构建、测试与镜像构建；只有 `main` 推送和 tag 会发布镜像到 `ghcr.io/philfanzhou/quaestura`。
+
+| 触发 | 发布的镜像 tag | GitHub Release |
+|------|---------------|----------------|
+| 合并到 `main` | `edge`（随最新提交移动，不代表正式版本） | 无 |
+| `MAJOR.MINOR.PATCH` tag | `MAJOR.MINOR.PATCH`、`MAJOR.MINOR`、`latest` | 正式版，标记为 latest |
+| `MAJOR.MINOR.PATCH-rc.NUMBER` tag | 仅 `MAJOR.MINOR.PATCH-rc.NUMBER` | 预发布版，不移动 `MAJOR.MINOR` 与 `latest` |
+
+发布完全由推送 tag 驱动，不手工创建 Release 或推送镜像。tag 不带 `v` 前缀，打在已合并到 `main` 的提交上：
+
+```bash
+git switch main && git pull
+git tag -a 0.1.0 -m "Quaestura 0.1.0"
+git push origin 0.1.0
+```
+
+候选版本使用 `-rc.NUMBER` 后缀，例如 `git tag -a 0.1.0-rc.1 -m "Quaestura 0.1.0-rc.1"`。其他格式的 tag 会被 CI 拒绝。
+
+tag 推送后先运行完整的 `Build & Test`，通过后依次执行：
+
+1. **Publish GHCR Image**：构建并推送镜像，附带 provenance 与 SBOM。
+2. **Publish GitHub Release**：为该 tag 创建 Release，写入实际发布的镜像 digest，并附加 GitHub 自动生成的变更日志。
+
+Release 只会为测试通过且镜像已可拉取的 tag 创建。某个 tag 的流水线失败时，既不发布镜像也不创建 Release；修复原因后打新版本号，不要移动已失败的 tag。对已有 Release 的 tag 重新运行流水线，不会覆盖手工编辑过的 Release 说明。
+
+每次 `edge` 推送会把旧的 manifest 留作 GHCR 中未打 tag 的包版本，GHCR 不会自动清理，需要时在包设置中手工删除。
+
 ## 4. 端口分配
 
 | 端口 | 协议 | 用途 |

@@ -2,8 +2,10 @@
 set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Set IMAGE_REPO=ghcr.io/philfanzhou/quaestura to run a published release instead of a local build.
+IMAGE_REPO="${IMAGE_REPO:-quaestura}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
-IMAGE_NAME="quaestura:${IMAGE_TAG}"
+IMAGE_NAME="${IMAGE_REPO}:${IMAGE_TAG}"
 CONTAINER_NAME="quaestura"
 NETWORK_NAME="quaestura-net"
 # HTTP listen port is hardcoded to 5007 inside the container (Program.cs).

@@ -8,9 +8,9 @@
 
 生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 共享配置注入；本地 `ConnectionStrings:Default` 仅保留无密码的 dev 连接串。
 
-启动时 `DatabaseInitializer.InitializeAsync` 自动建表（`CREATE TABLE IF NOT EXISTS`），无需手动执行迁移。
+On startup, `DatabaseInitializer.InitializeAsync` applies the EF Core migrations in `src/Database/Migrations/`; no manual migration step is required.
 
-迁移文件位于 `src/Database/Migrations/`，仅供 EF Core 工具使用，运行时通过 `DatabaseInitializer` 的原生 SQL 初始化。
+The raw SQL in `DatabaseInitializer` only recreates missing tables when there are no pending migrations.
 
 ### 表结构
 
@@ -95,7 +95,7 @@
 | `usage_count` | INT | NOT NULL DEFAULT 0 | 引用次数（用于按热度排序、删除前检查） |
 
 **索引**：
-- `IX_tag_name` UNIQUE (LOWER(name)) — 不区分大小写唯一，通过 PostgreSQL 函数索引实现
+- `IX_tag_name` UNIQUE (name) — a plain, case-sensitive unique index; case-insensitive uniqueness is enforced by the application-level check in `TagService`
 
 **设计说明**：
 - 与 `knowledge` 平行（不与 subject/grade 强绑定），便于跨学科年级复用

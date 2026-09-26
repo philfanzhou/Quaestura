@@ -17,7 +17,7 @@ namespace Quaestura.Database.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.0")
+                .HasAnnotation("ProductVersion", "8.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -29,7 +29,7 @@ namespace Quaestura.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
@@ -64,7 +64,7 @@ namespace Quaestura.Database.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("subject");
 
-                    b.Property<DateTime?>("UpdatedAt")
+                    b.Property<DateTimeOffset?>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -93,7 +93,7 @@ namespace Quaestura.Database.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<DateTime>("CreatedAt")
+                    b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
@@ -131,7 +131,7 @@ namespace Quaestura.Database.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("type");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTimeOffset>("UpdatedAt")
                         .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -214,6 +214,78 @@ namespace Quaestura.Database.Migrations
                     b.ToTable("question_knowledge");
                 });
 
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionTag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("question_id");
+
+                    b.Property<Guid>("TagId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tag_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TagId");
+
+                    b.HasIndex("QuestionId", "TagId")
+                        .IsUnique();
+
+                    b.ToTable("question_tag");
+                });
+
+            modelBuilder.Entity("Quaestura.Database.Entity.Tag", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("color");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .HasMaxLength(36)
+                        .HasColumnType("character varying(36)")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<int>("UsageCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("usage_count");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("tag");
+                });
+
             modelBuilder.Entity("Quaestura.Database.Entity.Knowledge", b =>
                 {
                     b.HasOne("Quaestura.Database.Entity.Knowledge", "Parent")
@@ -254,6 +326,25 @@ namespace Quaestura.Database.Migrations
                     b.Navigation("Question");
                 });
 
+            modelBuilder.Entity("Quaestura.Database.Entity.QuestionTag", b =>
+                {
+                    b.HasOne("Quaestura.Database.Entity.Question", "Question")
+                        .WithMany("QuestionTags")
+                        .HasForeignKey("QuestionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Quaestura.Database.Entity.Tag", "Tag")
+                        .WithMany("QuestionTags")
+                        .HasForeignKey("TagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Question");
+
+                    b.Navigation("Tag");
+                });
+
             modelBuilder.Entity("Quaestura.Database.Entity.Knowledge", b =>
                 {
                     b.Navigation("Children");
@@ -264,6 +355,13 @@ namespace Quaestura.Database.Migrations
             modelBuilder.Entity("Quaestura.Database.Entity.Question", b =>
                 {
                     b.Navigation("QuestionKnowledges");
+
+                    b.Navigation("QuestionTags");
+                });
+
+            modelBuilder.Entity("Quaestura.Database.Entity.Tag", b =>
+                {
+                    b.Navigation("QuestionTags");
                 });
 #pragma warning restore 612, 618
         }

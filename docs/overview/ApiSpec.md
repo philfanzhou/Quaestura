@@ -1,26 +1,26 @@
-﻿# Quaestura API 规范
+﻿# Quaestura API Specification
 
-本文档定义 `Quaestura` 服务的完整 HTTP API。所有端点统一返回结构化 JSON 响应，遵循 [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md) 规范。
+This document defines the complete HTTP API of the `Quaestura` service. Every endpoint returns a structured JSON response and follows [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md).
 
-## 1. 通用约定
+## 1. General conventions
 
-### 1.1 认证
+### 1.1 Authentication
 
-所有 `/admin/*` 端点要求 JWT Bearer Token 认证（详见 [Authentication.md](../development/Authentication.md)）：
+Every `/admin/*` endpoint requires JWT Bearer Token authentication (see [Authentication.md](../development/Authentication.md)):
 
 ```
 Authorization: Bearer <jwt-token>
 ```
 
-JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistant/admin/student）claim。服务端从 JWT 读取 userId，**请求体不再包含 userId 字段**。
+The JWT is issued by SignaCore and contains the `sub` (userId) and `role` (teacher/assistant/admin/student) claims. The server reads the userId from the JWT; **request bodies no longer contain a userId field**.
 
-未提供或提供无效 JWT → 401 Unauthorized（由认证中间件返回）。
+A missing or invalid JWT → 401 Unauthorized (returned by the authentication middleware).
 
 > Exception: `POST /admin/auth/login` and `POST /admin/auth/callback` are anonymous (see [§2.6](#26-admin-authentication-adminauth)).
 
-### 1.2 响应格式
+### 1.2 Response format
 
-**成功响应（单条）**：
+**Success response (single record)**:
 
 ```json
 {
@@ -29,7 +29,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**成功响应（列表/分页）**：
+**Success response (list/paginated)**:
 
 ```json
 {
@@ -42,7 +42,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误响应**：
+**Error response**:
 
 ```json
 {
@@ -52,42 +52,42 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-### 1.3 通用字段
+### 1.3 Common fields
 
-- 所有 ID 字段为 UUID 字符串（如 `00000000-0000-0000-0000-000000000001`）
-- 所有时间戳为 ISO 8601 UTC 字符串（如 `2026-07-02T10:00:00.000Z`）
-- `subject`（学科）和 `grade`（年级）为整数，由 [`Quaestura.Common` 共享常量](../../src/Common/Constants/) 定义
-- 所有消息/错误信息使用英文
+- All ID fields are UUID strings (such as `00000000-0000-0000-0000-000000000001`)
+- All timestamps are ISO 8601 UTC strings (such as `2026-07-02T10:00:00.000Z`)
+- `subject` and `grade` are integers defined by the [`Quaestura.Common` shared constants](../../src/Common/Constants/)
+- All messages and error messages are in English
 
-### 1.4 通用查询参数
+### 1.4 Common query parameters
 
-| 参数 | 类型 | 必填 | 默认值 | 说明 |
+| Parameter | Type | Required | Default | Description |
 |------|------|------|--------|------|
-| `page` | int | 否 | 1 | 页码（从 1 开始） |
-| `size` | int | 否 | 10 | 每页数量（上限 100） |
+| `page` | int | No | 1 | Page number (starting at 1) |
+| `size` | int | No | 10 | Page size (maximum 100) |
 
-## 2. 端点清单
+## 2. Endpoints
 
-### 2.1 题目管理 `/admin/questions`
+### 2.1 Question management `/admin/questions`
 
 #### GET `/admin/questions`
 
-搜索/分页查询题目。
+Search/paginate questions.
 
-**查询参数**：
+**Query parameters**:
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `keyword` | string | 否 | 题干关键字（匹配 `question_content.content`） |
-| `level` | int | 否 | 难度等级（> 0 生效） |
-| `type` | int | 否 | 题目类型（> 0 生效） |
-| `subject` | int | **是** | 学科 |
-| `grade` | int | **是** | 年级 |
-| `tagId` | UUID | 否 | 仅返回已打该标签的题目 |
-| `page` | int | 否 | 默认 1 |
-| `size` | int | 否 | 默认 10，上限 100 |
+| `keyword` | string | No | Stem keyword (matches `question_content.content`) |
+| `level` | int | No | Difficulty level (applied when > 0) |
+| `type` | int | No | Question type (applied when > 0) |
+| `subject` | int | **Yes** | Subject |
+| `grade` | int | **Yes** | Grade |
+| `tagId` | UUID | No | Only return questions with this tag |
+| `page` | int | No | Default 1 |
+| `size` | int | No | Default 10, maximum 100 |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -100,9 +100,9 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
       "width": 800,
       "height": 600,
       "picturePaths": ["https://...presigned-url-1", "https://...presigned-url-2"],
-      "content": "题干内容",
-      "correctAnswer": "正确答案",
-      "analysis": "解析",
+      "content": "Question stem",
+      "correctAnswer": "Correct answer",
+      "analysis": "Explanation",
       "userId": "uuid",
       "studentId": "uuid",
       "mistakeId": "uuid",
@@ -119,20 +119,20 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — subject/grade 缺失或非法
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — subject/grade missing or invalid
 
 #### GET `/admin/questions/{id}`
 
-获取题目详情。
+Get question details.
 
-**路径参数**：
+**Path parameters**:
 
-| 参数 | 类型 | 说明 |
+| Parameter | Type | Description |
 |------|------|------|
-| `id` | UUID | 题目 ID |
+| `id` | UUID | Question ID |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -144,9 +144,9 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
     "width": 800,
     "height": 600,
     "picturePaths": ["https://...presigned-url"],
-    "content": "题干内容",
-    "correctAnswer": "正确答案",
-    "analysis": "解析",
+    "content": "Question stem",
+    "correctAnswer": "Correct answer",
+    "analysis": "Explanation",
     "userId": "uuid",
     "studentId": "uuid",
     "mistakeId": "uuid",
@@ -158,27 +158,27 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_INVALID_ID` — ID 格式错误
-- 404 `QUAESTURA_QUESTION_NOT_FOUND` — 题目不存在
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_INVALID_ID` — invalid ID format
+- 404 `QUAESTURA_QUESTION_NOT_FOUND` — question does not exist
 
 #### POST `/admin/questions`
 
-上传/更新题目（multipart/form-data）。
+Upload/update a question (multipart/form-data).
 
-**Form 字段**：
+**Form fields**:
 
-| 字段 | 类型 | 必填 | 说明 |
+| Field | Type | Required | Description |
 |------|------|------|------|
-| `question` | string (JSON) | **是** | `QuestionPayload` JSON 字符串 |
-| `content` | string (JSON) | 否 | `QuestionContentPayload` JSON 字符串 |
-| `subject` | int (form) | **是** | 学科 |
-| `grade` | int (form) | **是** | 年级 |
-| `pictures` | file[] | 否 | 图片文件（支持 JPEG/PNG/GIF/WebP/BMP，单张 ≤ 10MB） |
+| `question` | string (JSON) | **Yes** | `QuestionPayload` JSON string |
+| `content` | string (JSON) | No | `QuestionContentPayload` JSON string |
+| `subject` | int (form) | **Yes** | Subject |
+| `grade` | int (form) | **Yes** | Grade |
+| `pictures` | file[] | No | Image files (JPEG/PNG/GIF/WebP/BMP, ≤ 10MB each) |
 
-> `userId` 从 JWT 读取（`sub` claim），不再从 form 字段获取。
+> `userId` is read from the JWT (`sub` claim), no longer from a form field.
 
-**QuestionPayload**：
+**QuestionPayload**:
 
 ```json
 {
@@ -192,17 +192,17 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**QuestionContentPayload**：
+**QuestionContentPayload**:
 
 ```json
 {
-  "content": "题干内容",
-  "correctAnswer": "正确答案",
-  "analysis": "解析"
+  "content": "Question stem",
+  "correctAnswer": "Correct answer",
+  "analysis": "Explanation"
 }
 ```
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -211,21 +211,21 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — 字段验证失败
-- 400 `QUAESTURA_VALIDATION_INVALID_IMAGE` — 图片格式/大小不符
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — field validation failed
+- 400 `QUAESTURA_VALIDATION_INVALID_IMAGE` — invalid image format/size
 
 #### DELETE `/admin/questions/{id}`
 
-删除题目。
+Delete a question.
 
-**路径参数**：
+**Path parameters**:
 
-| 参数 | 类型 | 说明 |
+| Parameter | Type | Description |
 |------|------|------|
-| `id` | UUID | 题目 ID |
+| `id` | UUID | Question ID |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -234,28 +234,28 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_INVALID_ID` — ID 格式错误
-- 404 `QUAESTURA_QUESTION_NOT_FOUND` — 题目不存在
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_INVALID_ID` — invalid ID format
+- 404 `QUAESTURA_QUESTION_NOT_FOUND` — question does not exist
 
-### 2.2 知识点管理 `/admin/knowledges`
+### 2.2 Knowledge point management `/admin/knowledges`
 
 #### GET `/admin/knowledges`
 
-知识点列表/搜索/分页。
+List/search/paginate knowledge points.
 
-**查询参数**：
+**Query parameters**:
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `parentId` | UUID | 否 | 父节点 ID（不传则返回顶级节点） |
-| `grade` | int | 否 | 按年级筛选 |
-| `subject` | int | 否 | 按学科筛选（需与 `grade` 配合使用） |
-| `name` | string | 否 | 按名称模糊搜索（LIKE） |
-| `page` | int | 否 | 默认 1 |
-| `size` | int | 否 | 默认 10，上限 100 |
+| `parentId` | UUID | No | Parent node ID (top-level nodes are returned when omitted) |
+| `grade` | int | No | Filter by grade |
+| `subject` | int | No | Filter by subject (must be used together with `grade`) |
+| `name` | string | No | Fuzzy search by name (LIKE) |
+| `page` | int | No | Default 1 |
+| `size` | int | No | Default 10, maximum 100 |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -264,8 +264,8 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
     {
       "id": "uuid",
       "parentId": "uuid or null",
-      "name": "一般现在时",
-      "description": "描述",
+      "name": "Simple present tense",
+      "description": "Description",
       "createdBy": "uuid",
       "createdAt": "2026-07-02T10:00:00.000Z",
       "isReferenced": false,
@@ -284,9 +284,9 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 
 #### GET `/admin/knowledges/{id}`
 
-知识点详情。
+Knowledge point details.
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -300,30 +300,30 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_INVALID_ID`
 - 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND`
 
 #### POST `/admin/knowledges`
 
-新增或更新知识点（id 存在则更新，空则新增）。
+Create or update a knowledge point (updates when id is present, creates when empty).
 
-**请求体**：
+**Request body**:
 
 ```json
 {
   "id": "uuid (optional)",
   "parentId": "uuid (optional)",
-  "name": "知识点名称",
-  "description": "描述 (optional)",
+  "name": "Knowledge point name",
+  "description": "Description (optional)",
   "subject": 1,
   "grade": 7
 }
 ```
 
-> `userId` 从 JWT 读取，写入 `created_by` / `updated_by`。
+> `userId` is read from the JWT and written to `created_by` / `updated_by`.
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -332,17 +332,17 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_FAILED`
-- 409 `QUAESTURA_KNOWLEDGE_DUPLICATE` — 同 (subject, grade, name) 已存在
-- 422 `QUAESTURA_KNOWLEDGE_REFERENCED` — 已被题目引用，不能更新
-- 422 `QUAESTURA_KNOWLEDGE_CYCLE` — 父节点变更会形成环
+- 409 `QUAESTURA_KNOWLEDGE_DUPLICATE` — the same (subject, grade, name) already exists
+- 422 `QUAESTURA_KNOWLEDGE_REFERENCED` — referenced by questions, cannot be updated
+- 422 `QUAESTURA_KNOWLEDGE_CYCLE` — the parent change would create a cycle
 
 #### DELETE `/admin/knowledges/{id}`
 
-删除知识点。
+Delete a knowledge point.
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -351,18 +351,18 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_INVALID_ID`
 - 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND`
 - 422 `QUAESTURA_KNOWLEDGE_REFERENCED`
 
-### 2.3 题目-知识点关联 `/admin/question-knowledges`
+### 2.3 Question–knowledge point associations `/admin/question-knowledges`
 
 #### POST `/admin/question-knowledges/batch-tag`
 
-批量给多个题目打同一个知识点标签。
+Tag multiple questions with the same knowledge point in one batch.
 
-**请求体**：
+**Request body**:
 
 ```json
 {
@@ -373,7 +373,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -382,24 +382,24 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_FAILED`
-- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND` — 知识点不存在或 subject/grade 不匹配
+- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND` — knowledge point does not exist or subject/grade does not match
 
 #### GET `/admin/question-knowledges`
 
-查询关联（二选一）。
+Query associations (one of two modes).
 
-**查询参数**（必须提供 `questionId` 或 `knowledgeId` 之一）：
+**Query parameters** (exactly one of `questionId` or `knowledgeId` must be provided):
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `questionId` | UUID | 条件 | 查询某题目的所有知识点关联 |
-| `knowledgeId` | UUID | 条件 | 查询某知识点的所有题目 ID（分页） |
-| `page` | int | 否 | 默认 1（仅 `knowledgeId` 模式） |
-| `size` | int | 否 | 默认 10（仅 `knowledgeId` 模式） |
+| `questionId` | UUID | Conditional | Query all knowledge point associations of a question |
+| `knowledgeId` | UUID | Conditional | Query all question IDs of a knowledge point (paginated) |
+| `page` | int | No | Default 1 (`knowledgeId` mode only) |
+| `size` | int | No | Default 10 (`knowledgeId` mode only) |
 
-**响应 200（questionId 模式）**：
+**Response 200 (questionId mode)**:
 
 ```json
 {
@@ -417,7 +417,7 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**响应 200（knowledgeId 模式）**：
+**Response 200 (knowledgeId mode)**:
 
 ```json
 {
@@ -442,20 +442,20 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — 未提供 questionId/knowledgeId
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — neither questionId nor knowledgeId provided
 
 #### DELETE `/admin/question-knowledges`
 
-移除某题目的所有知识点关联。
+Remove all knowledge point associations of a question.
 
-**查询参数**：
+**Query parameters**:
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `questionId` | UUID | **是** | 题目 ID |
+| `questionId` | UUID | **Yes** | Question ID |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -464,34 +464,34 @@ JWT 由 SignaCore 签发，包含 `sub`（userId）和 `role`（teacher/assistan
 }
 ```
 
-### 2.4 Tag 管理 `/admin/tags`
+### 2.4 Tag management `/admin/tags`
 
-Tag 是与 Knowledge 平行的自由标签（无层级，不绑 subject/grade）。适用于教师对题目的临时打标（"期中重点"、"高频考点"、"易错题"等）。
+A Tag is a free-form label parallel to Knowledge (no hierarchy, not bound to subject/grade). It is meant for ad-hoc tagging of questions by teachers ("Midterm focus", "Frequently tested", "Error-prone", and so on).
 
-#### 权限矩阵
+#### Permission matrix
 
-| 端点 | 角色要求 | 归属校验 |
+| Endpoint | Required role | Ownership check |
 |------|---------|---------|
-| `GET /admin/tags` | 任意认证用户（含 student） | 无 |
-| `GET /admin/tags/{id}` | 任意认证用户 | 无 |
-| `POST /admin/tags`（创建） | teacher / assistant / admin | 无 |
-| `POST /admin/tags`（更新） | teacher / assistant / admin | 必须 `CreatedBy == 当前 userId` |
-| `DELETE /admin/tags/{id}` | teacher / assistant / admin | 必须 `CreatedBy == 当前 userId` |
+| `GET /admin/tags` | Any authenticated user (including student) | None |
+| `GET /admin/tags/{id}` | Any authenticated user | None |
+| `POST /admin/tags` (create) | teacher / assistant / admin | None |
+| `POST /admin/tags` (update) | teacher / assistant / admin | Requires `CreatedBy == current userId` |
+| `DELETE /admin/tags/{id}` | teacher / assistant / admin | Requires `CreatedBy == current userId` |
 
 #### GET `/admin/tags`
 
-列表/搜索 Tag。
+List/search tags.
 
-**查询参数**：
+**Query parameters**:
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `name` | string | 否 | 名称模糊搜索（`Contains` 匹配，跨库兼容） |
-| `sortBy` | string | 否 | `usageCount`（按引用次数降序）或留空（按 `name` 升序） |
-| `page` | int | 否 | 默认 1 |
-| `size` | int | 否 | 默认 10，上限 100 |
+| `name` | string | No | Fuzzy search by name (`Contains` match, portable across databases) |
+| `sortBy` | string | No | `usageCount` (descending by reference count) or empty (ascending by `name`) |
+| `page` | int | No | Default 1 |
+| `size` | int | No | Default 10, maximum 100 |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -499,9 +499,9 @@ Tag 是与 Knowledge 平行的自由标签（无层级，不绑 subject/grade）
   "data": [
     {
       "id": "uuid",
-      "name": "期中重点",
+      "name": "Midterm focus",
       "color": "#FF6B6B",
-      "description": "期中考试重点",
+      "description": "Key points for the midterm exam",
       "createdBy": "uuid",
       "createdAt": "2026-07-02T10:00:00.000Z",
       "usageCount": 12
@@ -516,18 +516,18 @@ Tag 是与 Knowledge 平行的自由标签（无层级，不绑 subject/grade）
 
 #### GET `/admin/tags/{id}`
 
-Tag 详情。
+Tag details.
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
   "success": true,
   "data": {
     "id": "uuid",
-    "name": "期中重点",
+    "name": "Midterm focus",
     "color": "#FF6B6B",
-    "description": "期中考试重点",
+    "description": "Key points for the midterm exam",
     "createdBy": "uuid",
     "createdAt": "2026-07-02T10:00:00.000Z",
     "usageCount": 12
@@ -535,32 +535,32 @@ Tag 详情。
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_INVALID_ID`
 - 404 `QUAESTURA_TAG_NOT_FOUND`
 
 #### POST `/admin/tags`
 
-新增或更新 Tag（id 存在则更新，空则新增）。
+Create or update a tag (updates when id is present, creates when empty).
 
-**角色**：teacher / assistant / admin（学生不可调用，返回 403）
+**Role**: teacher / assistant / admin (students cannot call it; returns 403)
 
-**归属**：更新模式下，仅 `tag.CreatedBy == 当前 userId` 可修改，否则返回 403
+**Ownership**: in update mode, only a user with `tag.CreatedBy == current userId` can update it; otherwise 403 is returned
 
-**请求体**：
+**Request body**:
 
 ```json
 {
   "id": "uuid (optional)",
-  "name": "期中重点",
+  "name": "Midterm focus",
   "color": "#FF6B6B (optional, HEX format)",
-  "description": "期中考试重点 (optional)"
+  "description": "Key points for the midterm exam (optional)"
 }
 ```
 
-> `userId` 从 JWT 读取，写入 `created_by`。
+> `userId` is read from the JWT and written to `created_by`.
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -569,21 +569,21 @@ Tag 详情。
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — name 缺失或 color 格式非法
-- 403 `QUAESTURA_FORBIDDEN` — 学生角色调用
-- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — 更新他人创建的 tag
-- 409 `QUAESTURA_TAG_DUPLICATE` — 同名 Tag 已存在
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — name missing or invalid color format
+- 403 `QUAESTURA_FORBIDDEN` — called by a student
+- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — updating a tag created by someone else
+- 409 `QUAESTURA_TAG_DUPLICATE` — a tag with the same name already exists
 
 #### DELETE `/admin/tags/{id}`
 
-删除 Tag（仅当 `usageCount == 0` 时可删）。
+Delete a tag (only allowed when `usageCount == 0`).
 
-**角色**：teacher / assistant / admin
+**Role**: teacher / assistant / admin
 
-**归属**：仅 `tag.CreatedBy == 当前 userId` 可删除，否则返回 403
+**Ownership**: only a user with `tag.CreatedBy == current userId` can delete it; otherwise 403 is returned
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -592,22 +592,22 @@ Tag 详情。
 }
 ```
 
-**错误**：
+**Errors**:
 - 400 `QUAESTURA_VALIDATION_INVALID_ID`
-- 403 `QUAESTURA_FORBIDDEN` — 学生角色调用
-- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — 删除他人创建的 tag
+- 403 `QUAESTURA_FORBIDDEN` — called by a student
+- 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` — deleting a tag created by someone else
 - 404 `QUAESTURA_TAG_NOT_FOUND`
-- 422 `QUAESTURA_TAG_REFERENCED` — Tag 仍被题目引用
+- 422 `QUAESTURA_TAG_REFERENCED` — the tag is still referenced by questions
 
-### 2.5 题目-Tag 关联 `/admin/question-tags`
+### 2.5 Question–tag associations `/admin/question-tags`
 
 #### POST `/admin/question-tags/batch-tag`
 
-批量给多个题打多个 Tag（已存在的关联自动跳过）。
+Tag multiple questions with multiple tags in one batch (existing associations are skipped automatically).
 
-**角色**：任意认证用户（学生可调用，给自己错题对应的 question 打标）
+**Role**: any authenticated user (students can call it to tag the questions behind their own mistakes)
 
-**请求体**：
+**Request body**:
 
 ```json
 {
@@ -616,7 +616,7 @@ Tag 详情。
 }
 ```
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -625,24 +625,24 @@ Tag 详情。
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — questionIds/tagIds 为空
-- 404 `QUAESTURA_TAG_NOT_FOUND` — 任一 tagId 不存在
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — questionIds/tagIds empty
+- 404 `QUAESTURA_TAG_NOT_FOUND` — any tagId does not exist
 
 #### GET `/admin/question-tags`
 
-查询关联（二选一）。
+Query associations (one of two modes).
 
-**查询参数**（必须提供 `questionId` 或 `tagId` 之一）：
+**Query parameters** (exactly one of `questionId` or `tagId` must be provided):
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `questionId` | UUID | 条件 | 查询某题目的所有 Tag 关联 |
-| `tagId` | UUID | 条件 | 查询某 Tag 关联的所有题目（分页） |
-| `page` | int | 否 | 默认 1（仅 `tagId` 模式） |
-| `size` | int | 否 | 默认 10（仅 `tagId` 模式） |
+| `questionId` | UUID | Conditional | Query all tag associations of a question |
+| `tagId` | UUID | Conditional | Query all questions associated with a tag (paginated) |
+| `page` | int | No | Default 1 (`tagId` mode only) |
+| `size` | int | No | Default 10 (`tagId` mode only) |
 
-**响应 200（questionId 模式）**：
+**Response 200 (questionId mode)**:
 
 ```json
 {
@@ -652,7 +652,7 @@ Tag 详情。
       "id": "uuid",
       "questionId": "uuid",
       "tagId": "uuid",
-      "tagName": "期中重点",
+      "tagName": "Midterm focus",
       "tagColor": "#FF6B6B",
       "createdAt": "2026-07-02T10:00:00.000Z"
     }
@@ -660,7 +660,7 @@ Tag 详情。
 }
 ```
 
-**响应 200（tagId 模式）**：
+**Response 200 (tagId mode)**:
 
 ```json
 {
@@ -685,21 +685,21 @@ Tag 详情。
 }
 ```
 
-**错误**：
-- 400 `QUAESTURA_VALIDATION_FAILED` — 未提供 questionId/tagId
+**Errors**:
+- 400 `QUAESTURA_VALIDATION_FAILED` — neither questionId nor tagId provided
 
 #### DELETE `/admin/question-tags`
 
-移除关联。
+Remove associations.
 
-**查询参数**：
+**Query parameters**:
 
-| 参数 | 类型 | 必填 | 说明 |
+| Parameter | Type | Required | Description |
 |------|------|------|------|
-| `questionId` | UUID | **是** | 题目 ID |
-| `tagId` | UUID | 否 | 不传则移除该题目的所有 Tag；传值则仅移除指定 Tag |
+| `questionId` | UUID | **Yes** | Question ID |
+| `tagId` | UUID | No | When omitted, removes all tags of the question; when provided, removes only that tag |
 
-**响应 200**：
+**Response 200**:
 
 ```json
 {
@@ -770,65 +770,65 @@ Role callback invoked by SignaCore while it issues a token for the Quaestura app
 
 `roles` is `["admin"]` when `user_id` is listed in `AdminPortal:AdminUserIds` (case-insensitive); otherwise, including a missing body or empty `user_id`, it is `[]`.
 
-## 3. 错误码字典
+## 3. Error code dictionary
 
-| errorCode | HTTP 状态 | 说明 |
+| errorCode | HTTP status | Description |
 |-----------|----------|------|
-| `QUAESTURA_VALIDATION_FAILED` | 400 | 请求参数验证失败（FluentValidation） |
-| `QUAESTURA_VALIDATION_INVALID_ID` | 400 | ID 格式非 UUID |
-| `QUAESTURA_VALIDATION_INVALID_IMAGE` | 400 | 图片格式/大小不符 |
-| `QUAESTURA_FORBIDDEN` | 403 | 已认证但角色不足（如学生调用 tag 写接口） |
-| `QUAESTURA_FORBIDDEN_NOT_OWNER` | 403 | 归属校验失败（修改/删除他人创建的 tag） |
-| `QUAESTURA_QUESTION_NOT_FOUND` | 404 | 题目不存在 |
-| `QUAESTURA_KNOWLEDGE_NOT_FOUND` | 404 | 知识点不存在 |
-| `QUAESTURA_KNOWLEDGE_DUPLICATE` | 409 | 同 (subject, grade, name) 已存在 |
-| `QUAESTURA_KNOWLEDGE_REFERENCED` | 422 | 知识点已被引用，不能修改/删除 |
-| `QUAESTURA_KNOWLEDGE_CYCLE` | 422 | 父节点变更会形成循环引用 |
-| `QUAESTURA_TAG_NOT_FOUND` | 404 | Tag 不存在 |
-| `QUAESTURA_TAG_DUPLICATE` | 409 | 同名 Tag 已存在 |
-| `QUAESTURA_TAG_REFERENCED` | 422 | Tag 仍被题目引用，不能删除 |
-| `QUAESTURA_INTERNAL_ERROR` | 500 | 服务内部错误（已脱敏） |
-| `QUAESTURA_UNAVAILABLE` | 503 | 依赖服务不可用 |
+| `QUAESTURA_VALIDATION_FAILED` | 400 | Request parameter validation failed (FluentValidation) |
+| `QUAESTURA_VALIDATION_INVALID_ID` | 400 | ID is not a UUID |
+| `QUAESTURA_VALIDATION_INVALID_IMAGE` | 400 | Invalid image format/size |
+| `QUAESTURA_FORBIDDEN` | 403 | Authenticated but insufficient role (for example, a student calling a tag write endpoint) |
+| `QUAESTURA_FORBIDDEN_NOT_OWNER` | 403 | Ownership check failed (updating/deleting a tag created by someone else) |
+| `QUAESTURA_QUESTION_NOT_FOUND` | 404 | Question does not exist |
+| `QUAESTURA_KNOWLEDGE_NOT_FOUND` | 404 | Knowledge point does not exist |
+| `QUAESTURA_KNOWLEDGE_DUPLICATE` | 409 | The same (subject, grade, name) already exists |
+| `QUAESTURA_KNOWLEDGE_REFERENCED` | 422 | Knowledge point is referenced and cannot be updated/deleted |
+| `QUAESTURA_KNOWLEDGE_CYCLE` | 422 | The parent change would create a circular reference |
+| `QUAESTURA_TAG_NOT_FOUND` | 404 | Tag does not exist |
+| `QUAESTURA_TAG_DUPLICATE` | 409 | A tag with the same name already exists |
+| `QUAESTURA_TAG_REFERENCED` | 422 | Tag is still referenced by questions and cannot be deleted |
+| `QUAESTURA_INTERNAL_ERROR` | 500 | Internal service error (redacted) |
+| `QUAESTURA_UNAVAILABLE` | 503 | Dependency unavailable |
 
-> 401 Unauthorized 由认证中间件直接返回，无 errorCode（响应体为空）。
+> 401 Unauthorized is returned directly by the authentication middleware, without an errorCode (empty response body).
 
-## 4. 示例
+## 4. Examples
 
-> 所有请求需携带 `Authorization: Bearer <jwt-token>` 头（以下示例省略）。
+> Every request must carry the `Authorization: Bearer <jwt-token>` header (omitted in the examples below).
 
-### 4.1 创建知识点
+### 4.1 Create a knowledge point
 
 ```bash
 curl -X POST http://localhost:5007/admin/knowledges \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <jwt-token>" \
   -d '{
-    "name": "一般现在时",
+    "name": "Simple present tense",
     "subject": 1,
     "grade": 7
   }'
 ```
 
-### 4.2 搜索题目
+### 4.2 Search questions
 
 ```bash
-curl "http://localhost:5007/admin/questions?subject=1&grade=7&keyword=一般现在时&page=1&size=10" \
+curl "http://localhost:5007/admin/questions?subject=1&grade=7&keyword=present%20tense&page=1&size=10" \
   -H "Authorization: Bearer <jwt-token>"
 ```
 
-### 4.3 上传题目
+### 4.3 Upload a question
 
 ```bash
 curl -X POST http://localhost:5007/admin/questions \
   -H "Authorization: Bearer <jwt-token>" \
   -F 'question={"level":1,"type":1,"width":800,"height":600}' \
-  -F 'content={"content":"题目内容","correctAnswer":"答案","analysis":"解析"}' \
+  -F 'content={"content":"Question content","correctAnswer":"Answer","analysis":"Explanation"}' \
   -F 'subject=1' \
   -F 'grade=7' \
   -F 'pictures=@/path/to/test.jpg'
 ```
 
-### 4.4 批量打标签
+### 4.4 Batch tagging
 
 ```bash
 curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \

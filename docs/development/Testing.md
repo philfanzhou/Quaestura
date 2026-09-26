@@ -1,130 +1,130 @@
-# 单元测试规范
+# Unit Testing
 
-本文件描述 `Quaestura` 服务的单元测试项目结构、覆盖范围与约定。
+This document describes the unit test project structure, coverage, and conventions of the `Quaestura` service.
 
-## 测试项目结构
+## Test project structure
 
-| 项目 | 路径 | 覆盖范围 |
+| Project | Path | Coverage |
 |------|------|---------|
-| `Quaestura.Tests` | `src/Tests/` | Domain 层服务 + Service 层 Validation 组件 + 端点集成测试（可选） |
+| `Quaestura.Tests` | `src/Tests/` | Domain-layer services + Service-layer validation components + endpoint integration tests (optional) |
 
-## 测试框架与依赖
+## Test frameworks and dependencies
 
 - xUnit 2.6.2
 - Moq 4.20.70
 - FluentAssertions 6.12.0
-- FluentValidation 11.9.0（测试 RequestValidators）
-- Microsoft.EntityFrameworkCore.InMemory 8.0.11（Domain 层集成测试 + 端点集成测试）
+- FluentValidation 11.9.0 (for testing RequestValidators)
+- Microsoft.EntityFrameworkCore.InMemory 8.0.11 (Domain-layer integration tests + endpoint integration tests)
 
-## Domain 层测试覆盖范围
+## Domain-layer test coverage
 
-| 测试文件 | 覆盖服务 |
+| Test file | Service covered |
 |---------|---------|
-| `Services/KnowledgeServiceTests.cs` | `IKnowledgeService` 主要路径 |
-| `Services/KnowledgeServiceAdditionalTests.cs` | `IKnowledgeService` 边界与异常路径 |
-| `Services/QuestionServiceTests.cs` | `IQuestionService` 主要路径 |
-| `Services/QuestionServiceAdditionalTests.cs` | `IQuestionService` 边界与异常路径 |
-| `Services/QuestionKnowledgeServiceTests.cs` | `IQuestionKnowledgeService` 主要路径 |
-| `Services/TagServiceTests.cs` | `ITagService` 主要路径（CRUD、重复检查、引用约束、usage_count 增/减） |
-| `Services/TagServiceAdditionalTests.cs` | `ITagService` 边界与异常路径 |
-| `Services/QuestionTagServiceTests.cs` | `IQuestionTagService` 主要路径（批量打标、移除、查询、计数同步） |
+| `Services/KnowledgeServiceTests.cs` | `IKnowledgeService` main paths |
+| `Services/KnowledgeServiceAdditionalTests.cs` | `IKnowledgeService` edge cases and error paths |
+| `Services/QuestionServiceTests.cs` | `IQuestionService` main paths |
+| `Services/QuestionServiceAdditionalTests.cs` | `IQuestionService` edge cases and error paths |
+| `Services/QuestionKnowledgeServiceTests.cs` | `IQuestionKnowledgeService` main paths |
+| `Services/TagServiceTests.cs` | `ITagService` main paths (CRUD, duplicate checks, reference constraints, usage_count increment/decrement) |
+| `Services/TagServiceAdditionalTests.cs` | `ITagService` edge cases and error paths |
+| `Services/QuestionTagServiceTests.cs` | `IQuestionTagService` main paths (batch tagging, removal, queries, count synchronization) |
 
-Domain 层测试使用 `TestBase` 提供的 EF Core InMemory 数据库，与 WebAPI 层无关。
+Domain-layer tests use the EF Core InMemory database provided by `TestBase` and do not depend on the WebAPI layer.
 
-## Validation 组件测试覆盖范围
+## Validation component test coverage
 
-### ImageValidationHelper 测试场景
+### ImageValidationHelper test scenarios
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| null 字节数组 | `InvalidOperationException("Image data is empty")` |
-| 空字节数组 | `InvalidOperationException("Image data is empty")` |
-| 超过 10MB | `InvalidOperationException("Image size exceeds 10MB")` |
-| JPEG magic number | 通过 |
-| PNG magic number | 通过 |
-| GIF87a magic number | 通过 |
-| GIF89a magic number | 通过 |
-| WebP (RIFF) magic number | 通过 |
-| BMP magic number | 通过 |
-| 不支持的格式 | `InvalidOperationException("Image format not supported")` |
-| 数据短于 magic number 长度 | `InvalidOperationException("Image format not supported")` |
-| null 图片列表 | 通过（直接返回） |
-| 空图片列表 | 通过（直接返回） |
-| 批量校验含一张非法 | `InvalidOperationException` |
-| 批量校验全部合法 | 通过 |
+| null byte array | `InvalidOperationException("Image data is empty")` |
+| Empty byte array | `InvalidOperationException("Image data is empty")` |
+| Larger than 10MB | `InvalidOperationException("Image size exceeds 10MB")` |
+| JPEG magic number | Passes |
+| PNG magic number | Passes |
+| GIF87a magic number | Passes |
+| GIF89a magic number | Passes |
+| WebP (RIFF) magic number | Passes |
+| BMP magic number | Passes |
+| Unsupported format | `InvalidOperationException("Image format not supported")` |
+| Data shorter than the magic number | `InvalidOperationException("Image format not supported")` |
+| null image list | Passes (returns immediately) |
+| Empty image list | Passes (returns immediately) |
+| Batch validation with one invalid image | `InvalidOperationException` |
+| Batch validation with all images valid | Passes |
 
-### RequestValidators 测试场景
+### RequestValidators test scenarios
 
 #### CreateQuestionRequestValidator
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| Pictures 为空 | 验证失败，含 "At least one picture is required" |
-| Level 为负数 | 验证失败，含 "Level must not be negative" |
-| Type 为负数 | 验证失败，含 "Type must not be negative" |
-| 全部字段合法 | 验证通过 |
+| Pictures empty | Validation fails with "At least one picture is required" |
+| Level negative | Validation fails with "Level must not be negative" |
+| Type negative | Validation fails with "Type must not be negative" |
+| All fields valid | Validation passes |
 
-> 注：`subject` / `grade` 由 form 字段单独校验（在 endpoint 内），不在 `CreateQuestionRequestValidator` 范围内。`userId` 已从 DTO 移除，改从 JWT 读取。
+> Note: `subject` / `grade` are validated separately as form fields (inside the endpoint) and are outside the scope of `CreateQuestionRequestValidator`. `userId` has been removed from the DTO and is read from the JWT instead.
 
 #### CreateKnowledgeRequestValidator
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| Subject <= 0 | 验证失败，含 "Subject must be greater than 0" |
-| Grade <= 0 | 验证失败，含 "Grade must be greater than 0" |
-| Name 为空 | 验证失败，含 "Name is required" |
-| 全部字段合法 | 验证通过 |
+| Subject <= 0 | Validation fails with "Subject must be greater than 0" |
+| Grade <= 0 | Validation fails with "Grade must be greater than 0" |
+| Name empty | Validation fails with "Name is required" |
+| All fields valid | Validation passes |
 
 #### BatchTagKnowledgeRequestValidator
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| QuestionIds 为空 | 验证失败，含 "At least one question id is required" |
-| KnowledgeId 无效 | 验证失败，含 "KnowledgeId must be a valid UUID" |
-| Subject <= 0 | 验证失败，含 "Subject must be greater than 0" |
-| Grade <= 0 | 验证失败，含 "Grade must be greater than 0" |
+| QuestionIds empty | Validation fails with "At least one question id is required" |
+| KnowledgeId invalid | Validation fails with "KnowledgeId must be a valid UUID" |
+| Subject <= 0 | Validation fails with "Subject must be greater than 0" |
+| Grade <= 0 | Validation fails with "Grade must be greater than 0" |
 
 #### CreateTagRequestValidator
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| Name 为空 | 验证失败，含 "Name is required" |
-| Name 超过 100 字符 | 验证失败，含 "Name must not exceed 100 characters" |
-| Color 格式非 HEX | 验证失败，含 "Color must be a valid HEX color (e.g., #FF6B6B)" |
-| Color 缺失 | 验证通过（color 可选） |
-| 全部字段合法 | 验证通过 |
+| Name empty | Validation fails with "Name is required" |
+| Name longer than 100 characters | Validation fails with "Name must not exceed 100 characters" |
+| Color not in HEX format | Validation fails with "Color must be a valid HEX color (e.g., #FF6B6B)" |
+| Color missing | Validation passes (color is optional) |
+| All fields valid | Validation passes |
 
 #### BatchTagQuestionRequestValidator
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| QuestionIds 为空 | 验证失败，含 "At least one question id is required" |
-| TagIds 为空 | 验证失败，含 "At least one tag id is required" |
-| 全部字段合法 | 验证通过 |
+| QuestionIds empty | Validation fails with "At least one question id is required" |
+| TagIds empty | Validation fails with "At least one tag id is required" |
+| All fields valid | Validation passes |
 
-> 注：所有 DTO 的 `UserId` 字段已移除（改从 JWT 读取），相关校验场景同步移除。
+> Note: the `UserId` field has been removed from all DTOs (it is read from the JWT instead), and the related validation scenarios were removed accordingly.
 
-## 鉴权测试
+## Authorization tests
 
-### Tag 端点权限测试
+### Tag endpoint permission tests
 
-测试位置：`src/Tests/Endpoints/TagEndpointsAuthTests.cs`
+Location: `src/Tests/Endpoints/TagEndpointsAuthTests.cs`
 
-| 场景 | 期望 |
+| Scenario | Expected |
 |------|------|
-| 学生调用 `POST /admin/tags` | 403 `QUAESTURA_FORBIDDEN` |
-| 教师调用 `POST /admin/tags`（创建） | 200 成功 |
-| 助教调用 `POST /admin/tags`（创建） | 200 成功 |
-| 教师更新自己创建的 tag | 200 成功 |
-| 教师更新他人创建的 tag | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
-| 助教删除自己创建的 tag（usage_count=0） | 200 成功 |
-| 助教删除他人创建的 tag | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
-| 学生调用 `GET /admin/tags` | 200 成功（学生可查询） |
-| 学生调用 `POST /admin/question-tags/batch-tag` | 200 成功（学生可打标） |
+| Student calls `POST /admin/tags` | 403 `QUAESTURA_FORBIDDEN` |
+| Teacher calls `POST /admin/tags` (create) | 200 success |
+| Assistant calls `POST /admin/tags` (create) | 200 success |
+| Teacher updates a tag they created | 200 success |
+| Teacher updates a tag created by someone else | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
+| Assistant deletes a tag they created (usage_count=0) | 200 success |
+| Assistant deletes a tag created by someone else | 403 `QUAESTURA_FORBIDDEN_NOT_OWNER` |
+| Student calls `GET /admin/tags` | 200 success (students can query) |
+| Student calls `POST /admin/question-tags/batch-tag` | 200 success (students can tag) |
 
-## 端点集成测试（可选）
+## Endpoint integration tests (optional)
 
-如需对 HTTP 端点做端到端测试，可使用 `WebApplicationFactory<Program>`：
+For end-to-end tests of HTTP endpoints, use `WebApplicationFactory<Program>`:
 
 ```csharp
 public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
@@ -146,21 +146,21 @@ public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Progra
 }
 ```
 
-注意：集成测试需要把 DbContext 切换到 EF Core InMemory 数据库，通过 `WebApplicationFactory.ConfigureServices` 注入。
+Note: integration tests must switch the DbContext to the EF Core InMemory database, injected through `WebApplicationFactory.ConfigureServices`.
 
-## 运行方式
+## Running the tests
 
 ```bash
 cd src
 dotnet test Tests/Quaestura.Tests.csproj --configuration Release
 ```
 
-## 约定
+## Conventions
 
-- Domain 层测试置于 `src/Tests/Services/` 目录下
-- Validation 组件测试置于 `src/Tests/Validation/` 目录下
-- 端点测试置于 `src/Tests/Endpoints/` 目录下（可选）
-- 静态类（如 `ImageValidationHelper`）直接调用，无需 Mock
-- 异常断言使用 `FluentAssertions`
-- 错误消息断言使用英文（按 `30-backend-routing.md` 编码规范）
-- 不修改被测代码以适配测试；如需可测试性改进，先更新本文档再改代码
+- Domain-layer tests live in `src/Tests/Services/`
+- Validation component tests live in `src/Tests/Validation/`
+- Endpoint tests live in `src/Tests/Endpoints/` (optional)
+- Static classes (such as `ImageValidationHelper`) are called directly without mocks
+- Exception assertions use `FluentAssertions`
+- Error message assertions use English (per the `30-backend-routing.md` coding conventions)
+- Do not change the code under test to suit the tests; if testability needs improving, update this document before changing the code

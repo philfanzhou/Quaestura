@@ -1,52 +1,52 @@
-﻿# 部署与运行
+﻿# Deployment and Operation
 
-## 1. 快速启动
+## 1. Quick start
 
-### 1.1 启动要求
+### 1.1 Requirements
 
-1. **数据库**：PostgreSQL（由 Consul 共享配置注入）
-2. **对象存储**：SeaweedFS（S3 端口 8333）
-3. **认证服务**：SignaCore（用于 JWT 签发与公钥分发，必须可达以完成 OIDC discovery）
-4. **网络端口**：HTTP 5007（容器内固定，host 映射端口由 `start.sh` 的 `Port` 变量控制）
+1. **Database**: PostgreSQL (injected through the Consul shared configuration)
+2. **Object storage**: SeaweedFS (S3 port 8333)
+3. **Authentication service**: SignaCore (issues JWTs and distributes public keys; must be reachable for OIDC discovery)
+4. **Network port**: HTTP 5007 (fixed inside the container; the host port mapping is controlled by the `Port` variable in `start.sh`)
 
-### 1.2 启动方式
+### 1.2 How to start
 
-#### 方式一：本地 .NET 启动
+#### Option 1: local .NET
 
 ```bash
 dotnet run --project src/Host --configuration Release
 ```
 
-#### 方式二：Docker 启动
+#### Option 2: Docker
 
 ```bash
-# 1. 构建镜像（build context 为仓库根目录）
+# 1. Build the image (the build context is the repository root)
 docker build -t quaestura:latest .
 
-# 2. 启动容器
+# 2. Start the container
 ./start.sh
 ```
 
-`start.sh` 通过环境变量注入容器化部署所需的配置（数据库连接由 Consul 共享配置覆盖）。
+`start.sh` injects the configuration needed for containerized deployment through environment variables (the database connection is overridden by the Consul shared configuration).
 
-### 1.3 验证启动
+### 1.3 Verify startup
 
 ```bash
-# 健康检查
+# Health check
 curl http://localhost:5007/health
-# 预期：Healthy
+# Expected: Healthy
 
 # Swagger UI
 open http://localhost:5007/swagger
 ```
 
-## 2. 配置项
+## 2. Configuration
 
-### 2.1 数据库连接
+### 2.1 Database connection
 
-数据库连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 统一构建：优先从 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）合成生产连接串，无法合成时回退到本地 `ConnectionStrings:Default`。
+The database connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible.
 
-`appsettings.json` 中仅保留本地 dev 友好的连接串（无密码）与数据库名：
+`appsettings.json` only keeps a local dev-friendly connection string (no password) and the database name:
 
 ```json
 {
@@ -59,23 +59,23 @@ open http://localhost:5007/swagger
 }
 ```
 
-连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建：优先从 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）合成生产连接串，无法合成时回退到本地 `ConnectionStrings:Default`。生产环境的 PostgreSQL 主机/端口/账号/密码由 Consul 的 `PostgreSql:*` 键覆盖，无需写入 `appsettings.json`。
+The connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible. In production, the PostgreSQL host/port/username/password are overridden by the Consul `PostgreSql:*` keys and do not need to be written to `appsettings.json`.
 
-数据库表由 `DatabaseInitializer` 启动时自动创建（`CREATE TABLE IF NOT EXISTS`），无需手动建库。
+Database tables are created automatically by `DatabaseInitializer` on startup (`CREATE TABLE IF NOT EXISTS`); no manual database setup is required.
 
-#### 通过 Consul 共享配置覆盖
+#### Overriding through the Consul shared configuration
 
-生产环境通过 Consul KV（`config/ruoyu` 前缀）注入以下键，由 `SharedPostgreSqlConnectionStringFactory` 合成连接串：
+In production, the following keys are injected through Consul KV (prefix `config/ruoyu`), and `SharedPostgreSqlConnectionStringFactory` composes the connection string from them:
 
-| Consul 键 | 作用 |
+| Consul key | Purpose |
 |-----------|------|
-| `PostgreSql:Host` | PostgreSQL 主机 |
-| `PostgreSql:Port` | PostgreSQL 端口 |
-| `PostgreSql:Username` | PostgreSQL 用户名 |
-| `PostgreSql:Password` | PostgreSQL 密码 |
-| `Database:Name` | 数据库名（默认 `quaestura`） |
+| `PostgreSql:Host` | PostgreSQL host |
+| `PostgreSql:Port` | PostgreSQL port |
+| `PostgreSql:Username` | PostgreSQL username |
+| `PostgreSql:Password` | PostgreSQL password |
+| `Database:Name` | Database name (default `quaestura`) |
 
-### 2.2 对象存储
+### 2.2 Object storage
 
 ```json
 {
@@ -90,16 +90,16 @@ open http://localhost:5007/swagger
 }
 ```
 
-- `InternalEndpoint`：后端实际连接地址，格式为 `host:port`；同机容器可用 `ruoyu-seaweedfs:8333`，独立服务器使用 IP 和发布端口
-- `InternalSecure`：内部连接是否使用 HTTPS
-- `PublicBaseUrl`：浏览器使用的公共预签名基础 URL；当前 `/oss` 入口由 User Web Nginx 代理
-- `AccessKey` / `SecretKey`：S3 凭证
+- `InternalEndpoint`: the address the backend actually connects to, in `host:port` format; containers on the same host can use `ruoyu-seaweedfs:8333`, a standalone server uses its IP and published port
+- `InternalSecure`: whether the internal connection uses HTTPS
+- `PublicBaseUrl`: the public pre-signed base URL used by browsers; the `/oss` entry point is currently proxied by the User Web Nginx
+- `AccessKey` / `SecretKey`: S3 credentials
 
-启动时会自动检测 OSS 连通性（`Program.cs` 中的 `OssService.CheckConnectivityAsync`），失败时输出 Warning 但不阻断启动。
+OSS connectivity is checked automatically on startup (`OssService.CheckConnectivityAsync` in `Program.cs`); a failure logs a Warning but does not block startup.
 
-### 2.3 认证服务（JWT）
+### 2.3 Authentication service (JWT)
 
-服务通过 JWT Bearer Token 认证，信任由 SignaCore 签发的 JWT。详见 [Authentication.md](./Authentication.md)。
+The service authenticates with JWT Bearer tokens and trusts JWTs issued by SignaCore. See [Authentication.md](./Authentication.md) for details.
 
 ```json
 {
@@ -114,15 +114,15 @@ open http://localhost:5007/swagger
 }
 ```
 
-- `Authority`：Identity 服务基础 URL，用于 OIDC discovery（拉取 `/.well-known/openid-configuration` 和 `/.well-known/jwks`）
-- `Issuer`：新 Token 的精确签发者；迁移期间旧值只放在 `AdditionalValidIssuers`
-- `Audience`：预期 audience，必须显式配置
-- `RequireHttpsMetadata`：默认 `true`；只有 SignaCore 数据库设置也显式允许 HTTP 时才设为 `false`，不按环境名或地址推断
-- `ClockSkewSeconds`：Token 时间校验容差
+- `Authority`: base URL of the Identity service, used for OIDC discovery (fetches `/.well-known/openid-configuration` and `/.well-known/jwks`)
+- `Issuer`: exact issuer of new tokens; during a migration the old value only goes into `AdditionalValidIssuers`
+- `Audience`: expected audience; must be configured explicitly
+- `RequireHttpsMetadata`: defaults to `true`; set to `false` only when the SignaCore database settings also explicitly allow HTTP, never inferred from the environment name or address
+- `ClockSkewSeconds`: tolerance for token time validation
 
-**必需**：Authority、Issuer、Audience、RequireHttpsMetadata 与 ClockSkewSeconds 都必须形成完整信任快照；缺失配置或 HTTP 未显式 opt-in 会使服务启动失败。
+**Required**: Authority, Issuer, Audience, RequireHttpsMetadata, and ClockSkewSeconds must together form a complete trust snapshot; missing configuration, or HTTP without an explicit opt-in, makes the service fail to start.
 
-签名公钥通过 OIDC discovery 自动获取，无需手动配置密钥。
+Signing public keys are fetched automatically through OIDC discovery; no keys need to be configured manually.
 
 ### 2.4 Admin login (SignaCore application)
 
@@ -140,66 +140,66 @@ Admin login (`POST /admin/auth/login`, see [Authentication.md §6](./Authenticat
 
 Without AppId/AppSecret the service still starts and every other endpoint works; login returns 503. Provide TLS between browsers and Quaestura (or keep it on an internal network), because passwords pass through it.
 
-## 3. Docker 部署
+## 3. Docker deployment
 
-### 3.1 镜像构建（4 阶段多阶段构建）
+### 3.1 Image build (4-stage multi-stage build)
 
-Dockerfile 位于仓库根目录 `Dockerfile`，**单个镜像同时包含 backend（.NET 8 ASP.NET Core）+ frontend（Vue 3 构建产物）**：
+The Dockerfile is `Dockerfile` in the repository root. **A single image contains both the backend (.NET 8 ASP.NET Core) and the frontend (Vue 3 build output)**:
 
-| 阶段 | 基镜像 | 作用 |
+| Stage | Base image | Purpose |
 |------|--------|------|
-| 1. `frontend-build` | `node:20-alpine` | 构建 Vue 3 frontend，输出 `dist/` |
-| 2. `build` | `mcr.microsoft.com/dotnet/sdk:8.0` | 还原 + 发布 .NET Host，**把阶段 1 的 `dist/` 复制到 `Host/wwwroot/`** |
-| 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | 运行时镜像，仅含 .NET 运行时 + 发布产物 |
+| 1. `frontend-build` | `node:20-alpine` | Builds the Vue 3 frontend and outputs `dist/` |
+| 2. `build` | `mcr.microsoft.com/dotnet/sdk:8.0` | Restores and publishes the .NET Host, **copying `dist/` from stage 1 into `Host/wwwroot/`** |
+| 3. `final` | `mcr.microsoft.com/dotnet/aspnet:8.0` | Runtime image containing only the .NET runtime and the published output |
 
-**关键点**：
-- build context 是仓库根目录（与 `Identity` 服务的 3 阶段构建对齐）
-- 阶段 1 独立：frontend 构建失败不会污染 backend 镜像
-- 阶段 2 的 `COPY --from=frontend-build /app/dist .../Host/wwwroot` 是把 Vite 产物注入 ASP.NET Core 默认 web root 的关键一行
+**Key points**:
+- The build context is the repository root (aligned with the 3-stage build of the `Identity` service)
+- Stage 1 is independent: a frontend build failure does not pollute the backend image
+- `COPY --from=frontend-build /app/dist .../Host/wwwroot` in stage 2 is the key line that injects the Vite output into the ASP.NET Core default web root
 
-### 3.2 启动
+### 3.2 Start
 
 ```bash
 ./start.sh
 ```
 
-容器使用 `quaestura-net` 网络访问同机服务；SeaweedFS 也可通过 Consul 配置的独立服务器 IP 和端口访问。
+The container uses the `quaestura-net` network to reach services on the same host; SeaweedFS can also be reached through a standalone server IP and port configured in Consul.
 
-### 3.3 环境变量
+### 3.3 Environment variables
 
-`start.sh` 注入以下环境变量：
+`start.sh` injects the following environment variables:
 
-| 变量 | 值 |
+| Variable | Value |
 |------|-----|
 | `TZ` | `Asia/Shanghai` |
-| `CONSUL_HTTP_ADDR` | Consul 地址；OSS 配置从 `config/ruoyu/shared.json` 加载 |
-| `CONSUL_TOKEN` | Consul ACL Token |
-| `IdentityService__Authority` | 通常不由 `start.sh` 注入；从 Consul 读取稳定 HTTPS Authority |
+| `CONSUL_HTTP_ADDR` | Consul address; the OSS configuration is loaded from `config/ruoyu/shared.json` |
+| `CONSUL_TOKEN` | Consul ACL token |
+| `IdentityService__Authority` | Usually not injected by `start.sh`; the stable HTTPS Authority is read from Consul |
 | `IdentityService__AppId` | `${IDENTITY_APP_ID:-}`; SignaCore AppId for admin login (see §2.4) |
 | `IdentityService__AppSecret` | `${IDENTITY_APP_SECRET:-}`; SignaCore AppSecret for admin login (see §2.4) |
 
-> HTTP 监听端口固定为 5007（`Program.cs` 硬编码），不再通过 `ASPNETCORE_URLS` 环境变量控制。host 端口映射通过 `start.sh` 的 `Port` 变量控制（`-p ${Port}:5007`）。
+> The HTTP listen port is fixed at 5007 (hardcoded in `Program.cs`) and is no longer controlled by the `ASPNETCORE_URLS` environment variable. The host port mapping is controlled by the `Port` variable in `start.sh` (`-p ${Port}:5007`).
 >
-> 数据库连接不再通过 `ConnectionStrings__Default` 环境变量注入，改由 Consul 共享配置（`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`）在运行时合成。
+> The database connection is no longer injected through the `ConnectionStrings__Default` environment variable; it is composed at runtime from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`).
 
-`start.sh` 默认运行本地构建的 `quaestura:latest`；使用已发布镜像时指定 `IMAGE_REPO` 与 `IMAGE_TAG`：
+`start.sh` runs the locally built `quaestura:latest` by default; to use a published image, set `IMAGE_REPO` and `IMAGE_TAG`:
 
 ```bash
 docker pull ghcr.io/philfanzhou/quaestura:0.1.0
 IMAGE_REPO=ghcr.io/philfanzhou/quaestura IMAGE_TAG=0.1.0 ./start.sh
 ```
 
-### 3.4 预构建镜像与版本发布
+### 3.4 Prebuilt images and releases
 
-GitHub Actions（`.github/workflows/ci.yml`）在 PR、`main` 推送和 release tag 上运行构建、测试与镜像构建；只有 `main` 推送和 tag 会发布镜像到 `ghcr.io/philfanzhou/quaestura`。
+GitHub Actions (`.github/workflows/ci.yml`) runs the build, tests, and image build on PRs, pushes to `main`, and release tags; only pushes to `main` and tags publish images to `ghcr.io/philfanzhou/quaestura`.
 
-| 触发 | 发布的镜像 tag | GitHub Release |
+| Trigger | Published image tags | GitHub Release |
 |------|---------------|----------------|
-| 合并到 `main` | `edge`（随最新提交移动，不代表正式版本） | 无 |
-| `MAJOR.MINOR.PATCH` tag | `MAJOR.MINOR.PATCH`、`MAJOR.MINOR`、`latest` | 正式版，标记为 latest |
-| `MAJOR.MINOR.PATCH-rc.NUMBER` tag | 仅 `MAJOR.MINOR.PATCH-rc.NUMBER` | 预发布版，不移动 `MAJOR.MINOR` 与 `latest` |
+| Merge to `main` | `edge` (moves with the latest commit; not a formal release) | None |
+| `MAJOR.MINOR.PATCH` tag | `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`, `latest` | Final release, marked as latest |
+| `MAJOR.MINOR.PATCH-rc.NUMBER` tag | Only `MAJOR.MINOR.PATCH-rc.NUMBER` | Pre-release; does not move `MAJOR.MINOR` or `latest` |
 
-发布完全由推送 tag 驱动，不手工创建 Release 或推送镜像。tag 不带 `v` 前缀，打在已合并到 `main` 的提交上：
+Releases are driven entirely by pushing tags; do not create Releases or push images manually. Tags have no `v` prefix and are placed on commits already merged into `main`:
 
 ```bash
 git switch main && git pull
@@ -207,27 +207,27 @@ git tag -a 0.1.0 -m "Quaestura 0.1.0"
 git push origin 0.1.0
 ```
 
-候选版本使用 `-rc.NUMBER` 后缀，例如 `git tag -a 0.1.0-rc.1 -m "Quaestura 0.1.0-rc.1"`。其他格式的 tag 会被 CI 拒绝。
+Release candidates use the `-rc.NUMBER` suffix, for example `git tag -a 0.1.0-rc.1 -m "Quaestura 0.1.0-rc.1"`. Tags in any other format are rejected by CI.
 
-tag 推送后先运行完整的 `Build & Test`，通过后依次执行：
+After a tag is pushed, the full `Build & Test` runs first; once it passes, the following run in order:
 
-1. **Publish GHCR Image**：构建并推送镜像，附带 provenance 与 SBOM。
-2. **Publish GitHub Release**：为该 tag 创建 Release，写入实际发布的镜像 digest，并附加 GitHub 自动生成的变更日志。
+1. **Publish GHCR Image**: builds and pushes the image with provenance and SBOM.
+2. **Publish GitHub Release**: creates a Release for the tag, records the digest of the image actually published, and attaches the changelog generated by GitHub.
 
-Release 只会为测试通过且镜像已可拉取的 tag 创建。某个 tag 的流水线失败时，既不发布镜像也不创建 Release；修复原因后打新版本号，不要移动已失败的 tag。对已有 Release 的 tag 重新运行流水线，不会覆盖手工编辑过的 Release 说明。
+A Release is only created for tags whose tests passed and whose image can already be pulled. If the pipeline fails for a tag, neither the image nor the Release is published; fix the cause and tag a new version instead of moving the failed tag. Re-running the pipeline for a tag that already has a Release does not overwrite manually edited Release notes.
 
-每次 `edge` 推送会把旧的 manifest 留作 GHCR 中未打 tag 的包版本，GHCR 不会自动清理，需要时在包设置中手工删除。
+Every `edge` push leaves the old manifest behind as an untagged package version in GHCR. GHCR does not clean these up automatically; delete them manually in the package settings when needed.
 
-## 4. 端口分配
+## 4. Port allocation
 
-| 端口 | 协议 | 用途 |
+| Port | Protocol | Purpose |
 |------|------|------|
-| 5007（容器内固定） | HTTP | WebAPI 入口 + Swagger UI（仅开发环境） + 健康检查 `/health` + 管理前端 SPA |
-| host 映射端口 | — | host 访问容器服务的映射端口（`start.sh` 的 `Port` 变量，`-p ${Port}:5007`） |
+| 5007 (fixed inside the container) | HTTP | WebAPI entry point + Swagger UI (Development only) + health check `/health` + admin frontend SPA |
+| Host-mapped port | — | Port mapped on the host to reach the container (`Port` variable in `start.sh`, `-p ${Port}:5007`) |
 
-## 5. 日志
+## 5. Logging
 
-启动日志格式：
+Startup log format:
 
 ```
 Quaestura Service starting
@@ -237,12 +237,12 @@ Effective configuration diagnostics: PostgreSqlHost=..., PostgreSqlPort=..., Pos
 OSS: <InternalEndpoint>/<Bucket>
 ```
 
-数据库固定使用 PostgreSQL，连接串由 `SharedPostgreSqlConnectionStringFactory.BuildOrFallback` 构建。启动日志同时输出 Effective configuration diagnostics，反映 Consul 注入的 `PostgreSql:*` 与 `Database:Name` 实际值（密码脱敏）。
+The database is always PostgreSQL, and the connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`. The startup log also prints the Effective configuration diagnostics, reflecting the actual `PostgreSql:*` and `Database:Name` values injected by Consul (with the password redacted).
 
-## 6. 依赖服务
+## 6. Dependencies
 
-| 依赖 | 是否必需 | 启动失败行为 |
+| Dependency | Required | Behavior on startup failure |
 |------|----------|--------------|
-| PostgreSQL | 必需 | 连接失败时服务启动失败（`SharedPostgreSqlConnectionStringFactory` 无法构建连接串或数据库不可达） |
-| SeaweedFS | 是（图片功能） | 启动成功，图片功能不可用，日志 Warning |
-| SignaCore | 是（JWT 验证） | 启动成功，但所有需认证的端点返回 401（OIDC discovery 失败导致签名密钥无法获取） |
+| PostgreSQL | Required | The service fails to start if the connection fails (`SharedPostgreSqlConnectionStringFactory` cannot build a connection string or the database is unreachable) |
+| SeaweedFS | Yes (image features) | Starts successfully; image features are unavailable and a Warning is logged |
+| SignaCore | Yes (JWT validation) | Starts successfully, but every endpoint that requires authentication returns 401 (OIDC discovery fails, so the signing keys cannot be fetched) |

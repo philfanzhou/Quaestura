@@ -25,13 +25,13 @@ public static class DatabaseInitializer
         {
             if (!canConnect)
             {
-                logger.LogInformation("数据库不存在，且当前上下文未配置迁移，正在使用 EnsureCreated 自动创建");
+                logger.LogInformation("Database does not exist and the current context has no migrations; creating it with EnsureCreated");
                 var created = await context.Database.EnsureCreatedAsync();
-                logger.LogInformation(created ? "数据库和表已自动创建" : "数据库已存在，无需创建");
+                logger.LogInformation(created ? "Database and tables created automatically" : "Database already exists; nothing to create");
                 return;
             }
 
-            logger.LogInformation("数据库已是最新状态，无需迁移");
+            logger.LogInformation("Database is up to date; no migrations to apply");
             if (getTableCreationSql != null)
             {
                 await EnsureSchemaIntegrityAsync(context, logger, getTableCreationSql);
@@ -41,9 +41,9 @@ public static class DatabaseInitializer
 
         if (!canConnect)
         {
-            logger.LogInformation("数据库不存在，将通过迁移自动创建");
+            logger.LogInformation("Database does not exist; creating it through migrations");
             await context.Database.MigrateAsync();
-            logger.LogInformation("数据库创建并迁移完成");
+            logger.LogInformation("Database created and migrated");
             return;
         }
 
@@ -51,16 +51,16 @@ public static class DatabaseInitializer
 
         if (appliedMigrations.Count == 0)
         {
-            logger.LogInformation("检测到遗留数据库（由 EnsureCreated 创建），正在迁移到 Migrations 模式");
+            logger.LogInformation("Detected a legacy database (created by EnsureCreated); switching it to migrations");
 
             try
             {
                 await context.Database.MigrateAsync();
-                logger.LogInformation("遗留数据库迁移完成");
+                logger.LogInformation("Legacy database migration completed");
             }
             catch (Exception ex) when (IsDuplicateTableError(ex))
             {
-                logger.LogWarning("遗留数据库中已存在部分表，切换到兼容模式");
+                logger.LogWarning("Some tables already exist in the legacy database; switching to compatibility mode");
                 await StampMigrationsAsync(context, pendingMigrations, logger);
                 if (getTableCreationSql != null)
                 {
@@ -70,10 +70,10 @@ public static class DatabaseInitializer
         }
         else
         {
-            logger.LogInformation("发现 {Count} 个待应用的数据库迁移：{Migrations}",
+            logger.LogInformation("Found {Count} pending database migrations: {Migrations}",
                 pendingMigrations.Count, string.Join(", ", pendingMigrations));
             await context.Database.MigrateAsync();
-            logger.LogInformation("数据库迁移完成");
+            logger.LogInformation("Database migration completed");
         }
     }
 
@@ -125,7 +125,7 @@ public static class DatabaseInitializer
                 await insertCmd.ExecuteNonQueryAsync();
             }
 
-            logger.LogInformation("遗留数据库已标记所有迁移为已应用");
+            logger.LogInformation("Marked all migrations as applied for the legacy database");
         }
         finally
         {
@@ -179,10 +179,10 @@ public static class DatabaseInitializer
             return;
         }
 
-        // 按 FK 依赖关系做拓扑排序，被依赖的父表先创建，避免 FK 约束失败（修复 N6）
+        // Topologically sort by FK dependencies so referenced parent tables are created first and FK constraints do not fail (fixes N6)
         var orderedMissingTables = TopologicalSortTables(entityTypes, missingTables);
 
-        logger.LogWarning("检测到缺失的数据库表：{Tables}，正在按 FK 依赖顺序自动修复：{OrderedTables}",
+        logger.LogWarning("Detected missing database tables: {Tables}; repairing them in FK dependency order: {OrderedTables}",
             string.Join(", ", missingTables), string.Join(", ", orderedMissingTables));
 
         foreach (var tableName in orderedMissingTables)
@@ -191,18 +191,18 @@ public static class DatabaseInitializer
             if (sql != null)
             {
                 await context.Database.ExecuteSqlRawAsync(sql);
-                logger.LogInformation("已创建缺失的表：{Table}", tableName);
+                logger.LogInformation("Created missing table: {Table}", tableName);
             }
             else
             {
-                logger.LogError("无法自动创建表 {Table}：缺少建表SQL定义，请手动创建", tableName);
+                logger.LogError("Cannot create table {Table} automatically: no CREATE TABLE SQL is defined; create it manually", tableName);
             }
         }
     }
 
     /// <summary>
-    /// 对缺失的表按外键依赖关系做拓扑排序，被依赖的父表排在前面先创建。
-    /// 解决 EnsureSchemaIntegrityAsync 按实体类型任意顺序建表导致 FK 约束失败的问题（N6）。
+    /// Topologically sorts missing tables by foreign key dependencies so referenced parent tables come first.
+    /// Fixes FK constraint failures caused by EnsureSchemaIntegrityAsync creating tables in arbitrary entity-type order (N6).
     /// </summary>
     private static List<string> TopologicalSortTables(
         System.Collections.Generic.IEnumerable<Microsoft.EntityFrameworkCore.Metadata.IEntityType> entityTypes,
@@ -213,7 +213,7 @@ public static class DatabaseInitializer
             .Where(e => !string.IsNullOrEmpty(e.GetTableName()))
             .ToDictionary(e => e.GetTableName()!, StringComparer.OrdinalIgnoreCase);
 
-        // 依赖图：tableName -> 依赖的 missing 父表名列表
+        // Dependency graph: tableName -> names of the missing parent tables it depends on
         var dependencies = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var table in missingTables)
         {
@@ -241,7 +241,7 @@ public static class DatabaseInitializer
         void Visit(string table)
         {
             if (visited.Contains(table)) return;
-            if (visiting.Contains(table)) return; // 循环依赖，跳过避免死循环
+            if (visiting.Contains(table)) return; // Circular dependency; skip to avoid an infinite loop
             visiting.Add(table);
 
             if (dependencies.TryGetValue(table, out var deps))

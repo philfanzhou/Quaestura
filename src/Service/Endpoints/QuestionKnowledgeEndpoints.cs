@@ -68,7 +68,7 @@ public static class QuestionKnowledgeEndpoints
         if (string.IsNullOrWhiteSpace(questionId) && string.IsNullOrWhiteSpace(knowledgeId))
             throw new ValidationException("Either questionId or knowledgeId is required");
 
-        // 按 questionId 查询：返回关联列表
+        // Query by questionId: return the association list
         if (!string.IsNullOrWhiteSpace(questionId))
         {
             if (!Guid.TryParse(questionId, out var qId))
@@ -88,7 +88,7 @@ public static class QuestionKnowledgeEndpoints
             return Results.Ok(new { success = true, data = dtos });
         }
 
-        // 按 knowledgeId 查询：返回题目列表（分页）
+        // Query by knowledgeId: return the question list (paginated)
         if (!Guid.TryParse(knowledgeId, out var kId))
             throw new ValidationException("knowledgeId is not a valid UUID");
 

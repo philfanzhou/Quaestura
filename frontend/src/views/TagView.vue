@@ -93,7 +93,7 @@
       </div>
     </div>
 
-    <!-- 新增/编辑弹窗 -->
+    <!-- Create/edit dialog -->
     <div v-if="dialogVisible" class="modal-overlay" @click.self="closeDialog">
       <div class="modal">
         <div class="modal-header">
@@ -140,7 +140,7 @@
       </div>
     </div>
 
-    <!-- 删除确认弹窗 -->
+    <!-- Delete confirmation dialog -->
     <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
       <div class="modal">
         <div class="modal-header">

@@ -10,13 +10,13 @@ using System.Threading.Tasks;
 namespace Quaestura.Common.Oss;
 
 /// <summary>
-/// 缩略图路径推导 + 生成 + 删除的共享逻辑。
-/// 路径规则：与原图同目录，文件名格式为 {stem}_{size}.jpg
-/// 此规则一旦上线不可变更，否则会产生孤儿文件。
+/// Shared logic for deriving, generating, and deleting thumbnail paths.
+/// Path rule: same directory as the original image, file name format {stem}_{size}.jpg
+/// This rule must not change once in production, otherwise orphaned files are produced.
 /// </summary>
 public static class ThumbnailHelper
 {
-    /// <summary>支持的缩略图尺寸及最大像素</summary>
+    /// <summary>Supported thumbnail sizes and their maximum pixel dimensions</summary>
     public static readonly Dictionary<string, int> SizeMap = new()
     {
         ["thumbnail"] = 200,
@@ -25,8 +25,8 @@ public static class ThumbnailHelper
     };
 
     /// <summary>
-    /// 推导缩略图路径。规则：同目录 + _{size} 后缀 + .jpg 扩展名
-    /// 示例：uploads/2025/06/14/abc/image.jpg + small → uploads/2025/06/14/abc/image_small.jpg
+    /// Derives a thumbnail path. Rule: same directory + _{size} suffix + .jpg extension
+    /// Example: uploads/2025/06/14/abc/image.jpg + small → uploads/2025/06/14/abc/image_small.jpg
     /// </summary>
     public static string GetThumbnailPath(string objectPath, string size)
     {
@@ -37,7 +37,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 返回原图对应的所有尺寸缩略图路径
+    /// Returns the thumbnail paths of all sizes for an original image
     /// </summary>
     public static List<string> GetAllThumbnailPaths(string objectPath)
     {
@@ -45,7 +45,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 判断路径是否是缩略图路径（匹配 _{size}.jpg 模式）
+    /// Determines whether a path is a thumbnail path (matches the _{size}.jpg pattern)
     /// </summary>
     public static bool IsThumbnailPath(string objectPath)
     {
@@ -62,7 +62,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 生成缩略图并上传到 OSS
+    /// Generates a thumbnail and uploads it to OSS
     /// </summary>
     public static async Task<string> GenerateThumbnailAsync(
         Stream originalStream,
@@ -88,7 +88,7 @@ public static class ThumbnailHelper
 
         var thumbnailPath = GetThumbnailPath(objectPath, size);
 
-        // 方案A：从 thumbnailPath 中提取 bucket + folder，避免 UploadAsync 重复添加前缀
+        // Option A: extract bucket + folder from thumbnailPath so UploadAsync does not add the prefix twice
         // thumbnailPath = "uploads/2025/06/14/abc/image_small.jpg"
         // bucket = Uploads, folder = "2025/06/14/abc", fileName = "image_small.jpg"
         var bucket = GetBucketFromPath(thumbnailPath);
@@ -105,7 +105,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 检查缓存→生成→返回预签名 URL
+    /// Checks the cache → generates → returns a presigned URL
     /// </summary>
     public static async Task<(string url, int expirySeconds)> GetOrGenerateThumbnailAsync(
         string objectPath,
@@ -116,14 +116,14 @@ public static class ThumbnailHelper
     {
         var thumbnailPath = GetThumbnailPath(objectPath, size);
 
-        // 检查缓存
+        // Check the cache
         if (await ossService.ObjectExistsAsync(thumbnailPath))
         {
             var cachedUrl = await ossService.GetPresignedUrlAsync(thumbnailPath, expirySeconds);
             return (cachedUrl, expirySeconds);
         }
 
-        // 生成缩略图
+        // Generate the thumbnail
         try
         {
             using var originalStream = await ossService.DownloadAsync(objectPath);
@@ -134,7 +134,7 @@ public static class ThumbnailHelper
         }
         catch (Exception ex)
         {
-            // 缩略图生成失败：降级返回原图
+            // Thumbnail generation failed: fall back to the original image
             logger?.LogWarning(ex, "Thumbnail generation failed for {Path}, size={Size}, falling back to original", objectPath, size);
             var fallbackUrl = await ossService.GetPresignedUrlAsync(objectPath, expirySeconds);
             return (fallbackUrl, expirySeconds);
@@ -142,7 +142,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 删除原图 + 所有尺寸缩略图
+    /// Deletes the original image + thumbnails of all sizes
     /// </summary>
     public static async Task DeleteWithThumbnailsAsync(string objectPath, IOssService ossService)
     {
@@ -155,7 +155,7 @@ public static class ThumbnailHelper
     }
 
     /// <summary>
-    /// 根据路径前缀推断 OssBucket
+    /// Infers the OssBucket from the path prefix
     /// </summary>
     private static OssBucket GetBucketFromPath(string path)
     {

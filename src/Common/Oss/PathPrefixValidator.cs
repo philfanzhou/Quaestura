@@ -4,7 +4,7 @@ using System.Linq;
 namespace Quaestura.Common.Oss;
 
 /// <summary>
-/// 路径前缀校验器，确保服务只能操作授权路径前缀下的 OSS 对象
+/// Path prefix validator that ensures the service only operates on OSS objects under authorized path prefixes
 /// </summary>
 public class PathPrefixValidator
 {
@@ -16,12 +16,12 @@ public class PathPrefixValidator
     }
 
     /// <summary>
-    /// 校验路径是否在允许前缀内。如果不在，抛出 UnauthorizedAccessException
+    /// Validates that the path is within an allowed prefix; throws UnauthorizedAccessException otherwise
     /// </summary>
     public void ValidateWritePath(string path)
     {
         if (_allowedPrefixes.Length == 0)
-            return; // 无配置时不校验
+            return; // Skip validation when nothing is configured
 
         if (string.IsNullOrWhiteSpace(path))
             throw new UnauthorizedAccessException($"Path is empty, allowed prefixes: {string.Join(", ", _allowedPrefixes)}");

@@ -20,7 +20,7 @@ public class QuaesturaDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // Knowledge 配置
+        // Knowledge configuration
         modelBuilder.Entity<Knowledge>(entity =>
         {
             entity.HasIndex(e => new { e.Subject, e.Grade, e.Name }).IsUnique();
@@ -33,7 +33,7 @@ public class QuaesturaDbContext : DbContext
                   .OnDelete(DeleteBehavior.Restrict);
         });
 
-        // Question 配置
+        // Question configuration
         modelBuilder.Entity<Question>(entity =>
         {
             entity.HasIndex(e => new { e.Subject, e.Grade });
@@ -48,13 +48,13 @@ public class QuaesturaDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // QuestionContent 配置
+        // QuestionContent configuration
         modelBuilder.Entity<QuestionContent>(entity =>
         {
             entity.HasIndex(e => e.QuestionId);
         });
 
-        // QuestionKnowledge 配置
+        // QuestionKnowledge configuration
         modelBuilder.Entity<QuestionKnowledge>(entity =>
         {
             entity.HasIndex(e => new { e.QuestionId, e.KnowledgeId }).IsUnique();
@@ -71,13 +71,13 @@ public class QuaesturaDbContext : DbContext
                   .OnDelete(DeleteBehavior.Cascade);
         });
 
-        // Tag 配置
+        // Tag configuration
         modelBuilder.Entity<Tag>(entity =>
         {
             entity.HasIndex(e => e.Name).IsUnique();
         });
 
-        // QuestionTag 配置
+        // QuestionTag configuration
         modelBuilder.Entity<QuestionTag>(entity =>
         {
             entity.HasIndex(e => new { e.QuestionId, e.TagId }).IsUnique();

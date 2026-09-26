@@ -38,7 +38,7 @@ public static class KnowledgeEndpoints
         [FromQuery] int page = 1,
         [FromQuery] int size = 10)
     {
-        // name 模糊搜索优先
+        // Fuzzy search by name takes precedence
         if (!string.IsNullOrWhiteSpace(name))
         {
             var matches = await service.GetLikeAsync(name);
@@ -54,7 +54,7 @@ public static class KnowledgeEndpoints
             });
         }
 
-        // 按 (grade, subject) 分页
+        // Paginate by (grade, subject)
         if (grade.HasValue && grade.Value > 0 && subject.HasValue && subject.Value > 0)
         {
             var (items, totalPages, totalCount) = await service.GetByGradeAndSubjectAsync(
@@ -70,7 +70,7 @@ public static class KnowledgeEndpoints
             });
         }
 
-        // 按 parentId 查子节点（不分页）
+        // Query children by parentId (not paginated)
         if (parentId != null)
         {
             var children = await service.GetChildrenAsync(string.IsNullOrEmpty(parentId) ? null : parentId);
@@ -85,7 +85,7 @@ public static class KnowledgeEndpoints
             });
         }
 
-        // 全部分页
+        // Paginate everything
         var (allItems, allTotalPages, allTotalCount) = await service.GetAllAsync(page, size);
         return Results.Ok(new
         {

@@ -215,7 +215,7 @@ public class QuestionWithContent
 }
 
 /// <summary>
-/// 题目图片上传服务
+/// Question image upload service
 /// </summary>
 public interface IOssQuestionService
 {

@@ -124,6 +124,22 @@ open http://localhost:5007/swagger
 
 签名公钥通过 OIDC discovery 自动获取，无需手动配置密钥。
 
+### 2.4 Admin login (SignaCore application)
+
+Admin login (`POST /admin/auth/login`, see [Authentication.md §6](./Authentication.md#6-admin-login)) needs Quaestura registered as an application in SignaCore:
+
+1. Register a Quaestura application in SignaCore and obtain its AppId and AppSecret.
+2. Set the application's callback URL to `<Quaestura address reachable from SignaCore>/admin/auth/callback`. The address must satisfy SignaCore's callback policy (`Callback:AllowedDomains`, `Callback:RequireHttps`, `Callback:AllowPrivateAddresses`; see SignaCore `docs/development/Configuration.md`). Plain-HTTP or private-address callbacks must be enabled explicitly in SignaCore.
+3. Inject the credentials and the admin whitelist through environment variables or Consul, never through committed files:
+
+| Configuration key | Environment variable | Notes |
+|--------|---------|------|
+| `IdentityService:AppId` | `IdentityService__AppId` | `start.sh` passes `IDENTITY_APP_ID` |
+| `IdentityService:AppSecret` | `IdentityService__AppSecret` | `start.sh` passes `IDENTITY_APP_SECRET` |
+| `AdminPortal:AdminUserIds` | `AdminPortal__AdminUserIds__0`, `__1`, ... | SignaCore user IDs that receive the `admin` role; Consul KV works as well |
+
+Without AppId/AppSecret the service still starts and every other endpoint works; login returns 503. Provide TLS between browsers and Quaestura (or keep it on an internal network), because passwords pass through it.
+
 ## 3. Docker 部署
 
 ### 3.1 镜像构建（4 阶段多阶段构建）
@@ -159,6 +175,8 @@ Dockerfile 位于仓库根目录 `Dockerfile`，**单个镜像同时包含 backe
 | `CONSUL_HTTP_ADDR` | Consul 地址；OSS 配置从 `config/ruoyu/shared.json` 加载 |
 | `CONSUL_TOKEN` | Consul ACL Token |
 | `IdentityService__Authority` | 通常不由 `start.sh` 注入；从 Consul 读取稳定 HTTPS Authority |
+| `IdentityService__AppId` | `${IDENTITY_APP_ID:-}`; SignaCore AppId for admin login (see §2.4) |
+| `IdentityService__AppSecret` | `${IDENTITY_APP_SECRET:-}`; SignaCore AppSecret for admin login (see §2.4) |
 
 > HTTP 监听端口固定为 5007（`Program.cs` 硬编码），不再通过 `ASPNETCORE_URLS` 环境变量控制。host 端口映射通过 `start.sh` 的 `Port` 变量控制（`-p ${Port}:5007`）。
 >

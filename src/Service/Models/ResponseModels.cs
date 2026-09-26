@@ -72,3 +72,8 @@ public class QuestionTagResponse
     public string? TagColor { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
 }
+
+public class AdminAuthCallbackResponse
+{
+    public List<string> Roles { get; set; } = new();
+}

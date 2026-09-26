@@ -50,6 +50,7 @@
 - `/health` 端点免认证（健康检查）
 - 静态文件和 SPA fallback 免认证（前端资源）
 - Swagger UI 仅在开发环境暴露，免认证
+- `POST /admin/auth/login` and `POST /admin/auth/callback` are the only `/admin/*` endpoints marked `AllowAnonymous` (see [§6 Admin login](#6-admin-login))
 
 ### 2.2 Tag 端点权限矩阵
 
@@ -123,3 +124,42 @@ API 级鉴权测试使用 `WebApplicationFactory<Program>` 和测试签名密钥
 - **本次改造前**：服务零认证，userId 从请求体自报，可任意伪造
 - **本次改造后**：接入 JWT Bearer，userId 从 JWT 读取，Tag CRUD 加角色 + 归属校验
 - **未做的事**：Question/Knowledge 端点的角色细化、question-tag 关联的 question 归属校验（作为后续任务）
+
+## 6. Admin login
+
+SignaCore has no login page, so the admin frontend signs in through Quaestura:
+
+1. The admin frontend sends the username and password to `POST /admin/auth/login`.
+2. Quaestura calls SignaCore `POST {IdentityService:Authority}/api/auth/token` with the password grant (`{"grantType":"password","username":"...","password":"..."}`), presenting its own `X-Admin-AppId` / `X-Admin-AppSecret` headers. The AppSecret never leaves the server.
+3. While issuing the token, SignaCore calls the application's registered callback, `POST /admin/auth/callback`, with `{"user_id":"..."}`. Quaestura returns `{"roles":["admin"]}` when the user is listed in `AdminPortal:AdminUserIds` (case-insensitive), otherwise `{"roles":[]}`. SignaCore adds the returned roles to the JWT, so whitelisted users get `role: admin`, a staff role (see §2.2).
+4. Quaestura returns only `success`, `message`, `accessToken`, `expiresIn`, and `expiresAt` to the frontend. The refresh token and user info are discarded; the admin signs in again after the token expires. No cookie is set.
+
+Request and response formats are in [ApiSpec.md §2.6](../overview/ApiSpec.md#26-admin-authentication-adminauth).
+
+### 6.1 Configuration
+
+| Configuration key | Environment variable | Required | Description |
+|--------|---------|------|------|
+| `IdentityService:AppId` | `IdentityService__AppId` | For login | AppId of the Quaestura application registered in SignaCore |
+| `IdentityService:AppSecret` | `IdentityService__AppSecret` | For login | AppSecret of that application; inject through environment variables or Consul only |
+| `AdminPortal:AdminUserIds` | `AdminPortal__AdminUserIds__0`, `__1`, ... | No | SignaCore user IDs that receive the `admin` role; empty by default |
+
+`IdentityService:Authority` is shared with JWT validation (§1.2). When `Authority`, `AppId`, or `AppSecret` is missing, login returns 503 and no request is sent to SignaCore.
+
+### 6.2 Sensitive values
+
+| Value | Flow | Rule |
+|------|------|------|
+| Password | Browser → Quaestura → SignaCore (request bodies) | Forwarded in memory only, never logged; transport security between the browser and Quaestura is the deployment's responsibility |
+| AppSecret | Environment variable or Consul → Quaestura → SignaCore request header | Never returned in a response, never logged, never committed |
+| Access token | SignaCore → Quaestura → browser | Never logged |
+| Refresh token, user info | SignaCore → Quaestura | Discarded |
+| Callback `user_id` | SignaCore → Quaestura | Only compared against the whitelist; logged when the admin role is granted |
+
+Login failures are logged without the username.
+
+### 6.3 Not guaranteed
+
+- Brute-force protection: Quaestura does not rate-limit login. SignaCore sees every attempt as coming from Quaestura, so IP-based limiting in SignaCore can affect all admins at once.
+- Callback caller authentication: anyone who can reach `/admin/auth/callback` can ask whether a user ID is whitelisted. It never returns a token and cannot grant privileges by itself.
+- Silent token renewal after expiry.

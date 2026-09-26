@@ -20,6 +20,7 @@ using Quaestura.Domain.Services;
 using Quaestura.Service;
 using Quaestura.Service.Endpoints;
 using Quaestura.Service.Middleware;
+using Quaestura.Service.Options;
 using Quaestura.Service.Validation;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -72,6 +73,14 @@ builder.Services.AddMemoryCache(options =>
 // FallbackPolicy = RequireAuthenticatedUser, so every /admin/* endpoint requires
 // a valid JWT unless explicitly decorated with [AllowAnonymous].
 builder.Services.AddRuoyuJwtBearer(config, builder.Environment);
+
+// Admin login: SignaCore client credentials and the admin role whitelist.
+builder.Services.Configure<IdentityServiceClientOptions>(
+    config.GetSection(IdentityServiceClientOptions.SectionName));
+builder.Services.Configure<AdminPortalOptions>(config.GetSection(AdminPortalOptions.SectionName));
+builder.Services.AddHttpClient(
+    IdentityServiceClientOptions.HttpClientName,
+    client => client.Timeout = TimeSpan.FromSeconds(30));
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -227,6 +236,7 @@ app.MapKnowledgeEndpoints();
 app.MapQuestionKnowledgeEndpoints();
 app.MapTagEndpoints();
 app.MapQuestionTagEndpoints();
+app.MapAdminAuthEndpoints();
 
 // Health check (public, no auth required)
 app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();

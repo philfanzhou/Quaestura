@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reactive.Linq;
 using System.Threading.Tasks;
 using Minio;
 using Minio.DataModel.Args;
@@ -303,10 +302,7 @@ public class S3OssService : IOssService
                 .WithPrefix(prefix)
                 .WithRecursive(true);
 
-            var observable = _internalClient.ListObjectsAsync(listArgs);
-            var items = await observable.ToList();
-
-            foreach (var item in items)
+            await foreach (var item in _internalClient.ListObjectsEnumAsync(listArgs))
             {
                 objects.Add(new OssObjectInfo
                 {
@@ -319,7 +315,8 @@ public class S3OssService : IOssService
         }
         catch
         {
-            // Ignore errors and return an empty list
+            // Ignore errors and return an empty list; the listing is streamed, so drop partial results
+            objects.Clear();
         }
 
         return objects;

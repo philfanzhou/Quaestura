@@ -14,7 +14,7 @@ This document describes the unit test project structure, coverage, and conventio
 - Moq 4.20.70
 - FluentAssertions 6.12.0
 - FluentValidation 11.9.0 (for testing RequestValidators)
-- Microsoft.EntityFrameworkCore.InMemory 8.0.11 (Domain-layer integration tests + endpoint integration tests)
+- Microsoft.EntityFrameworkCore.InMemory 10.0.12 (Domain-layer integration tests + endpoint integration tests)
 
 ## Domain-layer test coverage
 

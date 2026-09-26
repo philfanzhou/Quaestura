@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -89,7 +90,10 @@ public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
         });
         builder.ConfigureServices(services =>
         {
+            // EF Core 9+ AddDbContext also registers IDbContextOptionsConfiguration<TContext>;
+            // remove it too, or the Npgsql and InMemory providers are both configured.
             services.RemoveAll<DbContextOptions<QuaesturaDbContext>>();
+            services.RemoveAll<IDbContextOptionsConfiguration<QuaesturaDbContext>>();
             services.AddDbContext<QuaesturaDbContext>(options =>
                 options.UseInMemoryDatabase(_databaseName));
             services.PostConfigure<JwtBearerOptions>(

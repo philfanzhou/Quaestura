@@ -14,7 +14,7 @@ updates:
           - minor
           - patch
     ignore:
-      # The 10.x lines of these packages require net10.0. Remove once the .NET 10 migration (#1) lands.
+      # Their next major lines require the next TFM; move them together with a deliberate runtime upgrade.
       - dependency-name: "Microsoft.*"
         update-types:
           - version-update:semver-major
@@ -46,7 +46,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    # Runtime majors move deliberately: .NET via #1, Node to the next even-numbered LTS line.
+    # Runtime majors move deliberately: .NET together with the TFM, Node to the next even-numbered LTS line.
     ignore:
       - dependency-name: "*dotnet/sdk"
         update-types:

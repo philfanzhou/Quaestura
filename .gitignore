@@ -32,7 +32,7 @@ _ReSharper*/
 *.db-wal
 data/
 
-# Frontend shared B 级组件目录名为 data/，与上方 data/ 规则冲突，需显式取消忽略
+# The Frontend shared B-level component directory is named data/, which conflicts with the data/ rule above, so un-ignore it explicitly
 !src/ruoyu.common/frontend/shared/components/data/
 !src/ruoyu.common/frontend/shared/components/data/**
 

@@ -1008,7 +1008,7 @@ textarea.input:focus {
   vertical-align: middle;
 }
 
-/* ========== Content pre (题干/答案/解析展示) ========== */
+/* ========== Content pre (stem/answer/explanation display) ========== */
 .content-pre {
   white-space: pre-wrap;
   word-break: break-word;
@@ -1022,7 +1022,7 @@ textarea.input:focus {
   margin: 8px 0;
 }
 
-/* ========== Image grid (题目图片预览) ========== */
+/* ========== Image grid (question image preview) ========== */
 .image-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -1037,7 +1037,7 @@ textarea.input:focus {
   cursor: pointer;
 }
 
-/* ========== Form row (搜索栏横向布局) ========== */
+/* ========== Form row (horizontal search bar layout) ========== */
 .form-row {
   display: flex;
   gap: 12px;

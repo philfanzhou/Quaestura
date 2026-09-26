@@ -78,7 +78,7 @@ public static class QuestionTagEndpoints
         if (string.IsNullOrWhiteSpace(questionId) && string.IsNullOrWhiteSpace(tagId))
             throw new ValidationException("Either questionId or tagId is required");
 
-        // 按 questionId 查询：返回关联 + Tag 信息
+        // Query by questionId: return associations + tag details
         if (!string.IsNullOrWhiteSpace(questionId))
         {
             if (!Guid.TryParse(questionId, out var qId))
@@ -98,7 +98,7 @@ public static class QuestionTagEndpoints
             return Results.Ok(new { success = true, data = dtos });
         }
 
-        // 按 tagId 查询：返回题目列表（分页）
+        // Query by tagId: return the question list (paginated)
         if (!Guid.TryParse(tagId, out var tId))
             throw new ValidationException("tagId is not a valid UUID");
 

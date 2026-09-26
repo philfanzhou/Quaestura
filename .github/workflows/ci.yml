@@ -1,0 +1,244 @@
+name: CI
+
+# This public-repository workflow only builds and tests on GitHub-hosted runners.
+# Production deployment is intentionally separate. Do not add a self-hosted runner job
+# that would allow pull-request code to execute on deployment infrastructure.
+
+on:
+  push:
+    branches: [main]
+    tags: ['*.*.*']
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # The Dockerfile defaults to a mainland-China npm mirror for local builds; GitHub-hosted runners
+  # reach the public registry directly and more reliably.
+  NPM_REGISTRY: https://registry.npmjs.org/
+
+jobs:
+  build-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          global-json-file: global.json
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          # Matches the frontend stage of the Dockerfile.
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build
+        run: dotnet build src/Quaestura.sln --configuration Release
+
+      - name: Unit tests
+        run: |
+          dotnet test src/Quaestura.sln \
+            --configuration Release \
+            --no-build \
+            --logger "trx;LogFileName=quaestura-ut.trx" \
+            --results-directory reports
+
+      - name: Admin frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Builds the release image exactly as the publish job does, without pushing, so a broken
+      # Dockerfile fails the pull request instead of the release.
+      - name: Build image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            NPM_REGISTRY=${{ env.NPM_REGISTRY }}
+          cache-from: type=gha,scope=quaestura-release
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unit-test-results
+          path: reports/
+          if-no-files-found: ignore
+
+  # Runs for release tags and for default-branch pushes. A default-branch push publishes only the
+  # moving `edge` tag; `latest` and the semver tags stay tag-only, gated below.
+  publish-container:
+    name: Publish GHCR Image
+    if: >-
+      github.event_name == 'push' &&
+      (startsWith(github.ref, 'refs/tags/') ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    needs: [build-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY_IMAGE: ghcr.io/philfanzhou/quaestura
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "Release tag must use MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.NUMBER." >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          # The default `latest=auto` adds its own `latest` for every semver match, on top of the
+          # explicitly gated row below, and the action does not de-duplicate the two. Turning the
+          # flavour off leaves that gate as the only source of `latest`.
+          flavor: latest=false
+          tags: |
+            # Only produced on a default-branch push. The tag moves rather than accumulating, but
+            # each push leaves the previous manifest, with its provenance and SBOM attestations,
+            # behind as an untagged package version, which GHCR does not prune on its own.
+            type=edge,branch=${{ github.event.repository.default_branch }}
+            # The semver rules read the tag name and yield nothing on a branch ref.
+            # A pre-release gets only its exact immutable version. Stable releases additionally
+            # move the minor channel and latest; an RC must never replace either production tag.
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+            # Release tags carry no `v` prefix here, so the gate must not require one. Without
+            # this gate the rule is unconditional and the first default-branch push would move
+            # `latest` onto a development build.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+
+      - name: Build and publish image
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            NPM_REGISTRY=${{ env.NPM_REGISTRY }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=quaestura-release
+          cache-to: type=gha,mode=max,scope=quaestura-release
+          provenance: mode=max
+          sbom: true
+
+      - name: Record published image
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          {
+            echo "### Published container"
+            echo
+            echo "- Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo "- Tags:"
+            # `continue` rather than a trailing `&&`: the last command of the loop body sets the
+            # status of the loop, the group, and the step, so a blank final line would fail the
+            # step after the image is already pushed.
+            while IFS= read -r image_tag; do
+              [ -n "$image_tag" ] || continue
+              printf '  - `%s`\n' "$image_tag"
+            done <<< "${META_TAGS}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Runs last so a release only ever exists for a tag whose tests passed and whose image is
+  # actually pullable, and so the notes can quote the digest that was really published.
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [publish-container]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      REGISTRY_IMAGE: ghcr.io/philfanzhou/quaestura
+      IMAGE_DIGEST: ${{ needs.publish-container.outputs.digest }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Publish the release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Re-running the workflow for a tag must not rewrite notes someone has since edited by
+          # hand, so an existing release is left exactly as it is.
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "Release ${GITHUB_REF_NAME} already exists; leaving it untouched."
+            echo "Release \`${GITHUB_REF_NAME}\` already existed and was left untouched." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            release_flags=(--prerelease)
+            channel_note="Pre-release image; the stable minor channel and latest tag were not changed."
+          else
+            minor="${GITHUB_REF_NAME%.*}"
+            release_flags=(--latest)
+            channel_note="Also tagged ${minor} and latest."
+          fi
+
+          # printf keeps the Markdown backticks literal; a heredoc would need them escaped.
+          {
+            printf '## Container image\n\n'
+            printf '```\n%s:%s\n```\n\n' "${REGISTRY_IMAGE}" "${GITHUB_REF_NAME}"
+            printf 'Digest: `%s`\n\n' "${IMAGE_DIGEST}"
+            printf '%s\n' "${channel_note}"
+          } > release-notes.md
+
+          # --generate-notes appends GitHub's commit and pull-request changelog underneath.
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Quaestura ${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md \
+            --generate-notes \
+            --verify-tag \
+            "${release_flags[@]}"
+
+          {
+            echo "### Published release"
+            echo
+            echo "- <${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}>"
+          } >> "$GITHUB_STEP_SUMMARY"

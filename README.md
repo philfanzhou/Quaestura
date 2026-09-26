@@ -1,106 +1,86 @@
-# Quaestura 题库核心服务
+# Quaestura
 
-## 1. 项目概述
+Quaestura is a self-hosted question bank and knowledge-point catalog service. It manages reusable questions, their content and images, a hierarchical knowledge-point tree, and free-form tags, and serves a Vue 3 administration console from the same process as its HTTP API.
 
-Quaestura 是基于 **ASP.NET Core 最小 API (WebAPI)** 的统一题库管理微服务，专注于**题目管理**和**知识点管理**，为教育系统提供稳定的题库检索、组卷和基础静态数据服务。本服务在单一 docker 容器中同时提供 **WebAPI（端口 5007）** 和 **管理前端 SPA**。
+Learner-specific data such as mistake records, root-cause analysis, and practice history is out of scope; Quaestura only owns the reusable catalog. See [CONTEXT.md](CONTEXT.md) for the domain language.
 
-**注：** 错题管理相关业务（学生上传错题、错因分析、错题重练等学习者特定动态数据）不属于本服务，由 Ruoyu.Study 平台的独立 `Mistake` 服务负责。Quaestura 只管理可复用的题目、知识点与标签。
+## Capabilities
 
-## 2. 文档导航
+- Question management with multipart upload of text and images, search, filtering, and paging
+- Hierarchical knowledge points organized by subject and grade
+- Tags maintained by staff, with usage counts
+- Many-to-many links between questions and knowledge points, and between questions and tags
+- Question images in S3-compatible object storage (for example SeaweedFS) under the `questions/` prefix
+- RS256 JWT authentication against SignaCore or any issuer that publishes OIDC discovery and JWKS
+- Optional configuration from Consul KV, with Serilog and optional Loki log export
+- A single container image that serves the API and the admin console on port 5007
 
-- [API 规范](docs/overview/ApiSpec.md) - 完整 HTTP 端点定义、请求/响应 schema、错误码字典
-- [管理前端 spec](frontend/docs/admin-frontend-spec.md) - Vue 3 + 手写 CSS 管理前端技术栈、目录、路由、与后端集成
-- [数据库与存储设计](docs/database/README.md) - 包含 PostgreSQL 表结构设计和 SeaweedFS 存储路径规范
-- [部署与运行指南](docs/development/Deployment.md) - 包含环境依赖、启动要求、配置项说明以及 Docker 部署指南
-- [错误处理规范](docs/development/ErrorHandling.md) - HTTP 错误响应格式与异常处理规范
-- [单元测试规范](docs/development/Testing.md) - 测试项目结构、覆盖范围与约定
-- [本地部署指南](src/Host/README.md) - 端口与端点清单
+## Repository layout
 
-## 3. 技术栈
+| Path | Purpose |
+| --- | --- |
+| `src/Host` | ASP.NET Core host: composition, authentication, Consul, logging, and SPA hosting |
+| `src/Service` | Minimal API endpoints and request validation |
+| `src/Domain` | Domain services |
+| `src/Database` | EF Core model and migrations for PostgreSQL |
+| `src/Common` | Shared authentication, database, and object-storage helpers |
+| `src/Consul` | Consul KV configuration source and Serilog/Loki setup |
+| `src/Tests` | Unit and endpoint tests |
+| `frontend` | Vue 3 administration console |
+| `docs` | API, database, authentication, deployment, and testing documentation |
 
-- **后端框架**: .NET 8 + ASP.NET Core 最小 API (WebAPI)
-- **管理前端**: Vue 3 + TypeScript + Vite + 手写 CSS + Axios（位于 `frontend/`，与后端同目录）
-- **数据库**: PostgreSQL
-- **ORM**: Entity Framework Core 8.0 + Npgsql
-- **对象存储**: SeaweedFS（S3 兼容，端口 8333）
-- **校验**: FluentValidation
-- **架构**: DDD（领域驱动设计）
+Project references flow one way: Host → Service → Domain → Database → Common.
 
-## 4. 项目结构
+## Build and test
 
-```
-Quaestura/
-├── frontend/                           # 管理前端（Vue 3 + TS + Vite）
-│   ├── package.json
-│   ├── vite.config.ts
-│   ├── index.html
-│   ├── docs/admin-frontend-spec.md
-│   └── src/
-├── src/                                # .NET 源码
-│   ├── Common/                         # Quaestura.Common（自 ruoyu.common 复制的快照）
-│   ├── Consul/                         # Quaestura.Consul（Consul KV + Serilog/Loki）
-│   ├── Database/                       # EF Core 实体与 Migrations
-│   ├── Domain/                         # 领域服务
-│   ├── Service/                        # 最小 API 端点与校验
-│   ├── Host/                           # 宿主组合、认证、wwwroot SPA
-│   ├── Tests/                          # 单元与集成测试
-│   └── Quaestura.sln
-├── docs/                               # 后端正式文档
-├── Dockerfile                          # 单镜像多阶段构建（backend + frontend）
-├── start.sh                            # Docker 启动脚本
-├── CONTEXT.md                          # 领域语言（Question Catalog）
-├── AGENTS.md                           # AI 协作规范
-├── LICENSE                             # MIT
-└── README.md
+Requirements: .NET SDK 8, Node.js 20+ with npm, and Docker to build the container image.
+
+```bash
+dotnet build src/Quaestura.sln --configuration Release
+dotnet test src/Quaestura.sln --configuration Release --no-build
+cd frontend && npm ci && npm run build
 ```
 
-## 5. 核心功能
+## Run locally
 
-### 5.1 题目管理（Question）
+Quaestura needs PostgreSQL, S3-compatible object storage, and a reachable token issuer. Configure the database connection, the `Oss` section, and the `IdentityService` section in `src/Host/appsettings.Development.json` or through environment variables, then run:
 
-| 功能 | 端点 | 说明 |
-|------|------|------|
-| 查询题目 | `GET /admin/questions/{id}` | 根据 ID 获取题目详情 |
-| 搜索题目 | `GET /admin/questions` | 按关键字、难度等级、题目类型筛选 |
-| 上传题目 | `POST /admin/questions` | multipart/form-data，支持图片和文本内容 |
-| 删除题目 | `DELETE /admin/questions/{id}` | 删除指定题目及关联 OSS 图片 |
-| 列表查询 | `GET /admin/questions` | 按 level/type/subject/grade 分页 |
+```bash
+dotnet run --project src/Host
+```
 
-### 5.2 知识点管理（Knowledge）
+The service listens on `http://localhost:5007`. Useful endpoints include `/health`, `/swagger` (Development only), the API under `/admin/*`, and the admin console at `/`. Tables are created on first start.
 
-| 功能 | 端点 | 说明 |
-|------|------|------|
-| 查询知识点 | `GET /admin/knowledges/{id}` | 根据 ID 获取详情 |
-| 列表查询 | `GET /admin/knowledges` | 支持按 parentId 查子节点、按 grade/subject 分页、按 name 模糊搜索 |
-| 新增/更新 | `POST /admin/knowledges` | id 存在则更新，空则新增 |
-| 删除知识点 | `DELETE /admin/knowledges/{id}` | 被引用时拒绝删除 |
+For frontend work, `npm run dev` in `frontend/` starts the Vite dev server and proxies API calls to port 5007.
 
-### 5.3 题目-知识点关联（QuestionKnowledge）
+## Container
 
-| 功能 | 端点 | 说明 |
-|------|------|------|
-| 批量打标签 | `POST /admin/question-knowledges/batch-tag` | 批量将知识点关联到题目 |
-| 获取题目知识点 | `GET /admin/question-knowledges?questionId=` | 获取指定题目的所有关联 |
-| 获取知识点题目 | `GET /admin/question-knowledges?knowledgeId=` | 获取关联到指定知识点的所有题目 |
-| 移除关联 | `DELETE /admin/question-knowledges?questionId=` | 移除题目的所有知识点关联 |
+The root `Dockerfile` builds the admin console and the .NET host into one image:
 
-### 5.4 Tag 管理
+```bash
+docker build -t quaestura:latest .
+./start.sh
+```
 
-| 功能 | 端点 | 说明 |
-|------|------|------|
-| 列表查询 | `GET /admin/tags` | 支持 name 模糊搜索、sortBy=usageCount |
-| 查询详情 | `GET /admin/tags/{id}` | 根据 ID 获取详情 |
-| 新增/更新 | `POST /admin/tags` | id 存在则更新，空则新增 |
-| 删除 Tag | `DELETE /admin/tags/{id}` | 被引用时拒绝删除 |
+`start.sh` runs the container on the `quaestura-net` network and passes `CONSUL_HTTP_ADDR` and `CONSUL_TOKEN` through, so database and object-storage settings can come from Consul KV. The listen port inside the container is fixed at 5007.
 
-### 5.5 题目-Tag 关联
+## Configuration
 
-| 功能 | 端点 | 说明 |
-|------|------|------|
-| 批量打标签 | `POST /admin/question-tags/batch-tag` | 批量给多个题目打多个 Tag |
-| 查询关联 | `GET /admin/question-tags` | 按 questionId 或 tagId 查询 |
-| 移除关联 | `DELETE /admin/question-tags` | 移除单个或全部关联 |
+| Section | Purpose |
+| --- | --- |
+| `ConnectionStrings:Default`, `PostgreSql:*`, `Database:Name` | PostgreSQL connection; the shared `PostgreSql:*` keys take precedence when present |
+| `Oss:*` | S3 endpoint, credentials, bucket, and public base URL for presigned links |
+| `IdentityService:*` | Token issuer authority, issuer, audience, HTTPS metadata requirement, and clock skew |
+| `APP_TITLE` | Title shown by the admin console |
 
-## 6. 端口
+Supply credentials through environment variables or Consul KV, never through committed files. See [deployment](docs/development/Deployment.md) and [authentication](docs/development/Authentication.md) for the full reference.
 
-- HTTP 5007（WebAPI + 管理前端 SPA，同进程）
+## Documentation
+
+Start with [the documentation index](docs/README.md), [the API specification](docs/overview/ApiSpec.md), and [deployment](docs/development/Deployment.md). Some documents inherited from the Ruoyu.Study monorepo are still in Chinese; their translation is tracked in [#3](https://github.com/philfanzhou/Quaestura/issues/3).
+
+Contributions should follow [CONTRIBUTING.md](CONTRIBUTING.md), and vulnerabilities should be reported through [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)

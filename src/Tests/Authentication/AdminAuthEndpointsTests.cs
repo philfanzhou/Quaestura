@@ -14,6 +14,12 @@ using Xunit;
 
 namespace Quaestura.Tests.Authentication;
 
+// UseSerilog replaces the process-wide Log.Logger for every test host it builds, so a host
+// started by a parallel test class could divert log events away from this class's sink.
+[CollectionDefinition(nameof(AdminAuthEndpointsTests), DisableParallelization = true)]
+public sealed class AdminAuthLogCaptureCollection;
+
+[Collection(nameof(AdminAuthEndpointsTests))]
 public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>, IDisposable
 {
     // Same authority QuaesturaApiFactory configures for JWT validation.

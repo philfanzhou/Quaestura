@@ -103,6 +103,9 @@ builder.Services.AddSwaggerGen(c =>
 // version. AddOpenTelemetryInstrumentation uses the default options (AspNetCore / HttpClient /
 // Runtime instrumentation) and registers NO exporter. AddSensitiveHeaders denies
 // X-Admin-AppSecret for the safe request-header projector without adding header logging.
+// AddSecurityResponseHeaders registers the opt-in capability that applies the fixed six-header
+// baseline to the two admin-auth JSON endpoints marked in AdminAuthEndpoints (the middleware
+// below is endpoint-metadata driven; the full management pipeline is deliberately not used).
 builder.Services.AddQuaesturaServiceMantle();
 
 // Bind Kestrel explicitly to the configured httpPort
@@ -119,6 +122,18 @@ var app = builder.Build();
 // OnStarting before any response starts (static file responses included). The existing
 // ExceptionHandlingMiddleware keeps owning the QUAESTURA_* business error envelopes.
 app.UseServiceMantleCorrelationId();
+
+// ========== Security response headers for the marked admin-auth JSON endpoints ==========
+// Explicit routing selects the endpoint here (WebApplication would otherwise auto-prepend it),
+// so the endpoint-metadata-driven security middleware below can see the selected endpoint. It
+// sits outside ExceptionHandlingMiddleware on purpose: when a marked endpoint throws and the
+// old handler converts it to the 500 QUAESTURA_INTERNAL_ERROR envelope, the OnStarting
+// assignment still applies the fixed single-value six-header baseline. Unmarked endpoints
+// (business API, /health, dev Swagger, the SPA branch, static assets) pass through untouched
+// and never receive the API-only default-src 'none' policy. If the response has already
+// started, the middleware passes through without promising to rewrite sent headers.
+app.UseRouting();
+app.UseServiceMantleSecurityResponseHeaders();
 
 var identityTrust = app.Services
     .GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityAuthenticationOptions>>()

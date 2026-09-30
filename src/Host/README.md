@@ -7,7 +7,7 @@ This document covers environment setup, configuration requirements, and Docker c
 ### 1.1 Requirements
 
 1. **SeaweedFS**: the SeaweedFS service (S3 port 8333) must be started first
-2. **Database**: PostgreSQL; on startup `DatabaseInitializer` applies the EF Core migrations in `src/Database/Migrations/` (the raw SQL fallback only recreates missing tables when no migration is pending)
+2. **Database**: PostgreSQL; on startup `DatabaseInitializer` strictly inspects the target database and applies the EF Core migrations in `src/Database/Migrations/` only for verified empty or pending states. Verified legacy (EnsureCreated-era) databases are taken over without data loss; unknown or corrupt schemas are refused at startup instead of being silently stamped (see [`docs/development/Deployment.md`](../../docs/development/Deployment.md) §2.1)
 
 ### 1.2 WebAPI ports
 

@@ -148,6 +148,17 @@ public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Progra
 
 Note: integration tests must switch the DbContext to the EF Core InMemory database, injected through `WebApplicationFactory.ConfigureServices`.
 
+## PostgreSQL migration integration tests
+
+`src/Tests/Database/` contains real-database tests for the strict migration executor (`QuaesturaMigrationExecutor`) and the startup entry (`DatabaseInitializer`). They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`MigrationIntegrationCollection`, serialized) and create an isolated database per test:
+
+- `PostgreSqlMigrationFixture.cs`: container fixture, golden-state builders (migrated, Initial-history-only, EnsureCreated legacy, corrupted variants, synthetic business rows), and a secret-canary log capture.
+- `MigrationInspectionTests.cs`: read-only classification of every semantic state (empty, missing catalog, known history prefixes, legacy takeover candidates, corrupt/unknown/partial states, authentication failure), each rejection proven zero-write.
+- `MigrationExecutionTests.cs`: migration execution, legacy takeover with data preservation, cancellation between phases with recovery, idempotency, initializer refusals, and canary non-leakage.
+- `HostStartupMigrationTests.cs`: the real `Program.cs` host starting against an empty PostgreSQL database.
+
+Requirements: a working Docker environment (local machine or GitHub-hosted runner). The tests run in CI as part of the normal `dotnet test` step and are never skipped by default. The container password is randomly generated per run and doubles as the secret canary asserted absent from exceptions and logs.
+
 ## Running the tests
 
 ```bash

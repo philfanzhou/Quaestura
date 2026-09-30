@@ -160,7 +160,11 @@ using (var scope = app.Services.CreateScope())
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
     if (dbContext.Database.IsRelational())
     {
-        await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory);
+        // The strict inspect/execute/verify flow observes host shutdown through this token.
+        var applicationStopping = app.Services
+            .GetRequiredService<IHostApplicationLifetime>()
+            .ApplicationStopping;
+        await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
     }
     else
     {

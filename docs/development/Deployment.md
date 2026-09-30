@@ -61,7 +61,21 @@ The database connection string is built by `SharedPostgreSqlConnectionStringFact
 
 The connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible. In production, the PostgreSQL host/port/username/password are overridden by the Consul `PostgreSql:*` keys and do not need to be written to `appsettings.json`.
 
-The database schema is created automatically on startup: `DatabaseInitializer.InitializeAsync` applies the EF Core migrations in `src/Database/Migrations/`, and the raw SQL inside the initializer only recreates missing tables when there are no pending migrations; no manual database setup is required.
+The database schema is created and verified automatically on startup. `DatabaseInitializer.InitializeAsync` runs a strict flow: a **read-only inspection** classifies the target database, migrations execute **only** for the verified `Empty`/`PendingMigration` states, and a **final inspection** must report `CurrentVersionCompatible` or startup is refused. Unknown or corrupt databases are never silently stamped or auto-repaired.
+
+| Observed state | Classification | Startup behavior |
+|------|------|------|
+| No business tables and no migration history (or the target database does not exist yet) | `Empty` | EF Core runs both original migrations (`20260504115924_InitialCreate`, `20260926094240_AddTags`) |
+| Applied history is a known ordered prefix and the schema verifiably matches that version | `PendingMigration` | EF Core runs the remaining migrations and the result is re-verified |
+| Full known history and the complete current schema verify | `CurrentVersionCompatible` | Nothing is written |
+| History contains migration ids this application does not know | `VersionTooNew` | Startup is refused; deploy a version that knows the history or restore a supported backup |
+| Missing/extra columns, wrong types or nullability, missing/renamed PK/FK/indexes, partial table sets, or history that contradicts the schema | `InspectionFailed` | Startup is refused with zero writes; repair the structure from a backup and restart |
+
+**Limited legacy takeover**: a database created by the historical `EnsureCreated` path (no migration history) is taken over only when its four initial tables (`knowledge`, `question`, `question_content`, `question_knowledge`) match the `InitialCreate` version exactly and the two tag tables (`tag`, `question_tag`) are either both absent or both match `AddTags` exactly. The takeover registers only the verified `InitialCreate` baseline in an independent parameterized transaction and then really executes `AddTags`; existing business data (including tag usage counts) is preserved. Constraint and index names are compared case-insensitively, but their semantics must match exactly; unrelated non-business tables may coexist.
+
+**Cancellation and recovery**: every database operation observes the host shutdown token. The baseline commit and the remaining EF migrations use separate transactions, so a cancellation between phases leaves only the real committed baseline; the next startup re-verifies and completes the recovery. Cross-process serialization of startup migrations is not provided yet and is tracked separately.
+
+**Rollback**: rolling the application back never deletes legitimate migration history and never executes `Down` migrations. If the previous lenient behavior is truly required, stop writes and restore a full database backup first; the old version must not be used as a schema repair tool.
 
 #### Overriding through the Consul shared configuration
 

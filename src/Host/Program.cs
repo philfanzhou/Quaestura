@@ -181,33 +181,49 @@ using (logContext.BeginScope(app.Logger))
     app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.InternalEndpoint, ossOptions.BucketName);
     app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 
-    // Apply database initialization
+    // Apply database initialization. The health readiness evidence observes this gate:
+    // Succeeded is recorded only after the real initialization completed, and a failure is
+    // recorded honestly before the exception stops the host (a failed production host never
+    // listens).
     using (var scope = app.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
         var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-        if (dbContext.Database.IsRelational())
+        var startupHealth = app.Services.GetRequiredService<QuaesturaStartupHealthState>();
+        startupHealth.RecordRunning();
+        try
         {
-            // Stage 1 — target preparation: create the PostgreSQL database only when it is
-            // verifiably missing and Database:AllowCreate (default true) permits it; an existing
-            // database is never touched. Stage 2 — the strict initializer inspects the target,
-            // executes migrations only for verified empty/pending states, and verifies the final
-            // state; it owns the business tables and migration history. Both stages observe host
-            // shutdown through the same token. The non-relational Testing path skips both stages'
-            // PostgreSQL specifics and keeps using EnsureCreated.
-            var applicationStopping = app.Services
-                .GetRequiredService<IHostApplicationLifetime>()
-                .ApplicationStopping;
-            await QuaesturaDatabaseTargetPreparer.PrepareAsync(
-                builder.Configuration,
-                connectionString,
-                app.Logger,
-                applicationStopping);
-            await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
+            if (dbContext.Database.IsRelational())
+            {
+                // Stage 1 — target preparation: create the PostgreSQL database only when it is
+                // verifiably missing and Database:AllowCreate (default true) permits it; an
+                // existing database is never touched. Stage 2 — the strict initializer inspects
+                // the target, executes migrations only for verified empty/pending states, and
+                // verifies the final state; it owns the business tables and migration history.
+                // Both stages observe host shutdown through the same token. The non-relational
+                // Testing path skips both stages' PostgreSQL specifics and keeps using
+                // EnsureCreated.
+                var applicationStopping = app.Services
+                    .GetRequiredService<IHostApplicationLifetime>()
+                    .ApplicationStopping;
+                await QuaesturaDatabaseTargetPreparer.PrepareAsync(
+                    builder.Configuration,
+                    connectionString,
+                    app.Logger,
+                    applicationStopping);
+                await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
+            }
+            else
+            {
+                await dbContext.Database.EnsureCreatedAsync();
+            }
+
+            startupHealth.RecordSucceeded();
         }
-        else
+        catch
         {
-            await dbContext.Database.EnsureCreatedAsync();
+            startupHealth.RecordFailed();
+            throw;
         }
     }
 
@@ -321,8 +337,17 @@ app.MapTagEndpoints();
 app.MapQuestionTagEndpoints();
 app.MapAdminAuthEndpoints();
 
-// Health check (public, no auth required)
-app.MapGet("/health", () => Results.Ok(new { status = "Healthy" })).AllowAnonymous();
+// ========== ServiceMantle health endpoints (anonymous) ==========
+// The library maps GET /health/live (always 200 while the endpoint executes, never resolving
+// the snapshot source), GET /health/ready, and GET /health (the readiness alias replacing the
+// former fixed 200 "Healthy" response — a deliberate public contract change). The routes carry
+// no authorization metadata, so mapping them inside an anonymous route group exempts exactly
+// these endpoints while the FallbackPolicy keeps protecting every /admin endpoint. The SPA
+// branch above excludes the whole /health path segment, so the JSON probes are never swallowed
+// by the fallback. Readiness fails closed: it requires the recorded real initialization
+// success plus this request's own read-only database evidence.
+var healthEndpoints = app.MapGroup(string.Empty).AllowAnonymous();
+healthEndpoints.MapServiceMantleHealthEndpoints();
 
 app.Run();
 

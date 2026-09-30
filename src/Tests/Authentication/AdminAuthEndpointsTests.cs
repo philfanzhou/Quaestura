@@ -220,7 +220,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
             .Where(line => line.Contains(" ERR]"))
             .Should()
             .NotContain(line => line.Contains("AdminAuthEndpoints")
-                || line.Contains("ExceptionHandlingMiddleware"));
+                || line.Contains("ProblemDetails"));
     }
 
     [Fact]

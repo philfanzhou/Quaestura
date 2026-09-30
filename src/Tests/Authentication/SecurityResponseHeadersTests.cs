@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Quaestura.Service.Middleware;
 using Quaestura.Service.Options;
 using ServiceMantle;
 using Xunit;
@@ -70,9 +69,9 @@ internal static class SecurityResponseHeaders
 /// <summary>
 /// Middleware semantics of the security response-header baseline wired in Program.cs:
 /// registration through the single ServiceMantle composition point, endpoint marking on exactly
-/// the two admin-auth JSON routes, placement after explicit routing and outside the existing
-/// ExceptionHandlingMiddleware. The full UseServiceMantlePipeline / ProblemDetails stack is
-/// deliberately not used; the QUAESTURA_* business envelopes stay in charge.
+/// the two admin-auth JSON routes, placement after explicit routing and outside the /admin
+/// Problem Details branch. The full UseServiceMantlePipeline stack is deliberately not used;
+/// only the capabilities Quaestura wires itself are registered.
 /// </summary>
 public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFactory>, IDisposable
 {
@@ -95,12 +94,15 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
     // ---------- real host: marked auth endpoints ----------
 
     [Fact]
-    public async Task MarkedLogin_Handler500_KeepsBusinessEnvelope_AndGainsBaseline()
+    public async Task MarkedLogin_Handler500_ReturnsProblemDetails_AndGainsBaseline()
     {
         // Any exception that is not HttpRequestException/TaskCanceledException/OperationCanceled
-        // escapes the login handler and is converted by the OLD ExceptionHandlingMiddleware into
-        // the 500 QUAESTURA_INTERNAL_ERROR envelope. The security middleware sits outside the
-        // handler, so its OnStarting assignment still applies to that envelope.
+        // escapes the login handler and is converted by the ServiceMantle Problem Details
+        // boundary into a fixed 500 problem. The stub throws an InvalidOperationException
+        // without "Image" in its message, so it takes the registered unconditional
+        // quaestura.invalid_operation candidate: fixed title, no message projection. The
+        // security middleware sits outside the branch, so its OnStarting assignment still
+        // applies to that problem response.
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
@@ -118,9 +120,12 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
         using var response = await client.PostAsync("/admin/auth/login", LoginBody("admin", "pw"));
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        body.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
-        body.RootElement.GetProperty("errorCode").GetString().Should().Be("QUAESTURA_INTERNAL_ERROR");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var responseBody = await response.Content.ReadAsStringAsync();
+        using var body = JsonDocument.Parse(responseBody);
+        body.RootElement.GetProperty("errorCode").GetString().Should().Be("quaestura.invalid_operation");
+        body.RootElement.GetProperty("title").GetString().Should().Be("An unexpected error occurred.");
+        responseBody.Should().NotContain("security-probe stub failure");
         SecurityResponseHeaders.AssertBaseline(response);
     }
 
@@ -210,11 +215,11 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
 
     /// <summary>
     /// A probe host wired exactly like Program.cs (explicit routing, the security middleware
-    /// outside the real ExceptionHandlingMiddleware, capability registered through
+    /// outside the Problem Details boundary, capability registered through
     /// AddSecurityResponseHeaders alone — no full management pipeline) verifies the two
     /// remaining semantics on marked endpoints: an endpoint that tries to set the same headers
-    /// still ends at the fixed single-value baseline, and marked handlers that throw keep the
-    /// old 500 envelope.
+    /// still ends at the fixed single-value baseline, and marked handlers that throw get the
+    /// fixed safe 500 problem with the same baseline.
     /// </summary>
     [Fact]
     public async Task MarkedProbeEndpoint_OverrideAttempt_LosesToSingleValueBaseline()
@@ -230,7 +235,7 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
     }
 
     [Fact]
-    public async Task MarkedProbeEndpoint_ThrowingHandler_Keeps500EnvelopeWithBaseline()
+    public async Task MarkedProbeEndpoint_ThrowingHandler_KeepsSafeProblem500WithBaseline()
     {
         await using var app = await StartProbeHostAsync();
         using var client = app.GetTestClient();
@@ -238,8 +243,9 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
         using var response = await client.PostAsync("/probe/throw", null);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        body.RootElement.GetProperty("errorCode").GetString().Should().Be("QUAESTURA_INTERNAL_ERROR");
+        body.RootElement.GetProperty("errorCode").GetString().Should().Be("http.internal_server_error");
         SecurityResponseHeaders.AssertBaseline(response);
     }
 
@@ -265,10 +271,11 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
             .AddSecurityResponseHeaders();
         var app = builder.Build();
         // Same order as Program.cs: routing selects the endpoint, the security middleware runs
-        // outside the existing exception handler.
+        // outside the Problem Details boundary (every probe route is a JSON endpoint, so the
+        // boundary is applied without a path branch).
         app.UseRouting();
         app.UseServiceMantleSecurityResponseHeaders();
-        app.UseMiddleware<ExceptionHandlingMiddleware>();
+        app.UseServiceMantleProblemDetails();
         app.MapPost("/probe/override", (HttpContext context) =>
         {
             // A marked endpoint trying to write the same headers before the response starts.

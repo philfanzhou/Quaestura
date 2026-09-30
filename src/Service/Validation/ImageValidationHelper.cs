@@ -7,9 +7,11 @@ namespace Quaestura.Service.Validation;
 
 /// <summary>
 /// Image upload validation: file size limit + magic number check.
-/// Throws <see cref="InvalidOperationException"/> with English message; the global
-/// <c>ExceptionHandlingMiddleware</c> maps it to HTTP 400 + errorCode
-/// <c>QUAESTURA_VALIDATION_INVALID_IMAGE</c>.
+/// Throws <see cref="InvalidOperationException"/> with English message; the ServiceMantle
+/// Problem Details conditional mapping for <see cref="InvalidOperationException"/> maps it to
+/// HTTP 400 + errorCode <c>quaestura.validation_invalid_image</c> (with the original
+/// <c>QUAESTURA_VALIDATION_INVALID_IMAGE</c> projected through the
+/// <c>quaesturaErrorCode</c> extension field).
 /// </summary>
 public static class ImageValidationHelper
 {

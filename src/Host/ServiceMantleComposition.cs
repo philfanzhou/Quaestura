@@ -1,15 +1,34 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net;
+using FluentValidation;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Quaestura.Database;
+using Quaestura.Service.Middleware;
 using ServiceMantle;
 using ServiceMantle.Database.PostgreSql.Migration;
 using ServiceMantle.Health;
+using ServiceMantle.Web.Http;
 
 namespace Quaestura.Host;
+
+/// <summary>
+/// The whitelisted Problem Details extension field names through which the Quaestura instance
+/// level error contract is projected. <c>quaesturaErrorCode</c> carries the original uppercase
+/// <c>QUAESTURA_*</c> code of the thrown domain exception; <c>quaesturaValidationErrors</c>
+/// carries the developer-declared validation messages joined for display. No other exception
+/// content is ever projected into a response.
+/// </summary>
+public static class QuaesturaProblemDetailsExtensions
+{
+    public const string ErrorCodeFieldName = "quaesturaErrorCode";
+    public const string ValidationErrorsFieldName = "quaesturaValidationErrors";
+}
 
 /// <summary>
 /// Registers the ServiceMantle host identity, the safe request-header projector, the mandatory
@@ -65,8 +84,118 @@ public static class ServiceMantleComposition
             // endpoints. It exposes no weakening options; the middleware and the per-endpoint
             // metadata decide where the fixed baseline applies (see Program.cs and
             // AdminAuthEndpoints). The full ServiceMantle management pipeline is deliberately
-            // NOT used: the existing QUAESTURA_* business error envelopes stay in charge.
+            // NOT used: only the capabilities Quaestura wires itself are registered.
             .AddSecurityResponseHeaders()
+            // Safe Problem Details mappings for every domain exception escaping an /admin JSON
+            // endpoint (the boundary itself is wired in Program.cs through a /admin-only
+            // UseWhen branch). Each exact exception type maps to its fixed status with a stable
+            // lowercase quaestura.* error code; the instance-level uppercase QUAESTURA_* code is
+            // projected only through the whitelisted quaesturaErrorCode extension field, never
+            // through the exception message. Unmapped exceptions fall through to the library's
+            // fixed safe 500 (errorCode http.internal_server_error); the legacy
+            // QUAESTURA_INTERNAL_ERROR value is retired with the old envelope.
+            .AddExceptionMapping<EntityNotFoundException>(
+                StatusCodes.Status404NotFound,
+                "quaestura.entity_not_found",
+                "The requested resource was not found.",
+                new Dictionary<string, Func<EntityNotFoundException, object?>>
+                {
+                    [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                        exception => exception.ErrorCode,
+                })
+            .AddExceptionMapping<BusinessPreconditionException>(
+                StatusCodes.Status422UnprocessableEntity,
+                "quaestura.business_precondition_failed",
+                "The business precondition for this operation was not met.",
+                new Dictionary<string, Func<BusinessPreconditionException, object?>>
+                {
+                    [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                        exception => exception.ErrorCode,
+                })
+            .AddExceptionMapping<ForbiddenException>(
+                StatusCodes.Status403Forbidden,
+                "quaestura.forbidden",
+                "You are not allowed to perform this operation.",
+                new Dictionary<string, Func<ForbiddenException, object?>>
+                {
+                    [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                        exception => exception.ErrorCode,
+                })
+            .AddExceptionMapping<ValidationException>(
+                StatusCodes.Status400BadRequest,
+                "quaestura.validation_failed",
+                "The request failed validation.",
+                new Dictionary<string, Func<ValidationException, object?>>
+                {
+                    [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                        _ => "QUAESTURA_VALIDATION_FAILED",
+                    // Developer-declared validation messages (endpoint guards and FluentValidation
+                    // error texts), not raw exception text from an arbitrary source.
+                    [QuaesturaProblemDetailsExtensions.ValidationErrorsFieldName] =
+                        exception => string.Join("; ", exception.Errors.Select(e => e.ErrorMessage)),
+                })
+            // The DomainException base type is thrown directly at several call sites with
+            // different StatusCode values, so it maps through ordered candidates grouped by the
+            // declared status: the 409 conflict group, the declared 500 failure group, and an
+            // unconditional 500 fallback for any undeclared status (fail-closed, same shape).
+            .AddConditionalExceptionMapping<DomainException>(
+            [
+                new ExceptionMappingCandidate<DomainException>(
+                    StatusCodes.Status409Conflict,
+                    "quaestura.conflict",
+                    "The operation conflicts with the current state.",
+                    condition: exception =>
+                        exception.StatusCode == HttpStatusCode.Conflict,
+                    extensionFields: new Dictionary<string, Func<DomainException, object?>>
+                    {
+                        [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                            exception => exception.ErrorCode,
+                    }),
+                new ExceptionMappingCandidate<DomainException>(
+                    StatusCodes.Status500InternalServerError,
+                    "quaestura.domain_error",
+                    "The operation failed.",
+                    condition: exception =>
+                        exception.StatusCode == HttpStatusCode.InternalServerError,
+                    extensionFields: new Dictionary<string, Func<DomainException, object?>>
+                    {
+                        [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                            exception => exception.ErrorCode,
+                    }),
+                new ExceptionMappingCandidate<DomainException>(
+                    StatusCodes.Status500InternalServerError,
+                    "quaestura.unexpected_domain_status",
+                    "The operation failed.",
+                    extensionFields: new Dictionary<string, Func<DomainException, object?>>
+                    {
+                        [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                            exception => exception.ErrorCode,
+                    }),
+            ])
+            // InvalidOperationException is the image-validation signal (fixed developer-declared
+            // messages from ImageValidationHelper) and otherwise an unexpected failure: the
+            // ordered candidates keep the 400 image-validation contract and normalize every other
+            // occurrence to a fixed 500 without projecting the message.
+            .AddConditionalExceptionMapping<InvalidOperationException>(
+            [
+                new ExceptionMappingCandidate<InvalidOperationException>(
+                    StatusCodes.Status400BadRequest,
+                    "quaestura.validation_invalid_image",
+                    "The submitted image is invalid.",
+                    condition: exception =>
+                        exception.Message.Contains("Image", StringComparison.OrdinalIgnoreCase),
+                    extensionFields: new Dictionary<string, Func<InvalidOperationException, object?>>
+                    {
+                        [QuaesturaProblemDetailsExtensions.ErrorCodeFieldName] =
+                            _ => "QUAESTURA_VALIDATION_INVALID_IMAGE",
+                        [QuaesturaProblemDetailsExtensions.ValidationErrorsFieldName] =
+                            exception => exception.Message,
+                    }),
+                new ExceptionMappingCandidate<InvalidOperationException>(
+                    StatusCodes.Status500InternalServerError,
+                    "quaestura.invalid_operation",
+                    "An unexpected error occurred."),
+            ])
             // The PostgreSQL session advisory lock that serializes multi-instance migration:
             // it covers the orchestrator's initial inspection, the legacy takeover, the EF Core
             // migration execution, and the final inspection (never only the Migrate call).

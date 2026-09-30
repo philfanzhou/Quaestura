@@ -21,7 +21,6 @@ using Quaestura.Domain.Services;
 using Quaestura.Host;
 using Quaestura.Service;
 using Quaestura.Service.Endpoints;
-using Quaestura.Service.Middleware;
 using Quaestura.Service.Options;
 using Quaestura.Service.Validation;
 using ServiceMantle;
@@ -119,18 +118,18 @@ builder.WebHost.ConfigureKestrel(options =>
 
 var app = builder.Build();
 
-// First middleware in the HTTP pipeline: everything registered below (Swagger, the exception
-// envelope, the SPA branch, authentication, every endpoint, and /health) runs inside the
+// First middleware in the HTTP pipeline: everything registered below (Swagger, the Problem
+// Details boundary, the SPA branch, authentication, every endpoint, and /health) runs inside the
 // request correlation scope and receives the x-correlation-id response header, injected via
-// OnStarting before any response starts (static file responses included). The existing
-// ExceptionHandlingMiddleware keeps owning the QUAESTURA_* business error envelopes.
+// OnStarting before any response starts (static file responses included). The Problem Details
+// middleware sits inside this scope so problem bodies and logs share the same correlation id.
 app.UseServiceMantleCorrelationId();
 
 // ========== Security response headers for the marked admin-auth JSON endpoints ==========
 // Explicit routing selects the endpoint here (WebApplication would otherwise auto-prepend it),
 // so the endpoint-metadata-driven security middleware below can see the selected endpoint. It
-// sits outside ExceptionHandlingMiddleware on purpose: when a marked endpoint throws and the
-// old handler converts it to the 500 QUAESTURA_INTERNAL_ERROR envelope, the OnStarting
+// sits outside the Problem Details branch on purpose: when a marked endpoint throws and the
+// boundary converts it into an application/problem+json response, the OnStarting
 // assignment still applies the fixed single-value six-header baseline. Unmarked endpoints
 // (business API, /health, dev Swagger, the SPA branch, static assets) pass through untouched
 // and never receive the API-only default-src 'none' policy. If the response has already
@@ -286,8 +285,21 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Quaestura WebAPI v1"));
 }
 
-// Global exception handling
-app.UseMiddleware<ExceptionHandlingMiddleware>();
+// Safe Problem Details boundary for the /admin JSON API only: the UseWhen branch runs for
+// every request whose path starts with the /admin segment (every business JSON endpoint and
+// both admin-auth endpoints), so /health, the SPA branch, static assets, and dev Swagger never
+// enter it and keep their existing contracts. The exception mappings themselves are registered
+// in ServiceMantleComposition (per exact exception type, plus ordered conditional candidates
+// for the DomainException base type and InvalidOperationException); unmapped exceptions fall
+// through to the library's fixed safe 500 with errorCode http.internal_server_error and the
+// response always carries the request correlation id. The branch builder is an independent
+// IApplicationBuilder instance, so this composition does not conflict with the library's
+// PipelineComposition rules for UseServiceMantlePipeline. The security response-header
+// middleware stays outside the branch and writes its six headers via OnStarting, so problem
+// responses of marked endpoints carry the same single-value baseline.
+app.UseWhen(
+    context => context.Request.Path.StartsWithSegments("/admin"),
+    branch => branch.UseServiceMantleProblemDetails());
 
 // ========== Static files & SPA for Admin Web (HTTP port only) ==========
 // Serves Vue 3 frontend SPA built into wwwroot/.

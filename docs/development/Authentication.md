@@ -89,21 +89,24 @@ When no JWT is provided, or the JWT is invalid or expired, the ASP.NET Core auth
 }
 ```
 
-> Note: the 401 response body is controlled by the authentication middleware and does not pass through `ExceptionHandlingMiddleware`.
+> Note: the 401 response body is controlled by the authentication middleware and is never converted by the ServiceMantle Problem Details boundary.
 
 ### 3.2 403 Forbidden
 
-When the user is authenticated but lacks the required role, or the ownership check fails, the endpoint throws `ForbiddenException`, which `ExceptionHandlingMiddleware` converts into:
+When the user is authenticated but lacks the required role, or the ownership check fails, the endpoint throws `ForbiddenException`, which the ServiceMantle Problem Details boundary converts into `application/problem+json`:
 
 ```json
 {
-  "success": false,
-  "message": "Only staff can create tags",
-  "errorCode": "QUAESTURA_FORBIDDEN"
+  "type": "urn:servicemantle:error:quaestura.forbidden",
+  "title": "You are not allowed to perform this operation.",
+  "status": 403,
+  "correlationId": "0123456789abcdef0123456789abcdef",
+  "errorCode": "quaestura.forbidden",
+  "quaesturaErrorCode": "QUAESTURA_FORBIDDEN"
 }
 ```
 
-| errorCode | HTTP | Trigger |
+| `quaesturaErrorCode` | HTTP | Trigger |
 |-----------|------|---------|
 | `QUAESTURA_FORBIDDEN` | 403 | Insufficient role (for example, a student calling a write endpoint) |
 | `QUAESTURA_FORBIDDEN_NOT_OWNER` | 403 | Ownership check failed (updating/deleting a tag created by someone else) |

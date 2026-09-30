@@ -4,7 +4,7 @@ This document defines the tech stack, directory structure, routes, and backend A
 
 ## 1. Overview
 
-The admin frontend is a Vue 3 single-page application that runs in the **same Docker container** as the Quaestura backend (port 5007 serves both the API and the SPA). **Authentication is not integrated** (it keeps the intranet assumption).
+The admin frontend is a Vue 3 single-page application that runs in the **same Docker container** as the Quaestura backend (port 5007 serves both the API and the SPA). **Authentication is required**: users sign in on `/login` through `POST /admin/auth/login`, and every API request carries the issued JWT (see §5.1–§5.2).
 
 **Location**: `frontend/` (next to the backend service, following the doclibrary frontend layout).
 
@@ -40,12 +40,15 @@ frontend/     # Next to the backend service
     ├── App.vue                               # Layout (hand-written sidebar + router-view)
     ├── style.css                             # Global styles (reuses the doclibrary design system)
     ├── env.d.ts                              # import.meta.env types
-    ├── router/index.ts                       # 3 routes
+    ├── router/index.ts                       # 4 routes + auth guard
     ├── views/
+    │   ├── LoginView.vue                     # Login page (public route)
     │   ├── QuestionView.vue                  # Question management (list + search + view + delete)
     │   ├── KnowledgeView.vue                 # Knowledge point management (list + create/update/delete)
     │   └── TagView.vue                       # Tag management (list + create/update/delete)
     ├── services/
+    │   ├── auth.ts                           # login/getAuthToken/isAuthenticated/clearAuth
+    │   ├── httpClient.ts                     # Shared axios instance (Bearer + 401 interceptors)
     │   ├── questionApi.ts
     │   ├── knowledgeApi.ts
     │   └── tagApi.ts
@@ -80,11 +83,31 @@ After removing Element Plus, `ElMessage`/`ElMessageBox` were replaced by:
 | Path | View | meta.title |
 |------|------|-----------|
 | `/` | redirect to `/questions` | — |
+| `/login` | LoginView | `登录` (Login, `meta.public: true`) |
 | `/questions` | QuestionView | `题目管理` (Question management) |
 | `/knowledges` | KnowledgeView | `知识点管理` (Knowledge point management) |
 | `/tags` | TagView | `标签管理` (Tag management) |
 
 `router.beforeEach` sets `document.title = ${to.meta.title} - ${__APP_TITLE__}`.
+
+### 5.1 Login flow (route guard)
+
+`router.beforeEach` enforces authentication (state table authoritative in issue #24):
+
+- Not signed in (no token, or `expiresAt` passed — an expired token is cleared) and navigating to any non-public route → redirect to `/login?redirect=<original fullPath>`.
+- Not signed in and navigating to `/login` → allowed; `App.vue` renders public routes without the sidebar layout.
+- Signed in and navigating to `/login` → redirect to `/questions`.
+- Successful login → store token + expiry, then navigate to the `redirect` query value when it is a same-site path starting with `/` (and not `//`); otherwise navigate to `/questions`.
+- Failed login (400/502/503 or network error) → stay on the login page and show the backend message via `getApiErrorMessage`; nothing is stored.
+- Any API call answering 401 → `httpClient` clears the stored token and sends the browser to `/login` via `window.location` (no redirect while already on `/login`). 403 responses do **not** clear the token; the view shows the error and the user stays signed in.
+- The "退出登录" button in the top header clears the token and navigates to `/login`.
+
+### 5.2 Token storage and shared HTTP client
+
+- `services/auth.ts` stores the access token in `localStorage` under `quaesturaAuthToken` and its expiry (Unix seconds, SignaCore contract) under `quaesturaAuthExpiresAt`; both are written in one synchronous step and removed together by `clearAuth()`. `isAuthenticated()` requires a token **and** a not-yet-passed `expiresAt`.
+- The password only exists in the login form's in-memory state; it is wiped from the form right after submit and is never written to storage or logged.
+- `services/httpClient.ts` exports the single shared axios instance (`timeout: 20000`). Its request interceptor attaches `Authorization: Bearer <token>`; its response interceptor handles 401 as described above. All API clients (`questionApi` / `knowledgeApi` / `tagApi`) must reuse this instance — instances created per client via `axios.create()` would bypass the interceptors and send requests without the token.
+- The token is sent only via the `Authorization` header; no cookies are used. XSS protection of `localStorage` is out of scope (same trade-off as Ruoyu.Admin); deploy behind TLS or restrict the admin frontend to a trusted network.
 
 ## 6. Backend API integration
 

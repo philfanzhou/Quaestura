@@ -1,10 +1,12 @@
-import axios, { type AxiosInstance } from 'axios'
+import { type AxiosInstance } from 'axios'
+import httpClient from './httpClient'
 import type { Tag, CreateTagRequest, PagedResult, SingleResult, MutationResult } from '../types'
 
 class TagAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    this.client = axios.create({ timeout: 20000 })
+    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    this.client = httpClient
   }
   async list(params: { name?: string; sortBy?: string; page?: number; size?: number }): Promise<PagedResult<Tag>> {
     const response = await this.client.get<PagedResult<Tag>>('/admin/tags', { params })

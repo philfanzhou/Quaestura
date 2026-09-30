@@ -25,8 +25,8 @@ namespace Quaestura.Tests.Observability;
 /// whitespace, overlong, illegal, comma-joined, or repeated inputs are discarded whole and
 /// replaced by a generated 32-character lowercase hex id; the response header and the request
 /// log scope carry the same id alongside the identity fields; and every pre-existing route
-/// contract (SPA, health, dev Swagger, JWT 401/403, business error envelopes) is unchanged
-/// while gaining the header.
+/// contract (SPA, health, dev Swagger, JWT 401/403, Problem Details error responses) is
+/// unchanged while gaining the header.
 /// </summary>
 public sealed partial class ServiceMantleCorrelationTests : IClassFixture<QuaesturaApiFactory>, IDisposable
 {
@@ -321,7 +321,7 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
     }
 
     [Fact]
-    public async Task Forbidden_Keeps403Envelope_WithCorrelationHeader()
+    public async Task Forbidden_Keeps403Problem_WithCorrelationId()
     {
         using var client = CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, "/admin/tags")
@@ -337,12 +337,12 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        await AssertEnvelope(response, "QUAESTURA_FORBIDDEN");
+        await AssertProblem(response, "quaestura.forbidden", "QUAESTURA_FORBIDDEN");
         response.Headers.GetValues(CorrelationHeader).Single().Should().Be(ValidValue);
     }
 
     [Fact]
-    public async Task NotFound_Keeps404Envelope_WithCorrelationHeader()
+    public async Task NotFound_Keeps404Problem_WithCorrelationId()
     {
         using var client = CreateClient();
         using var request = new HttpRequestMessage(
@@ -354,24 +354,30 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        await AssertEnvelope(response, "QUAESTURA_QUESTION_NOT_FOUND");
+        await AssertProblem(response, "quaestura.entity_not_found", "QUAESTURA_QUESTION_NOT_FOUND");
         response.Headers.GetValues(CorrelationHeader).Single().Should().Be(ValidValue);
     }
 
     [Fact]
-    public async Task Validation400_KeepsEnvelope_WithCorrelationHeader()
+    public async Task ExplicitValidation400_KeepsBusinessJson_WithCorrelationHeader()
     {
         using var client = CreateClient();
 
         using var response = await client.PostAsync("/admin/auth/login", Json("{}"));
 
+        // The login endpoint returns this failure explicitly (endpoint-owned business JSON,
+        // unchanged by the Problem Details migration); it still gains the correlation header.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        await AssertEnvelope(response, message: "Username and password are required.");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        body.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
+        body.RootElement.GetProperty("message").GetString()
+            .Should().Be("Username and password are required.");
         response.Headers.GetValues(CorrelationHeader).Single().Should().MatchRegex(GeneratedIdPattern());
     }
 
     [Fact]
-    public async Task Unhandled500_KeepsEnvelope_WithCorrelationHeader()
+    public async Task Unhandled500_KeepsSafeProblem_WithCorrelationId()
     {
         var throwingTags = new Mock<ITagService>();
         throwingTags
@@ -391,7 +397,9 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        await AssertEnvelope(response, "QUAESTURA_INTERNAL_ERROR");
+        // An InvalidOperationException without "Image" in the message takes the unconditional
+        // 500 candidate: fixed title, no message projection, and the same correlation id.
+        await AssertProblem(response, "quaestura.invalid_operation");
         response.Headers.GetValues(CorrelationHeader).Single().Should().Be(ValidValue);
     }
 
@@ -468,20 +476,34 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
 
     private static StringContent Json(string json) => new(json, Encoding.UTF8, "application/json");
 
-    private static async Task AssertEnvelope(
-        HttpResponseMessage response, string? errorCode = null, string? message = null)
+    /// <summary>
+    /// Asserts the shared shape of every mapped problem response: application/problem+json,
+    /// the mapping's stable errorCode, the optional projected instance-level
+    /// quaesturaErrorCode / quaesturaValidationErrors extension fields, and a body
+    /// correlationId identical to the response header.
+    /// </summary>
+    private static async Task AssertProblem(
+        HttpResponseMessage response,
+        string errorCode,
+        string? quaesturaErrorCode = null,
+        string? validationErrors = null)
     {
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        body.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
-        if (errorCode is not null)
+        body.RootElement.GetProperty("errorCode").GetString().Should().Be(errorCode);
+        if (quaesturaErrorCode is not null)
         {
-            body.RootElement.GetProperty("errorCode").GetString().Should().Be(errorCode);
+            body.RootElement.GetProperty("quaesturaErrorCode").GetString().Should().Be(quaesturaErrorCode);
         }
 
-        if (message is not null)
+        if (validationErrors is not null)
         {
-            body.RootElement.GetProperty("message").GetString().Should().Be(message);
+            body.RootElement.GetProperty("quaesturaValidationErrors").GetString().Should().Be(validationErrors);
         }
+
+        var correlationId = body.RootElement.GetProperty("correlationId").GetString();
+        correlationId.Should().NotBeNullOrWhiteSpace();
+        correlationId.Should().Be(response.Headers.GetValues(CorrelationHeader).Single());
     }
 
     private sealed class HangingIdentityService

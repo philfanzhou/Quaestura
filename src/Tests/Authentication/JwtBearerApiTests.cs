@@ -123,7 +123,7 @@ public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
         });
     }
 
-    public static string CreateToken(string issuer)
+    public static string CreateToken(string issuer, string role = "student")
     {
         var now = DateTime.UtcNow;
         var token = new JwtSecurityToken(
@@ -131,7 +131,7 @@ public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
             Audience,
             [
                 new Claim(JwtRegisteredClaimNames.Sub, "question-bank-test-user"),
-                new Claim("role", "student")
+                new Claim("role", role)
             ],
             now.AddSeconds(-1),
             now.AddMinutes(5),

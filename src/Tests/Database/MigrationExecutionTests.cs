@@ -7,12 +7,14 @@ using Xunit;
 namespace Quaestura.Tests.Database;
 
 /// <summary>
-/// Execution and takeover behavior against real PostgreSQL: the empty and missing-catalog states
-/// migrate to the six tables with both original history rows; verified legacy databases are taken
-/// over by registering only the verified InitialCreate baseline and really executing AddTags
-/// while business data (including tag usage counts) is preserved; cancellation between phases
-/// keeps only the real committed baseline and recovers on the next run; unknown or corrupt
-/// states are refused with zero writes; and secret canaries never enter exceptions or logs.
+/// Execution and takeover behavior against real PostgreSQL under the shared migration
+/// orchestrator (real advisory lock): the empty state migrates to the six tables with both
+/// original history rows; verified legacy databases are taken over by registering only the
+/// verified InitialCreate baseline and really executing AddTags while business data (including
+/// tag usage counts) is preserved; cancellation between phases keeps only the real committed
+/// baseline and recovers on the next orchestration; the second orchestration over a current
+/// database executes nothing; unknown or corrupt states are refused with stable error codes and
+/// zero writes; and secret canaries never enter the orchestration's error surfaces.
 /// </summary>
 [Collection(MigrationIntegrationCollection.Name)]
 public sealed class MigrationExecutionTests : IAsyncLifetime
@@ -34,22 +36,31 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
     {
         using var context = _fixture.CreateContext(_database);
 
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var result = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
 
+        result.Succeeded.Should().BeTrue();
+        result.ExecutorWasCalled.Should().BeTrue();
         await AssertCurrentContractAsync(context);
     }
 
     [Fact]
     public async Task MissingCatalog_IsCreatedByMigration_AndVerifiesCurrent()
     {
-        // Preserves the existing automatic-creation behavior; the dedicated shared target
-        // preparation capability is tracked separately in #41.
+        // Executor-level contract: the missing-catalog observation classifies as Empty and EF
+        // Core Migrate creates the target. In production the shared target preparation (#41)
+        // creates the database before the migration lock is acquired, so orchestration always
+        // sees an existing catalog; this executor path is the same one the orchestrator calls
+        // under the lock.
         var database = $"missing_{Guid.NewGuid():N}";
         try
         {
             using var context = _fixture.CreateContext(database);
+            var executor = new QuaesturaMigrationExecutor(context, NullLogger.Instance);
 
-            await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+            (await executor.InspectAsync().AsTask())
+                .Should().Be(ServiceMantle.Migration.MigrationObservationState.Empty);
+            await executor.ExecuteAsync();
 
             await AssertCurrentContractAsync(context);
         }
@@ -67,8 +78,11 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         await MigrationGoldenStates.DropHistoryAsync(context);
         await MigrationGoldenStates.SeedInitialEraRowsAsync(context);
 
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var result = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
 
+        result.Succeeded.Should().BeTrue();
+        result.ExecutorWasCalled.Should().BeTrue();
         // Only the verified InitialCreate baseline is registered by the executor; AddTags really
         // executed (it created the tag tables) and EF recorded it.
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
@@ -85,8 +99,11 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         await MigrationGoldenStates.SeedInitialEraRowsAsync(context);
         await MigrationGoldenStates.SeedTagEraRowsAsync(context);
 
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var result = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
 
+        result.Succeeded.Should().BeTrue();
+        result.ExecutorWasCalled.Should().BeTrue();
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
             MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
         await AssertCurrentContractAsync(context);
@@ -129,8 +146,13 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
 
         // The next run re-verifies the legitimate pending state and completes the recovery.
         using var recovery = new CancellationTokenSource();
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance, recovery.Token);
+        var recovered = await MigrationOrchestration.OrchestrateAsync(
+            context,
+            _fixture.GetConnectionString(_database),
+            cancellationToken: recovery.Token);
 
+        recovered.Succeeded.Should().BeTrue();
+        recovered.ExecutorWasCalled.Should().BeTrue();
         await AssertCurrentContractAsync(context);
         await AssertInitialEraRowsPreservedAsync(context);
     }
@@ -153,13 +175,21 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task InitializeIsIdempotent_AndTheFinalStateIsAlwaysCurrent()
+    public async Task OrchestrationIsIdempotent_SecondRunSkipsExecutionWithZeroChanges()
     {
         using var context = _fixture.CreateContext(_database);
 
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var first = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
+        first.Succeeded.Should().BeTrue();
+        first.ExecutorWasCalled.Should().BeTrue();
         var firstState = await MigrationGoldenStates.CaptureStateAsync(context);
-        await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+
+        // The second instance re-reads the current state under the lock and executes nothing.
+        var second = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
+        second.Succeeded.Should().BeTrue();
+        second.ExecutorWasCalled.Should().BeFalse();
 
         (await MigrationGoldenStates.CaptureStateAsync(context)).Should().Be(firstState);
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
@@ -167,21 +197,23 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task QuestionIdOnlyReproduction_IsRefusedByTheInitializer_WithoutAnyWrite()
+    public async Task QuestionIdOnlyReproduction_IsRefusedByOrchestration_WithoutAnyWrite()
     {
         using var context = _fixture.CreateContext(_database);
         await MigrationGoldenStates.CreateQuestionIdOnlyAsync(context);
         var before = await MigrationGoldenStates.CaptureStateAsync(context);
 
-        var act = () => DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var result = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*could not be verified*");
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(
+            ServiceMantle.Migration.WellKnownMigrationErrorCodes.InspectionFailed);
         (await MigrationGoldenStates.CaptureStateAsync(context)).Should().Be(before);
     }
 
     [Fact]
-    public async Task UnknownHistory_IsRefusedByTheInitializer_WithoutAnyWrite()
+    public async Task UnknownHistory_IsRefusedByOrchestration_WithoutAnyWrite()
     {
         using var context = _fixture.CreateContext(_database);
         await MigrationGoldenStates.ApplyAllMigrationsAsync(context);
@@ -191,10 +223,12 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
             """);
         var before = await MigrationGoldenStates.CaptureStateAsync(context);
 
-        var act = () => DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+        var result = await MigrationOrchestration.OrchestrateAsync(
+            context, _fixture.GetConnectionString(_database));
 
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*newer than this application supports*");
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(
+            ServiceMantle.Migration.WellKnownMigrationErrorCodes.VersionTooNew);
         (await MigrationGoldenStates.CaptureStateAsync(context)).Should().Be(before);
     }
 
@@ -216,24 +250,23 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SecretCanary_NeverEntersExceptionsOrLogOutput()
+    public async Task SecretCanary_NeverEntersOrchestrationErrorSurfaces()
     {
-        var capture = new CapturingLoggerProvider();
-        using var loggerFactory = LoggerFactory.Create(logging => logging.AddProvider(capture));
-        using var context = _fixture.CreateContextWithConnectionString(
-            _fixture.GetInvalidPasswordConnectionString(_database));
+        var invalid = _fixture.GetInvalidPasswordConnectionString(_database);
+        using var context = _fixture.CreateContextWithConnectionString(invalid);
 
-        var act = () => DatabaseInitializer.InitializeAsync(context, loggerFactory);
-        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        var result = await MigrationOrchestration.OrchestrateAsync(context, invalid);
 
-        var surfaces = capture.Messages
-            .Append(exception.Which.ToString())
-            .Append(exception.Which.Message);
-        foreach (var surface in surfaces)
-        {
-            surface.Should().NotContain(_fixture.PasswordCanary);
-            surface.Should().NotContain(_fixture.GetConnectionString(_database));
-        }
+        // Authentication failures refuse to start with the stable lock classification only:
+        // the result surfaces never carry the canary, the connection string, SQL, or any
+        // driver detail.
+        result.Succeeded.Should().BeFalse();
+        result.ErrorCode.Should().Be(
+            ServiceMantle.Migration.WellKnownMigrationErrorCodes.LockFailed);
+        result.ErrorMessage.Should().NotContain(_fixture.PasswordCanary);
+        result.ErrorMessage.Should().NotContain(invalid);
+        result.ErrorMessage.Should().NotContain(_fixture.GetConnectionString(_database));
+        result.ToString().Should().NotContain(_fixture.PasswordCanary);
     }
 
     private static async Task AssertCurrentContractAsync(QuaesturaDbContext context)

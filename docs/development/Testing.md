@@ -153,19 +153,21 @@ Note: integration tests must switch the DbContext to the EF Core InMemory databa
 `src/Tests/Database/` contains real-database tests for the startup target-preparation stage (`QuaesturaDatabaseTargetPreparer`, built on the shared ServiceMantle PostgreSQL provider). They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`TargetPreparationIntegrationCollection`, serialized) with unique database and role names per test:
 
 - `PostgreSqlTargetPreparationFixture.cs`: container fixture with helpers for databases, roles (with and without `CREATEDB`), ownership queries, and a per-run secret canary.
-- `TargetPreparationTests.cs`: existing targets are never prepared or modified, missing targets are created only when allowed (with the original initializer still producing the six tables and both history rows), `AllowCreate` parsing, permission/reachability/identity/owner-conflict refusals, concurrent dual-instance convergence, cancellation, and canary non-leakage.
+- `TargetPreparationTests.cs`: existing targets are never prepared or modified, missing targets are created only when allowed (with the real-lock migration orchestration afterwards producing the six tables and both history rows), `AllowCreate` parsing, permission/reachability/identity/owner-conflict refusals, concurrent dual-instance convergence, cancellation, and canary non-leakage.
 - `HostStartupTargetPreparationTests.cs`: the real `Program.cs` host creating a missing database end to end, and refusing startup for `Database:AllowCreate=false` or an invalid boolean.
 
 Requirements: a working Docker environment (local machine or GitHub-hosted runner). The tests run in CI as part of the normal `dotnet test` step and are never skipped by default. The existing InMemory-based `QuaesturaApiFactory` endpoint tests do not touch PostgreSQL and are unchanged.
 
 ## PostgreSQL migration integration tests
 
-`src/Tests/Database/` contains real-database tests for the strict migration executor (`QuaesturaMigrationExecutor`) and the startup entry (`DatabaseInitializer`). They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`MigrationIntegrationCollection`, serialized) and create an isolated database per test:
+`src/Tests/Database/` contains real-database tests for the strict migration executor (`QuaesturaMigrationExecutor`) and the shared migration orchestration (real PostgreSQL advisory lock) used at startup. They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`MigrationIntegrationCollection`, serialized) and create an isolated database per test:
 
 - `PostgreSqlMigrationFixture.cs`: container fixture, golden-state builders (migrated, Initial-history-only, EnsureCreated legacy, corrupted variants, synthetic business rows), and a secret-canary log capture.
+- `MigrationOrchestration.cs`: the production-shaped orchestration builder — real executor, real `PostgreSqlMigrationLockProvider`, shared orchestrator, production service id; there is no lock-free path in these tests.
 - `MigrationInspectionTests.cs`: read-only classification of every semantic state (empty, missing catalog, known history prefixes, legacy takeover candidates, corrupt/unknown/partial states, authentication failure), each rejection proven zero-write.
-- `MigrationExecutionTests.cs`: migration execution, legacy takeover with data preservation, cancellation between phases with recovery, idempotency, initializer refusals, and canary non-leakage.
-- `HostStartupMigrationTests.cs`: the real `Program.cs` host starting against an empty PostgreSQL database.
+- `MigrationExecutionTests.cs`: orchestration-driven migration execution, legacy takeover with data preservation, cancellation between phases with recovery on the next orchestration, second-run skip over a current database, orchestration refusals with stable error codes, and canary non-leakage.
+- `MigrationOrchestrationTests.cs`: the real-lock behavior — two concurrent hosts converge to exactly one execution, a held lock times out safely and recovers after release, caller cancellation while waiting propagates on the caller's own token, and controlled executor failures, final-state mismatches, and lost leases never report success while the lock stays acquirable for the next session.
+- `HostStartupMigrationTests.cs`: the real `Program.cs` host starting against an empty PostgreSQL database through the full lock-orchestrated startup chain.
 
 Requirements: a working Docker environment (local machine or GitHub-hosted runner). The tests run in CI as part of the normal `dotnet test` step and are never skipped by default. The container password is randomly generated per run and doubles as the secret canary asserted absent from exceptions and logs.
 

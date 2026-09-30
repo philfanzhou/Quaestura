@@ -4,19 +4,22 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Quaestura.Database;
 using ServiceMantle;
+using ServiceMantle.Database.PostgreSql.Migration;
 using ServiceMantle.Health;
 
 namespace Quaestura.Host;
 
 /// <summary>
 /// Registers the ServiceMantle host identity, the safe request-header projector, the mandatory
-/// security response-header capability, the base OpenTelemetry instrumentation, and the fixed
-/// health probe endpoints capability for Quaestura, together with the consumer-owned readiness
-/// evidence (the thread-safe startup observation and the scoped health snapshot source). This
-/// composition performs zero disk writes and registers no telemetry exporter: the Bootstrap
-/// file store stays a lazy singleton that is never resolved, and instrumentation data stays
-/// in-process until an exporter task adds one.
+/// security response-header capability, the base OpenTelemetry instrumentation, the shared
+/// migration orchestration capability (PostgreSQL advisory lock plus the Quaestura migration
+/// executor), and the fixed health probe endpoints capability for Quaestura, together with the
+/// consumer-owned readiness evidence (the thread-safe startup observation and the scoped health
+/// snapshot source). This composition performs zero disk writes and registers no telemetry
+/// exporter: the Bootstrap file store stays a lazy singleton that is never resolved, and
+/// instrumentation data stays in-process until an exporter task adds one.
 /// </summary>
 public static class ServiceMantleComposition
 {
@@ -64,6 +67,14 @@ public static class ServiceMantleComposition
             // AdminAuthEndpoints). The full ServiceMantle management pipeline is deliberately
             // NOT used: the existing QUAESTURA_* business error envelopes stay in charge.
             .AddSecurityResponseHeaders()
+            // The PostgreSQL session advisory lock that serializes multi-instance migration:
+            // it covers the orchestrator's initial inspection, the legacy takeover, the EF Core
+            // migration execution, and the final inspection (never only the Migrate call).
+            .AddMigrationLockProvider<PostgreSqlMigrationLockProvider>()
+            // The consuming service's migration executor plus the scoped orchestrator. Each
+            // scope resolves its own executor instance; the lock/state machine itself belongs to
+            // the shared orchestrator and is never reimplemented locally.
+            .AddDatabaseMigration<QuaesturaMigrationExecutor>()
             // Fixed /health/live, /health/ready, and /health routes (mapped in Program.cs) with
             // the default bounded snapshot read. No readiness contributors are registered: S3
             // stays in its warning mode and is deliberately not a readiness condition.

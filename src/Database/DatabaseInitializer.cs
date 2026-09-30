@@ -1,117 +1,89 @@
+using System;
+using System.Threading;
 using System.Threading.Tasks;
-using Quaestura.Common.Database;
+using Microsoft.Extensions.Logging;
+using ServiceMantle.Migration;
 
 namespace Quaestura.Database;
 
+/// <summary>
+/// The business database startup entry: inspect the target strictly, execute migrations only for
+/// the verified Empty/PendingMigration states, and require a verified current state at the end.
+/// Unknown or corrupt databases are refused instead of being silently stamped or repaired.
+/// </summary>
 public static class DatabaseInitializer
 {
-    public static async Task InitializeAsync(QuaesturaDbContext context, Microsoft.Extensions.Logging.ILoggerFactory loggerFactory)
-    {
-        await Common.Database.DatabaseInitializer.InitializeAsync(context, loggerFactory, GetTableCreationSql);
-    }
+    /// <summary>
+    /// Inspects and, when needed, migrates the target database of the given context.
+    /// </summary>
+    /// <param name="context">The EF Core context of the target database.</param>
+    /// <param name="loggerFactory">The host logger factory.</param>
+    /// <param name="cancellationToken">Observed by every database operation.</param>
+    /// <exception cref="InvalidOperationException">
+    /// The database is in an unknown, corrupt, or newer state, or the final inspection after
+    /// execution did not verify the current version. No business-repair DDL is ever executed
+    /// and nothing is stamped without schema verification.
+    /// </exception>
+    public static Task InitializeAsync(
+        QuaesturaDbContext context,
+        ILoggerFactory loggerFactory,
+        CancellationToken cancellationToken = default) =>
+        InitializeAsync(context, loggerFactory, afterInitialBaselineCommitted: null, cancellationToken);
 
-    private static string? GetTableCreationSql(string tableName)
+    /// <summary>
+    /// Test seam variant that can observe (and cancel) the moment between the committed legacy
+    /// baseline and the remaining EF Core migrations.
+    /// </summary>
+    internal static async Task InitializeAsync(
+        QuaesturaDbContext context,
+        ILoggerFactory loggerFactory,
+        Func<CancellationToken, Task>? afterInitialBaselineCommitted,
+        CancellationToken cancellationToken = default)
     {
-        return tableName switch
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
+
+        var logger = loggerFactory.CreateLogger("DatabaseInitializer");
+        var executor = new QuaesturaMigrationExecutor(context, logger, afterInitialBaselineCommitted);
+
+        var inspection = await executor.InspectDetailedAsync(cancellationToken).ConfigureAwait(false);
+        switch (inspection.State)
         {
-            "knowledge" => @"
-                CREATE TABLE IF NOT EXISTS knowledge (
-                    id uuid NOT NULL,
-                    parent_id uuid NULL,
-                    name character varying(255) NOT NULL,
-                    description text NULL,
-                    created_by character varying(36) NULL,
-                    created_at timestamp with time zone NOT NULL,
-                    is_referenced boolean NOT NULL,
-                    subject integer NULL,
-                    grade integer NULL,
-                    updated_by character varying(36) NULL,
-                    updated_at timestamp with time zone NULL,
-                    CONSTRAINT PK_knowledge PRIMARY KEY (id)
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_knowledge_subject_grade_name ON knowledge (subject, grade, name);
-                CREATE INDEX IF NOT EXISTS IX_knowledge_subject_grade ON knowledge (subject, grade);
-                CREATE INDEX IF NOT EXISTS IX_knowledge_parent_id ON knowledge (parent_id);",
+            case MigrationObservationState.CurrentVersionCompatible:
+                logger.LogInformation(
+                    "Database schema is compatible with the current version; no migration needed");
+                return;
 
-            "question" => @"
-                CREATE TABLE IF NOT EXISTS question (
-                    id uuid NOT NULL,
-                    created_at timestamp with time zone NOT NULL,
-                    updated_at timestamp with time zone NOT NULL,
-                    level integer NOT NULL,
-                    type integer NOT NULL,
-                    width integer NOT NULL,
-                    height integer NOT NULL,
-                    picture_paths text NULL,
-                    user_id character varying(36) NULL,
-                    student_id character varying(36) NULL,
-                    mistake_id character varying(36) NULL,
-                    subject integer NOT NULL,
-                    grade integer NOT NULL,
-                    CONSTRAINT PK_question PRIMARY KEY (id)
-                );
-                CREATE INDEX IF NOT EXISTS IX_question_subject_grade ON question (subject, grade);
-                CREATE INDEX IF NOT EXISTS IX_question_subject_grade_level ON question (subject, grade, level);
-                CREATE INDEX IF NOT EXISTS IX_question_subject_grade_type ON question (subject, grade, type);
-                CREATE INDEX IF NOT EXISTS IX_question_created_at ON question (created_at);
-                CREATE INDEX IF NOT EXISTS IX_question_user_id ON question (user_id);",
+            case MigrationObservationState.Empty:
+            case MigrationObservationState.PendingMigration:
+                logger.LogInformation(
+                    "Database inspection reported {State} ({Reason}); applying migrations",
+                    inspection.State,
+                    inspection.Reason);
+                await executor.ExecuteAsync(cancellationToken).ConfigureAwait(false);
 
-            "question_content" => @"
-                CREATE TABLE IF NOT EXISTS question_content (
-                    question_id uuid NOT NULL,
-                    content text NULL,
-                    correct_answer text NULL,
-                    analysis text NULL,
-                    CONSTRAINT PK_question_content PRIMARY KEY (question_id),
-                    CONSTRAINT FK_question_content_question_question_id 
-                        FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE
-                );
-                CREATE INDEX IF NOT EXISTS IX_question_content_question_id ON question_content (question_id);",
+                var final = await executor.InspectDetailedAsync(cancellationToken).ConfigureAwait(false);
+                if (final.State != MigrationObservationState.CurrentVersionCompatible)
+                {
+                    throw new InvalidOperationException(
+                        $"Database migration finished but the final inspection reported {final.State}: " +
+                        $"{final.Reason}. Refusing to continue startup.");
+                }
 
-            "question_knowledge" => @"
-                CREATE TABLE IF NOT EXISTS question_knowledge (
-                    id uuid NOT NULL,
-                    question_id uuid NOT NULL,
-                    knowledge_id uuid NOT NULL,
-                    weight double precision NOT NULL,
-                    CONSTRAINT PK_question_knowledge PRIMARY KEY (id),
-                    CONSTRAINT FK_question_knowledge_question_question_id
-                        FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_question_knowledge_knowledge_knowledge_id
-                        FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE CASCADE
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_question_knowledge_question_id_knowledge_id ON question_knowledge (question_id, knowledge_id);
-                CREATE INDEX IF NOT EXISTS IX_question_knowledge_knowledge_id ON question_knowledge (knowledge_id);",
+                logger.LogInformation("Database migration completed and verified as current");
+                return;
 
-            "tag" => @"
-                CREATE TABLE IF NOT EXISTS tag (
-                    id uuid NOT NULL,
-                    name character varying(100) NOT NULL,
-                    color character varying(20) NULL,
-                    description text NULL,
-                    created_by character varying(36) NULL,
-                    created_at timestamp with time zone NOT NULL,
-                    usage_count integer NOT NULL DEFAULT 0,
-                    CONSTRAINT PK_tag PRIMARY KEY (id)
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_tag_name ON tag (name);",
+            case MigrationObservationState.VersionTooNew:
+                throw new InvalidOperationException(
+                    $"The database history is newer than this application supports: {inspection.Reason}. " +
+                    "Refusing to start; no changes were made. Deploy an application version that knows this " +
+                    "history, or restore a backup of a supported state.");
 
-            "question_tag" => @"
-                CREATE TABLE IF NOT EXISTS question_tag (
-                    id uuid NOT NULL,
-                    question_id uuid NOT NULL,
-                    tag_id uuid NOT NULL,
-                    created_at timestamp with time zone NOT NULL,
-                    CONSTRAINT PK_question_tag PRIMARY KEY (id),
-                    CONSTRAINT FK_question_tag_question_question_id
-                        FOREIGN KEY (question_id) REFERENCES question(id) ON DELETE CASCADE,
-                    CONSTRAINT FK_question_tag_tag_tag_id
-                        FOREIGN KEY (tag_id) REFERENCES tag(id) ON DELETE CASCADE
-                );
-                CREATE UNIQUE INDEX IF NOT EXISTS IX_question_tag_question_id_tag_id ON question_tag (question_id, tag_id);
-                CREATE INDEX IF NOT EXISTS IX_question_tag_tag_id ON question_tag (tag_id);",
-
-            _ => null
-        };
+            default:
+                throw new InvalidOperationException(
+                    $"The database state could not be verified against any supported version: {inspection.Reason}. " +
+                    "Refusing to start; no changes were made. Repair the database structure from a backup and " +
+                    "restart; unknown schemas are never stamped or auto-repaired.");
+        }
     }
 }

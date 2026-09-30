@@ -33,8 +33,13 @@ public static class AdminAuthEndpoints
     {
         var group = app.MapGroup("/admin/auth").AllowAnonymous();
 
-        group.MapPost("/login", Login);
-        group.MapPost("/callback", Callback);
+        // The two anonymous JSON entry points carry credential-bearing request bodies and return
+        // an access token or role decisions, so they are marked for the fixed ServiceMantle
+        // security response-header baseline (Cache-Control: no-store and friends). The marking
+        // applies to exactly these two endpoints: the rest of /admin and the Vue SPA never
+        // receive the API-only Content-Security-Policy.
+        group.MapPost("/login", Login).RequireServiceMantleSecurityResponseHeaders();
+        group.MapPost("/callback", Callback).RequireServiceMantleSecurityResponseHeaders();
 
         return app;
     }

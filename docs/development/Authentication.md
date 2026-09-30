@@ -158,7 +158,26 @@ Request and response formats are in [ApiSpec.md §2.6](../overview/ApiSpec.md#26
 
 Login failures are logged without the username.
 
-### 6.3 Not guaranteed
+### 6.3 Response security headers
+
+`POST /admin/auth/login` and `POST /admin/auth/callback` — and only these two JSON endpoints — carry a fixed security response-header baseline, applied by the endpoint-marked ServiceMantle security response-header middleware (registered through the single ServiceMantle composition point, placed after explicit routing and outside the existing exception handler):
+
+```
+Cache-Control: no-store
+Pragma: no-cache
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+Referrer-Policy: no-referrer
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+```
+
+- Success and error responses share the same baseline, including the 500 `QUAESTURA_INTERNAL_ERROR` envelope converted by the existing exception handler and the login 400/502/503 branches; each header is set to exactly one value, and an endpoint attempting to write the same header still ends at the baseline.
+- The token response is therefore explicitly non-cacheable; callers (SignaCore for the callback, browsers for login) must not rely on cached copies.
+- Unmarked surfaces — the rest of `/admin`, `/health`, dev Swagger, the SPA, and static assets — never receive this API-only policy (no `default-src 'none'`).
+- If the response has already started, sent headers are not rewritten; cancellation propagates unchanged.
+- Not covered: TLS termination, browser/proxy compliance with `no-store`, HSTS, and CORS remain the deployment's responsibility. Removing the middleware and the endpoint metadata is the complete rollback; nothing is persisted.
+
+### 6.4 Not guaranteed
 
 - Brute-force protection: Quaestura does not rate-limit login. SignaCore sees every attempt as coming from Quaestura, so IP-based limiting in SignaCore can affect all admins at once.
 - Callback caller authentication: anyone who can reach `/admin/auth/callback` can ask whether a user ID is whitelisted. It never returns a token and cannot grant privileges by itself.

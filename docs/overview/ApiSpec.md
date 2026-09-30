@@ -712,6 +712,8 @@ Remove associations.
 
 Both endpoints are anonymous. See [Authentication.md §6](../development/Authentication.md#6-admin-login) for the flow and configuration. Unlike the other endpoints, failures return `{"success": false, "message": "..."}` without an `errorCode`.
 
+Both responses — success and every error branch, including the converted 500 envelope — also carry the fixed single-value security header baseline (`Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`); see [Authentication.md §6.3](../development/Authentication.md#63-response-security-headers). This baseline applies only to these two JSON endpoints: the other API routes, `/health`, the SPA, and static assets do not receive it.
+
 #### POST `/admin/auth/login`
 
 Exchanges an admin's username and password for a SignaCore access token. The username and password are forwarded to SignaCore as-is (no trimming or case folding).

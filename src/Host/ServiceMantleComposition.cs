@@ -5,10 +5,11 @@ using ServiceMantle;
 namespace Quaestura.Host;
 
 /// <summary>
-/// Registers the ServiceMantle host identity, the safe request-header projector, and the base
-/// OpenTelemetry instrumentation for Quaestura. This composition performs zero disk writes and
-/// registers no telemetry exporter: the Bootstrap file store stays a lazy singleton that is
-/// never resolved, and instrumentation data stays in-process until an exporter task adds one.
+/// Registers the ServiceMantle host identity, the safe request-header projector, the mandatory
+/// security response-header capability, and the base OpenTelemetry instrumentation for
+/// Quaestura. This composition performs zero disk writes and registers no telemetry exporter:
+/// the Bootstrap file store stays a lazy singleton that is never resolved, and instrumentation
+/// data stays in-process until an exporter task adds one.
 /// </summary>
 public static class ServiceMantleComposition
 {
@@ -41,7 +42,13 @@ public static class ServiceMantleComposition
             // projector (RequestHeaderDiagnosticProjector) always redacts it. This registers no
             // automatic header logging; projecting headers stays an explicit caller decision.
             .AddSensitiveHeaders(options =>
-                options.DeniedHeaderNames = ["X-Admin-AppSecret"]);
+                options.DeniedHeaderNames = ["X-Admin-AppSecret"])
+            // Mandatory security response-header capability for the two admin-auth JSON
+            // endpoints. It exposes no weakening options; the middleware and the per-endpoint
+            // metadata decide where the fixed baseline applies (see Program.cs and
+            // AdminAuthEndpoints). The full ServiceMantle management pipeline is deliberately
+            // NOT used: the existing QUAESTURA_* business error envelopes stay in charge.
+            .AddSecurityResponseHeaders();
 
         return services;
     }

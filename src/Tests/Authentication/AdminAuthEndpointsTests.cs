@@ -92,6 +92,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsync("/admin/auth/login", LoginBody(" Admin ", Password));
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        SecurityResponseHeaders.AssertBaseline(response);
         var raw = await response.Content.ReadAsStringAsync();
         using var body = JsonDocument.Parse(raw);
         body.RootElement.EnumerateObject().Select(p => p.Name).Should()
@@ -261,9 +262,17 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
     {
         var client = CreateClient();
 
-        (await client.PostAsync("/admin/auth/login", Json("{}"))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await client.PostAsync("/admin/auth/callback", Json("{}"))).StatusCode.Should().Be(HttpStatusCode.OK);
-        (await client.GetAsync("/admin/tags")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        using var login = await client.PostAsync("/admin/auth/login", Json("{}"));
+        login.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        SecurityResponseHeaders.AssertBaseline(login);
+        using var callback = await client.PostAsync("/admin/auth/callback", Json("{}"));
+        callback.StatusCode.Should().Be(HttpStatusCode.OK);
+        SecurityResponseHeaders.AssertBaseline(callback);
+        using var tags = await client.GetAsync("/admin/tags");
+        tags.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // The API-only policy applies to the two marked auth endpoints, not to the rest of
+        // /admin: the unmarked 401 never gains the destructive CSP.
+        SecurityResponseHeaders.AssertNotApplied(tags);
     }
 
     public void Dispose()
@@ -314,6 +323,9 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         body.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
         body.RootElement.GetProperty("message").GetString().Should().Be(message);
+        // Success and failure responses of the marked auth endpoints share the same fixed
+        // single-value security header baseline.
+        SecurityResponseHeaders.AssertBaseline(response);
     }
 
     private static async Task AssertRoles(HttpResponseMessage response, params string[] roles)
@@ -322,6 +334,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         body.RootElement.GetProperty("roles").EnumerateArray().Select(r => r.GetString())
             .Should().Equal(roles);
+        SecurityResponseHeaders.AssertBaseline(response);
     }
 
     private sealed record RecordedRequest(HttpMethod Method, Uri? Uri, Dictionary<string, string> Headers, string Body);

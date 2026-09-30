@@ -11,6 +11,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="ServiceMantle.Database.PostgreSql" Version="0.2.0" />
     <PackageReference Include="ServiceMantle.Diagnostics" Version="0.2.0" />
     <PackageReference Include="ServiceMantle.Web" Version="0.2.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
@@ -21,6 +22,10 @@
     <ProjectReference Include="..\Service\Quaestura.Service.csproj" />
     <ProjectReference Include="..\Common\Quaestura.Common.csproj" />
     <ProjectReference Include="..\Consul\Quaestura.Consul.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quaestura.Tests" />
   </ItemGroup>
 
 </Project>

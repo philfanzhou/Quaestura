@@ -39,15 +39,29 @@ public sealed class SpaHostingTests : IClassFixture<QuaesturaApiFactory>, IDispo
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
-    public async Task Root_InjectsAppTitle()
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/index.html")]
+    [InlineData("/login")]
+    [InlineData("/questions/123")]
+    public async Task IndexHtmlResponses_InjectAppTitle(string path)
     {
-        var response = await _client.GetAsync("/");
+        var response = await _client.GetAsync(path);
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         body.Should().NotContain("<title>__APP_TITLE__</title>");
         body.Should().Contain("window.__APP_TITLE__");
+    }
+
+    [Fact]
+    public async Task StaticFiles_AreServedUnmodified()
+    {
+        var response = await _client.GetAsync("/app.js");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Be("console.log('app');");
     }
 
     [Theory]

@@ -1,6 +1,7 @@
 using System;
 using System.Data.Common;
 using System.IO;
+using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -182,6 +183,31 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 // must load without a token, otherwise signed-out users could never sign in.
 // Requests handled by this branch never reach UseAuthentication/UseAuthorization.
 var escapedAppTitle = appTitle.Replace("'", "\\'");
+
+// Injects APP_TITLE into index.html and writes the response.
+// Shared by the /index.html request and the SPA history fallback so that every
+// response returning index.html content (/, /index.html, and any client-route
+// deep link) goes through the same injection. Returns false when index.html is
+// missing so callers can fall through to the previous static-file behavior.
+async Task<bool> TryWriteInjectedIndexHtml(HttpContext context)
+{
+    var wwwroot = app.Environment.WebRootPath;
+    var filePath = Path.Combine(wwwroot ?? string.Empty, "index.html");
+    if (!File.Exists(filePath))
+    {
+        return false;
+    }
+
+    var content = await File.ReadAllTextAsync(filePath);
+    content = content.Replace("__APP_TITLE__", appTitle);
+    content = content.Replace(
+        "</head>",
+        $"<script>window.__APP_TITLE__ = '{escapedAppTitle}';</script></head>");
+    context.Response.ContentType = "text/html; charset=utf-8";
+    await context.Response.WriteAsync(content);
+    return true;
+}
+
 app.MapWhen(
     context => !context.Request.Path.StartsWithSegments("/admin")
              && !context.Request.Path.StartsWithSegments("/health")
@@ -193,32 +219,26 @@ app.MapWhen(
         // Inject app title from APP_TITLE env var into index.html at runtime.
         spaApp.Use(async (context, next) =>
         {
-            if (context.Request.Path == "/index.html")
+            if (context.Request.Path == "/index.html" && await TryWriteInjectedIndexHtml(context))
             {
-                var wwwroot = app.Environment.WebRootPath;
-                var filePath = Path.Combine(wwwroot ?? string.Empty, "index.html");
-                if (File.Exists(filePath))
-                {
-                    var content = await File.ReadAllTextAsync(filePath);
-                    content = content.Replace("__APP_TITLE__", appTitle);
-                    content = content.Replace(
-                        "</head>",
-                        $"<script>window.__APP_TITLE__ = '{escapedAppTitle}';</script></head>");
-                    context.Response.ContentType = "text/html; charset=utf-8";
-                    await context.Response.WriteAsync(content);
-                    return;
-                }
+                return;
             }
             await next();
         });
 
         spaApp.UseStaticFiles();
 
-        // SPA fallback for Vue Router history mode
+        // SPA fallback for Vue Router history mode: serve the same injected
+        // index.html as /index.html so deep links (e.g. /login, /questions/123)
+        // do not leak the raw __APP_TITLE__ placeholder.
         spaApp.MapWhen(_ => true, innerSpa =>
         {
             innerSpa.Use(async (context, next) =>
             {
+                if (await TryWriteInjectedIndexHtml(context))
+                {
+                    return;
+                }
                 context.Request.Path = "/index.html";
                 await next();
             });

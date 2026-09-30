@@ -160,10 +160,21 @@ using (var scope = app.Services.CreateScope())
     var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
     if (dbContext.Database.IsRelational())
     {
-        // The strict inspect/execute/verify flow observes host shutdown through this token.
+        // Stage 1 — target preparation: create the PostgreSQL database only when it is
+        // verifiably missing and Database:AllowCreate (default true) permits it; an existing
+        // database is never touched. Stage 2 — the strict initializer inspects the target,
+        // executes migrations only for verified empty/pending states, and verifies the final
+        // state; it owns the business tables and migration history. Both stages observe host
+        // shutdown through the same token. The non-relational Testing path skips both stages'
+        // PostgreSQL specifics and keeps using EnsureCreated.
         var applicationStopping = app.Services
             .GetRequiredService<IHostApplicationLifetime>()
             .ApplicationStopping;
+        await QuaesturaDatabaseTargetPreparer.PrepareAsync(
+            builder.Configuration,
+            connectionString,
+            app.Logger,
+            applicationStopping);
         await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
     }
     else

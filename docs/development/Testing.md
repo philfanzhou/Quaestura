@@ -148,6 +148,16 @@ public class QuestionEndpointsTests : IClassFixture<WebApplicationFactory<Progra
 
 Note: integration tests must switch the DbContext to the EF Core InMemory database, injected through `WebApplicationFactory.ConfigureServices`.
 
+## PostgreSQL target-preparation integration tests
+
+`src/Tests/Database/` contains real-database tests for the startup target-preparation stage (`QuaesturaDatabaseTargetPreparer`, built on the shared ServiceMantle PostgreSQL provider). They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`TargetPreparationIntegrationCollection`, serialized) with unique database and role names per test:
+
+- `PostgreSqlTargetPreparationFixture.cs`: container fixture with helpers for databases, roles (with and without `CREATEDB`), ownership queries, and a per-run secret canary.
+- `TargetPreparationTests.cs`: existing targets are never prepared or modified, missing targets are created only when allowed (with the original initializer still producing the six tables and both history rows), `AllowCreate` parsing, permission/reachability/identity/owner-conflict refusals, concurrent dual-instance convergence, cancellation, and canary non-leakage.
+- `HostStartupTargetPreparationTests.cs`: the real `Program.cs` host creating a missing database end to end, and refusing startup for `Database:AllowCreate=false` or an invalid boolean.
+
+Requirements: a working Docker environment (local machine or GitHub-hosted runner). The tests run in CI as part of the normal `dotnet test` step and are never skipped by default. The existing InMemory-based `QuaesturaApiFactory` endpoint tests do not touch PostgreSQL and are unchanged.
+
 ## PostgreSQL migration integration tests
 
 `src/Tests/Database/` contains real-database tests for the strict migration executor (`QuaesturaMigrationExecutor`) and the startup entry (`DatabaseInitializer`). They use `Testcontainers.PostgreSql` to start one shared `postgres:16-alpine` container per test collection (`MigrationIntegrationCollection`, serialized) and create an isolated database per test:

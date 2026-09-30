@@ -61,7 +61,9 @@ The database connection string is built by `SharedPostgreSqlConnectionStringFact
 
 The connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible. In production, the PostgreSQL host/port/username/password are overridden by the Consul `PostgreSql:*` keys and do not need to be written to `appsettings.json`.
 
-The database schema is created and verified automatically on startup. `DatabaseInitializer.InitializeAsync` runs a strict flow: a **read-only inspection** classifies the target database, migrations execute **only** for the verified `Empty`/`PendingMigration` states, and a **final inspection** must report `CurrentVersionCompatible` or startup is refused. Unknown or corrupt databases are never silently stamped or auto-repaired.
+Database startup runs in two stages. **Stage 1 — target preparation** (`QuaesturaDatabaseTargetPreparer`, built on the shared ServiceMantle PostgreSQL provider): the target database is observed first, and a connectable target is used as-is — no maintenance-database connection, no `CREATE`, and no `CREATEDB` or `postgres`-database privilege is required for existing databases. Only a verifiably missing target may be created, only when `Database:AllowCreate` permits it, and only through the shared provider with a fixed 30-second preparation budget (there is deliberately no timeout setting). The maintenance connection is a copy of the original configuration with just the database changed to `postgres`; no additional administrative secret is introduced or persisted. After a successful preparation the target must observe as connectable again with its own identity before stage 2 starts. Unreachable servers, authentication or permission failures, and owner or server-identity conflicts refuse startup without any creation fallback. Cancellation or timeout stops startup before any table initialization; an already created empty database is kept and reused on the next start — it is never dropped as compensation. Rolling this stage back restores the previous EF Core auto-creation entry; existing empty or business databases keep working, and `DROP DATABASE` is never part of a rollback.
+
+**Stage 2 — table initialization**: the database schema is created and verified automatically on startup. `DatabaseInitializer.InitializeAsync` runs a strict flow: a **read-only inspection** classifies the target database, migrations execute **only** for the verified `Empty`/`PendingMigration` states, and a **final inspection** must report `CurrentVersionCompatible` or startup is refused. Unknown or corrupt databases are never silently stamped or auto-repaired. The non-relational `Testing` path skips target preparation entirely and keeps using `EnsureCreated`.
 
 | Observed state | Classification | Startup behavior |
 |------|------|------|
@@ -76,6 +78,12 @@ The database schema is created and verified automatically on startup. `DatabaseI
 **Cancellation and recovery**: every database operation observes the host shutdown token. The baseline commit and the remaining EF migrations use separate transactions, so a cancellation between phases leaves only the real committed baseline; the next startup re-verifies and completes the recovery. Cross-process serialization of startup migrations is not provided yet and is tracked separately.
 
 **Rollback**: rolling the application back never deletes legitimate migration history and never executes `Down` migrations. If the previous lenient behavior is truly required, stop writes and restore a full database backup first; the old version must not be used as a schema repair tool.
+
+#### Database:AllowCreate
+
+| Configuration key | Environment variable | Default | Purpose |
+|--------|---------|------|------|
+| `Database:AllowCreate` | `Database__AllowCreate` | `true` | Whether startup may create the target database when it is verifiably missing. `false` refuses startup on a missing target with zero writes; an unparsable boolean fails startup. When creation is needed, the configured user requires the `CREATEDB` attribute and permission to connect to the `postgres` maintenance database; existing databases only need their own access privileges. |
 
 #### Overriding through the Consul shared configuration
 

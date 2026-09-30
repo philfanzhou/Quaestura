@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { clearAuth } from './services/auth'
 
 const route = useRoute()
+const router = useRouter()
 const appTitle = computed(() => window.__APP_TITLE__ || 'Quaestura Admin')
+// Public routes (login) render only <router-view />, without the sidebar layout.
+const isPublicRoute = computed(() => route.meta.public === true)
 
 const sidebarOpen = ref(false)
 const sidebarCollapsed = ref(localStorage.getItem('qbSidebarCollapsed') === 'true')
@@ -42,10 +46,16 @@ function toggleSidebar() {
 function closeSidebarMobile() {
   sidebarOpen.value = false
 }
+
+function handleLogout() {
+  clearAuth()
+  router.push('/login')
+}
 </script>
 
 <template>
-  <div class="admin-layout">
+  <router-view v-if="isPublicRoute" />
+  <div v-else class="admin-layout">
     <aside class="sidebar" :class="{ open: sidebarOpen, collapsed: sidebarCollapsed }">
       <div class="sidebar-header">
         <div class="sidebar-logo">QB</div>
@@ -104,6 +114,9 @@ function closeSidebarMobile() {
             </svg>
           </button>
           <span class="header-breadcrumb">{{ currentTitle }}</span>
+        </div>
+        <div class="header-right">
+          <button class="btn btn-secondary btn-small" title="退出登录" @click="handleLogout">退出登录</button>
         </div>
       </header>
 

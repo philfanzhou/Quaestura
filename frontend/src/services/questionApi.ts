@@ -1,10 +1,12 @@
-import axios, { type AxiosInstance } from 'axios'
+import { type AxiosInstance } from 'axios'
+import httpClient from './httpClient'
 import type { Question, PagedResult, SingleResult, MutationResult } from '../types'
 
 class QuestionAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    this.client = axios.create({ timeout: 20000 })
+    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    this.client = httpClient
   }
   async search(params: { keyword?: string; level?: number; type?: number; subject: number; grade: number; tagId?: string; page?: number; size?: number }): Promise<PagedResult<Question>> {
     const response = await this.client.get<PagedResult<Question>>('/admin/questions', { params })

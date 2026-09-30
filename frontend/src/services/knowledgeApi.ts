@@ -1,10 +1,12 @@
-import axios, { type AxiosInstance } from 'axios'
+import { type AxiosInstance } from 'axios'
+import httpClient from './httpClient'
 import type { Knowledge, CreateKnowledgeRequest, PagedResult, SingleResult, MutationResult } from '../types'
 
 class KnowledgeAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    this.client = axios.create({ timeout: 20000 })
+    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    this.client = httpClient
   }
   async list(params: { parentId?: string; grade?: number; subject?: number; name?: string; page?: number; size?: number }): Promise<PagedResult<Knowledge>> {
     const response = await this.client.get<PagedResult<Knowledge>>('/admin/knowledges', { params })

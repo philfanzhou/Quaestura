@@ -71,7 +71,7 @@ Every WebAPI endpoint must be handled by `ExceptionHandlingMiddleware` (in `src/
 
 ## Error message conventions
 
-1. Error messages are in **English** (per the `30-backend-routing.md` coding conventions)
+1. Error messages are in **English**
 2. Error messages should be concise and clear, without technical details (such as SQL statements or stack traces)
 3. The same kind of error uses the same wording across services
 4. User-facing business hints may be localized, but API response messages are always in English

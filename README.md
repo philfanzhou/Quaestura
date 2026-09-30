@@ -13,7 +13,7 @@ Learner-specific data such as mistake records, root-cause analysis, and practice
 - Question images in S3-compatible object storage (for example SeaweedFS) under the `questions/` prefix
 - RS256 JWT authentication against SignaCore or any issuer that publishes OIDC discovery and JWKS
 - Request correlation IDs (`x-correlation-id` on every response) and base OpenTelemetry instrumentation with no exporter
-- Optional configuration from Consul KV, with Serilog and optional Loki log export
+- Optional configuration from Consul KV, with a shared sanitizing logging pipeline (Console output plus optional Grafana Loki export)
 - A single container image that serves the API and the admin console on port 5007
 
 ## Repository layout
@@ -25,7 +25,7 @@ Learner-specific data such as mistake records, root-cause analysis, and practice
 | `src/Domain` | Domain services |
 | `src/Database` | EF Core model and migrations for PostgreSQL |
 | `src/Common` | Shared authentication, database, and object-storage helpers |
-| `src/Consul` | Consul KV configuration source and Serilog/Loki setup |
+| `src/Consul` | Consul KV configuration source, shared PostgreSQL connection-string factory, and startup diagnostics formatting |
 | `src/Tests` | Unit and endpoint tests |
 | `frontend` | Vue 3 administration console |
 | `docs` | API, database, authentication, deployment, and testing documentation |

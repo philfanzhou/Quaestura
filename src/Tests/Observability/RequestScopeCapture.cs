@@ -9,8 +9,8 @@ namespace Quaestura.Tests.Observability;
 /// Records the ILogger scopes opened during a request. The ServiceMantle request scope is an
 /// <c>IReadOnlyList&lt;KeyValuePair&lt;string, object?&gt;&gt;</c> of named fields; replacing the
 /// logger factory of one derived factory with a plain one captures that scope state directly —
-/// the same scope surface the Serilog pipeline consumes. Actual Console/Loki delivery belongs to
-/// the existing Serilog wiring and is out of scope for the observability slice.
+/// the same scope surface the shared ServiceMantle logging pipeline consumes. Actual Console/Loki
+/// delivery belongs to the shared pipeline and is verified in ServiceMantleLoggingTests.
 /// </summary>
 public sealed class RequestScopeCapture : ILoggerProvider
 {
@@ -84,8 +84,8 @@ public static class ObservabilityTestHelpers
     public const string CorrelationHeaderName = "x-correlation-id";
 
     /// <summary>
-    /// Replaces the Serilog-backed logger factory of one derived factory with a plain factory
-    /// that records structured scope state, so request scopes can be asserted directly.
+    /// Replaces the shared-pipeline-backed logger factory of one derived factory with a plain
+    /// factory that records structured scope state, so request scopes can be asserted directly.
     /// </summary>
     public static void CaptureRequestScopes(IServiceCollection services, RequestScopeCapture capture)
     {

@@ -8,18 +8,22 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Serilog.Core;
-using Serilog.Events;
 using Xunit;
 
 namespace Quaestura.Tests.Authentication;
 
-// UseSerilog replaces the process-wide Log.Logger for every test host it builds, so a host
-// started by a parallel test class could divert log events away from this class's sink.
-[CollectionDefinition(nameof(AdminAuthEndpointsTests), DisableParallelization = true)]
-public sealed class AdminAuthLogCaptureCollection;
+// The shared ServiceMantle logging pipeline writes to the real Console sink synchronously, and
+// Console.SetOut redirection is process-wide: every test class that captures console output must
+// run alone. (The pipeline no longer replaces the process-wide Serilog Log.Logger, but console
+// exclusivity is still required.) ServiceMantleLoggingTests shares this collection for the same
+// reason.
+[CollectionDefinition(ConsoleLoggingCollection.Name, DisableParallelization = true)]
+public sealed class ConsoleLoggingCollection
+{
+    public const string Name = "console-logging";
+}
 
-[Collection(nameof(AdminAuthEndpointsTests))]
+[Collection(ConsoleLoggingCollection.Name)]
 public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>, IDisposable
 {
     // Same authority QuaesturaApiFactory configures for JWT validation.
@@ -33,13 +37,37 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
 
     private readonly QuaesturaApiFactory _baseFactory;
     private readonly FakeSignaCore _signaCore = new();
-    private readonly CapturingSink _logs = new();
     private readonly List<IDisposable> _disposables = new();
+
+    // Log assertions observe the real shared pipeline through its Console sink: the test
+    // instance redirects Console.Out for its whole lifetime and asserts on the rendered,
+    // filtered, and sanitized lines. The collection above guarantees no other test writes to
+    // the console while this window is open.
+    private readonly TextWriter _originalConsoleOut;
+    private readonly StringWriter _consoleOutput = new();
 
     public AdminAuthEndpointsTests(QuaesturaApiFactory factory)
     {
         _baseFactory = factory;
+        _originalConsoleOut = Console.Out;
+        Console.SetOut(_consoleOutput);
     }
+
+    /// <summary>Console lines emitted by the AdminAuthEndpoints category.</summary>
+    private IReadOnlyList<string> AuthLines =>
+        _consoleOutput.ToString()
+            .Split('\n')
+            .Where(line => line.Contains("AdminAuthEndpoints"))
+            .ToList();
+
+    /// <summary>Warning lines from the AdminAuthEndpoints category. The shared pipeline's
+    /// output template renders the level as <c>[TIMESTAMP WRN]</c>.</summary>
+    private IReadOnlyList<string> AuthWarnings =>
+        AuthLines.Where(line => line.Contains(" WRN]")).ToList();
+
+    /// <summary>Error lines from the AdminAuthEndpoints category.</summary>
+    private IReadOnlyList<string> AuthErrors =>
+        AuthLines.Where(line => line.Contains(" ERR]")).ToList();
 
     // ---------- login ----------
 
@@ -69,8 +97,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
 
         await AssertFailure(response, HttpStatusCode.ServiceUnavailable, "Admin login is not configured.");
         _signaCore.Requests.Should().BeEmpty();
-        _logs.Events.Should().Contain(e =>
-            e.Level == LogEventLevel.Warning && e.RenderMessage(null).Contains("not configured"));
+        AuthWarnings.Should().Contain(line => line.Contains("not configured"));
     }
 
     [Fact]
@@ -127,8 +154,8 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsync("/admin/auth/login", LoginBody("unique-login-name", Password));
 
         await AssertFailure(response, HttpStatusCode.BadRequest, expected);
-        var warning = _logs.Events.Should().ContainSingle(e => e.Level == LogEventLevel.Warning).Subject;
-        warning.RenderMessage(null).Should().Contain(expected).And.NotContain("unique-login-name");
+        var warning = AuthWarnings.Should().ContainSingle().Subject;
+        warning.Should().Contain(expected).And.NotContain("unique-login-name");
     }
 
     [Theory]
@@ -146,8 +173,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsync("/admin/auth/login", LoginBody("admin", Password));
 
         await AssertFailure(response, HttpStatusCode.BadGateway, "Identity service unavailable.");
-        _logs.Events.Should().ContainSingle(e => e.Level == LogEventLevel.Warning)
-            .Which.RenderMessage(null).Should().Contain(((int)status).ToString());
+        AuthWarnings.Should().ContainSingle().Which.Should().Contain(((int)status).ToString());
     }
 
     [Fact]
@@ -159,8 +185,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsync("/admin/auth/login", LoginBody("admin", Password));
 
         await AssertFailure(response, HttpStatusCode.BadGateway, "Identity service unavailable.");
-        _logs.Events.Should().ContainSingle(e => e.Level == LogEventLevel.Error)
-            .Which.RenderMessage(null).Should().Contain(nameof(HttpRequestException));
+        AuthErrors.Should().ContainSingle().Which.Should().Contain(nameof(HttpRequestException));
     }
 
     [Fact]
@@ -172,8 +197,7 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsync("/admin/auth/login", LoginBody("admin", Password));
 
         await AssertFailure(response, HttpStatusCode.BadGateway, "Identity service unavailable.");
-        _logs.Events.Should().ContainSingle(e => e.Level == LogEventLevel.Error)
-            .Which.RenderMessage(null).Should().Contain(nameof(TaskCanceledException));
+        AuthErrors.Should().ContainSingle().Which.Should().Contain(nameof(TaskCanceledException));
     }
 
     [Fact]
@@ -190,10 +214,12 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         await FluentActions.Awaiting(() => call).Should().ThrowAsync<OperationCanceledException>();
         await _signaCore.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10));
         await Task.Delay(200);
-        _logs.AllEvents.Should().NotContain(e => e.Level >= LogEventLevel.Error
-            && e.Properties.ContainsKey("SourceContext")
-            && (e.Properties["SourceContext"].ToString().Contains("AdminAuthEndpoints")
-                || e.Properties["SourceContext"].ToString().Contains("ExceptionHandlingMiddleware")));
+        _consoleOutput.ToString()
+            .Split('\n')
+            .Where(line => line.Contains(" ERR]"))
+            .Should()
+            .NotContain(line => line.Contains("AdminAuthEndpoints")
+                || line.Contains("ExceptionHandlingMiddleware"));
     }
 
     [Fact]
@@ -207,11 +233,11 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         _signaCore.Throw(() => new HttpRequestException("Connection refused"));
         await client.PostAsync("/admin/auth/login", LoginBody("admin", Password));
 
-        _logs.Events.Should().NotBeEmpty();
-        foreach (var text in _logs.Events.Select(e => e.RenderMessage(null) + " " + e.Exception))
-        {
-            text.Should().NotContain(Password).And.NotContain(AppSecret).And.NotContain(AccessToken);
-        }
+        AuthLines.Should().NotBeEmpty();
+        // The captured console text is the real pipeline output after category filtering and
+        // mandatory sanitization; nothing secret-bearing may survive into it.
+        _consoleOutput.ToString().Should()
+            .NotContain(Password).And.NotContain(AppSecret).And.NotContain(AccessToken);
     }
 
     // ---------- callback ----------
@@ -225,8 +251,10 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         var response = await client.PostAsJsonAsync("/admin/auth/callback", new { user_id = AdminUserId });
 
         await AssertRoles(response, "admin");
-        _logs.Events.Should().Contain(e =>
-            e.Level == LogEventLevel.Information && e.RenderMessage(null).Contains(AdminUserId));
+        // The role grant stays observable, but the callback never logs the user identifier.
+        AuthLines.Should().Contain(line =>
+            line.Contains(" INF]") && line.Contains("granted the admin role"));
+        _consoleOutput.ToString().Should().NotContain(AdminUserId);
     }
 
     [Fact]
@@ -272,6 +300,9 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
         {
             disposable.Dispose();
         }
+
+        Console.SetOut(_originalConsoleOut);
+        _consoleOutput.Dispose();
     }
 
     private HttpClient CreateClient(IDictionary<string, string?>? overrides = null)
@@ -292,7 +323,6 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
             builder.ConfigureServices(services =>
             {
-                services.AddSingleton<ILogEventSink>(_logs);
                 services.AddHttpClient("IdentityService")
                     .ConfigurePrimaryHttpMessageHandler(() => new FakeSignaCoreHandler(_signaCore));
             });
@@ -371,18 +401,5 @@ public sealed class AdminAuthEndpointsTests : IClassFixture<QuaesturaApiFactory>
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             signaCore.HandleAsync(request, cancellationToken);
-    }
-
-    private sealed class CapturingSink : ILogEventSink
-    {
-        private readonly ConcurrentQueue<LogEvent> _events = new();
-
-        public IReadOnlyCollection<LogEvent> Events =>
-            _events.Where(e => e.Properties.TryGetValue("SourceContext", out var source)
-                && source.ToString().Contains("AdminAuthEndpoints")).ToList();
-
-        public IReadOnlyCollection<LogEvent> AllEvents => _events.ToList();
-
-        public void Emit(LogEvent logEvent) => _events.Enqueue(logEvent);
     }
 }

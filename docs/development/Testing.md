@@ -159,6 +159,8 @@ dotnet test Tests/Quaestura.Tests.csproj --configuration Release
 
 - Domain-layer tests live in `src/Tests/Services/`
 - Validation component tests live in `src/Tests/Validation/`
+- Host/authentication endpoint tests live in `src/Tests/Authentication/`
+- ServiceMantle observability tests (host identity, correlation header/scope, base instrumentation) live in `src/Tests/Observability/`
 - Endpoint tests live in `src/Tests/Endpoints/` (optional)
 - Static classes (such as `ImageValidationHelper`) are called directly without mocks
 - Exception assertions use `FluentAssertions`

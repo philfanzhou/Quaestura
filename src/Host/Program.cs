@@ -18,6 +18,7 @@ using Quaestura.Common.Oss;
 using Quaestura.Consul;
 using Quaestura.Database;
 using Quaestura.Domain.Services;
+using Quaestura.Host;
 using Quaestura.Service;
 using Quaestura.Service.Endpoints;
 using Quaestura.Service.Middleware;
@@ -90,6 +91,16 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { Title = "Quaestura WebAPI", Version = "v1" });
 });
 
+// ========== ServiceMantle (host identity, correlation, base telemetry) ==========
+// ServiceId "quaestura" is the stable deployment identity. The InstanceId is regenerated on
+// every host build and is NOT a persistent identity: it changes on each restart. No bootstrap
+// file path is passed: the Bootstrap store stays a lazy singleton and this wiring performs zero
+// disk writes. No service version is passed: it resolves from the entry assembly informational
+// version. AddOpenTelemetryInstrumentation uses the default options (AspNetCore / HttpClient /
+// Runtime instrumentation) and registers NO exporter. AddSensitiveHeaders denies
+// X-Admin-AppSecret for the safe request-header projector without adding header logging.
+builder.Services.AddQuaesturaServiceMantle();
+
 // Bind Kestrel explicitly to the configured httpPort
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -97,6 +108,14 @@ builder.WebHost.ConfigureKestrel(options =>
 });
 
 var app = builder.Build();
+
+// First middleware in the HTTP pipeline: everything registered below (Swagger, the exception
+// envelope, the SPA branch, authentication, every endpoint, and /health) runs inside the
+// request correlation scope and receives the x-correlation-id response header, injected via
+// OnStarting before any response starts (static file responses included). The existing
+// ExceptionHandlingMiddleware keeps owning the QUAESTURA_* business error envelopes.
+app.UseServiceMantleCorrelationId();
+
 var identityTrust = app.Services
     .GetRequiredService<Microsoft.Extensions.Options.IOptions<IdentityAuthenticationOptions>>()
     .Value;

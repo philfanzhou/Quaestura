@@ -12,6 +12,7 @@ Learner-specific data such as mistake records, root-cause analysis, and practice
 - Many-to-many links between questions and knowledge points, and between questions and tags
 - Question images in S3-compatible object storage (for example SeaweedFS) under the `questions/` prefix
 - RS256 JWT authentication against SignaCore or any issuer that publishes OIDC discovery and JWKS
+- Request correlation IDs (`x-correlation-id` on every response) and base OpenTelemetry instrumentation with no exporter
 - Optional configuration from Consul KV, with Serilog and optional Loki log export
 - A single container image that serves the API and the admin console on port 5007
 

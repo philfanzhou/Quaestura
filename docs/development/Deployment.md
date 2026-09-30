@@ -239,7 +239,30 @@ OSS: <InternalEndpoint>/<Bucket>
 
 The database is always PostgreSQL, and the connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`. The startup log also prints the Effective configuration diagnostics, reflecting the actual `PostgreSql:*` and `Database:Name` values injected by Consul (with the password redacted).
 
-## 6. Dependencies
+## 6. Request correlation and telemetry
+
+The host registers the ServiceMantle composition (`src/Host/ServiceMantleComposition.cs`): a fixed service identity, the request correlation middleware as the first HTTP middleware, and the base OpenTelemetry instrumentation with **no exporter**.
+
+### 6.1 Correlation ID
+
+Every HTTP response — API success and error envelopes (400/401/403/500 included), the SPA and static assets, dev Swagger, and `/health` — carries an `x-correlation-id` response header:
+
+- An inbound `x-correlation-id` request header is reused verbatim only when it is the **single** header value, is 1–64 characters long, starts with an ASCII letter or digit, and contains only ASCII letters, digits, `.`, `_`, or `-`.
+- Missing, empty, whitespace, illegal, comma-joined, repeated, or overlong inputs are discarded as a whole (never trimmed or partially reused) and replaced by a generated 32-character lowercase hexadecimal id. Rejected values are not logged.
+- The same resolved id is published to the response header and to the request log scope (`CorrelationId` field), so log lines emitted while handling the request can be joined with the caller's value.
+- The id is a log-correlation value only: it is not unique, unguessable, or authenticated, and must never be used for authorization, idempotency, or replay protection.
+
+### 6.2 Service identity and log scope
+
+The ServiceMantle service id is `quaestura` (lowercase, deliberately distinct from the fixed Loki stream label `Quaestura`). The instance id is `quaestura-{32-hex}` and is regenerated on every host start; it is not a persistent identity. The service version resolves from the entry assembly informational version. Request scopes carry `ServiceName`, `ServiceVersion`, `InstanceId`, and `CorrelationId`. The existing Serilog Console/Loki pipeline is unchanged and coexists with these scopes.
+
+### 6.3 Telemetry and sensitive headers
+
+The base instrumentation (ASP.NET Core incoming requests, outgoing `HttpClient` calls, .NET runtime metrics) is registered without any exporter, so telemetry stays in-process and no external collector endpoint is contacted. No bootstrap file is written (`quaestura.bootstrap.json` never appears), and no installation state is tracked. The safe request-header projector denies `X-Admin-AppSecret` in addition to the built-in authentication, cookie, and API-key header names; no automatic request-header logging is enabled.
+
+Reverting this wiring removes the response header and the observability registrations; there is no schema, migration, or persisted state to roll back.
+
+## 7. Dependencies
 
 | Dependency | Required | Behavior on startup failure |
 |------|----------|--------------|

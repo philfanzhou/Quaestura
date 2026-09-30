@@ -5,15 +5,18 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServiceMantle;
+using ServiceMantle.Health;
 
 namespace Quaestura.Host;
 
 /// <summary>
 /// Registers the ServiceMantle host identity, the safe request-header projector, the mandatory
-/// security response-header capability, and the base OpenTelemetry instrumentation for
-/// Quaestura. This composition performs zero disk writes and registers no telemetry exporter:
-/// the Bootstrap file store stays a lazy singleton that is never resolved, and instrumentation
-/// data stays in-process until an exporter task adds one.
+/// security response-header capability, the base OpenTelemetry instrumentation, and the fixed
+/// health probe endpoints capability for Quaestura, together with the consumer-owned readiness
+/// evidence (the thread-safe startup observation and the scoped health snapshot source). This
+/// composition performs zero disk writes and registers no telemetry exporter: the Bootstrap
+/// file store stays a lazy singleton that is never resolved, and instrumentation data stays
+/// in-process until an exporter task adds one.
 /// </summary>
 public static class ServiceMantleComposition
 {
@@ -60,7 +63,18 @@ public static class ServiceMantleComposition
             // metadata decide where the fixed baseline applies (see Program.cs and
             // AdminAuthEndpoints). The full ServiceMantle management pipeline is deliberately
             // NOT used: the existing QUAESTURA_* business error envelopes stay in charge.
-            .AddSecurityResponseHeaders();
+            .AddSecurityResponseHeaders()
+            // Fixed /health/live, /health/ready, and /health routes (mapped in Program.cs) with
+            // the default bounded snapshot read. No readiness contributors are registered: S3
+            // stays in its warning mode and is deliberately not a readiness condition.
+            .AddServiceMantleHealthEndpoints();
+
+        // The consumer-owned readiness evidence: one thread-safe in-process observation of the
+        // real database initialization outcome (recorded by the Program.cs startup gate), and
+        // one scoped snapshot source so every readiness request probes through its own
+        // scope/DbContext and never shares a context concurrently.
+        services.AddSingleton<QuaesturaStartupHealthState>();
+        services.AddScoped<IServiceHealthSnapshotSource, QuaesturaHealthSnapshotSource>();
 
         return services;
     }

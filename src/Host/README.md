@@ -13,7 +13,8 @@ This document covers environment setup, configuration requirements, and Docker c
 
 - **HTTP**: 5007
 - **Swagger UI**: http://localhost:5007/swagger (Development only)
-- **Health check**: http://localhost:5007/health
+- **Liveness probe**: http://localhost:5007/health/live (always 200 while serving; never touches the database)
+- **Readiness probe**: http://localhost:5007/health/ready (`/health` is an alias; 200 only after startup initialization succeeded and this request's read-only database probe passed, 503 otherwise)
 - **WebUI (admin frontend)**: http://localhost:5007/ (same port and process as the API; see [`frontend/docs/admin-frontend-spec.md`](../../frontend/docs/admin-frontend-spec.md))
 
 ### 1.3 Configuration
@@ -100,7 +101,8 @@ The backend serves the **WebAPI**, the **admin frontend SPA**, and the **health 
 | Path prefix | Served by |
 |---------|--------|
 | `/admin/*` | WebAPI (question/knowledge point/tag CRUD) |
-| `/health` | Health check |
+| `/health/live` | Liveness probe (anonymous, always 200 while serving, never resolves the readiness evidence) |
+| `/health/ready`, `/health` | Readiness probe (anonymous; `/health` aliases `/health/ready`; 200/503 with the ServiceMantle JSON envelope — see [`docs/overview/ApiSpec.md`](../../docs/overview/ApiSpec.md) §2.7) |
 | `/swagger` | Swagger UI (Development only) |
 | `/` and everything else | Admin frontend SPA (Vue Router history fallback) |
 

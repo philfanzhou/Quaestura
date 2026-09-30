@@ -772,6 +772,47 @@ Role callback invoked by SignaCore while it issues a token for the Quaestura app
 
 `roles` is `["admin"]` when `user_id` is listed in `AdminPortal:AdminUserIds` (case-insensitive); otherwise, including a missing body or empty `user_id`, it is `[]`.
 
+### 2.7 Health probes `/health/live`, `/health/ready`, `/health`
+
+All three routes are anonymous and served by the shared ServiceMantle health endpoints; they use the fixed JSON probe envelope below, not the business `{"success": ..., "data": ...}` format, and never carry the admin-auth security header baseline.
+
+#### GET `/health/live`
+
+Liveness. Always `200` while the endpoint executes; it never resolves the readiness evidence and never touches the database.
+
+**Response 200**:
+
+```json
+{ "status": "live" }
+```
+
+#### GET `/health/ready` and GET `/health`
+
+Readiness. `/health` is an alias of `/health/ready` (it previously returned a fixed `200 {"status":"Healthy"}` — that body is gone). Each request evaluates the current evidence fresh: the recorded outcome of the host's real startup initialization plus one read-only per-request database probe (a minimal query over the business `tag` table). Nothing is cached and nothing is written.
+
+**Response 200** (ready — initialization succeeded and the database answered this request):
+
+```json
+{
+  "status": "ready",
+  "phase": "completed",
+  "migrationStatus": "succeeded",
+  "databaseStatus": "reachable",
+  "errorCode": null
+}
+```
+
+**Response 503** (not ready — every failure mode fails closed; `phase`/`migrationStatus`/`databaseStatus` keep the observed values, `errorCode` carries one fixed safe code):
+
+| Scenario | `status` | `errorCode` |
+|------|------|------|
+| Initialization not finished or failed | `not_ready` | `null` (fields show e.g. `bootstrapConfiguration`/`notStarted`/`running`/`failed`) |
+| This request's database probe failed | `not_ready` | `health.database_unreachable` |
+| Readiness evidence missing, unresolvable, or throwing | `not_ready` | `health.probe_failed` (the three state fields are `null`) |
+| Readiness evidence exceeded the probe timeout (5 s by default) | `not_ready` | `health.probe_timeout` (the three state fields are `null`) |
+
+Failures never expose driver details, SQL, or connection strings: every database failure collapses into the fixed `health.database_unreachable` classification. Callers aborting a probe observe their own cancellation instead of a synthesized 200/503. A successful probe says nothing about business correctness, S3 availability, or whether the database stays reachable after the response.
+
 ## 3. Error code dictionary
 
 | errorCode | HTTP status | Description |

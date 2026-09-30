@@ -50,7 +50,7 @@ Quaestura needs PostgreSQL, S3-compatible object storage, and a reachable token 
 dotnet run --project src/Host
 ```
 
-The service listens on `http://localhost:5007`. Useful endpoints include `/health`, `/swagger` (Development only), the API under `/admin/*`, and the admin console at `/`. The database itself (when missing and `Database:AllowCreate` permits, which is the default) and its tables are created on first start.
+The service listens on `http://localhost:5007`. Useful endpoints include the health probes `/health/live` (liveness) and `/health/ready`/`/health` (readiness), `/swagger` (Development only), the API under `/admin/*`, and the admin console at `/`. The database itself (when missing and `Database:AllowCreate` permits, which is the default) and its tables are created on first start.
 
 For frontend work, `npm run dev` in `frontend/` starts the Vite dev server and proxies API calls to port 5007.
 

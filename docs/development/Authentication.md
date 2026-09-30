@@ -47,7 +47,7 @@ The service reads the following claims from the JWT:
 ### 2.1 Global rules
 
 - Every `/admin/*` endpoint requires authentication (`FallbackPolicy = RequireAuthenticatedUser`)
-- The `/health` endpoint does not require authentication (health check)
+- The health probes (`/health/live`, `/health/ready`, and the `/health` readiness alias) do not require authentication
 - Static files and the SPA fallback do not require authentication (frontend assets)
 - Swagger UI is only exposed in the Development environment and does not require authentication
 - `POST /admin/auth/login` and `POST /admin/auth/callback` are the only `/admin/*` endpoints marked `AllowAnonymous` (see [§6 Admin login](#6-admin-login))

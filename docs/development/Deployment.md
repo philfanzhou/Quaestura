@@ -32,13 +32,20 @@ docker build -t quaestura:latest .
 ### 1.3 Verify startup
 
 ```bash
-# Health check
-curl http://localhost:5007/health
-# Expected: Healthy
+# Liveness probe (always 200 while the process serves requests; never touches the database)
+curl http://localhost:5007/health/live
+# Expected: {"status":"live"}
+
+# Readiness probe (200 only after startup initialization succeeded and the database
+# answered this request's read-only probe; 503 otherwise)
+curl http://localhost:5007/health/ready
+# Expected: {"status":"ready","phase":"completed","migrationStatus":"succeeded","databaseStatus":"reachable","errorCode":null}
 
 # Swagger UI
 open http://localhost:5007/swagger
 ```
+
+`GET /health` is an alias of `/health/ready`. The probe contract — anonymous access, the JSON envelope, and the fail-closed 503 classifications (`health.database_unreachable`, `health.probe_failed`, `health.probe_timeout`) — is specified in [`docs/overview/ApiSpec.md` §2.7](../overview/ApiSpec.md#27-health-probes-healthlive-healthready-health). Orchestration liveness checks should use `/health/live`; readiness/load-balancer checks should use `/health/ready` or `/health`. The former fixed `200 {"status":"Healthy"}` body no longer exists.
 
 ## 2. Configuration
 
@@ -244,7 +251,7 @@ Every `edge` push leaves the old manifest behind as an untagged package version 
 
 | Port | Protocol | Purpose |
 |------|------|------|
-| 5007 (fixed inside the container) | HTTP | WebAPI entry point + Swagger UI (Development only) + health check `/health` + admin frontend SPA |
+| 5007 (fixed inside the container) | HTTP | WebAPI entry point + Swagger UI (Development only) + health probes `/health/live`, `/health/ready`, `/health` + admin frontend SPA |
 | Host-mapped port | — | Port mapped on the host to reach the container (`Port` variable in `start.sh`, `-p ${Port}:5007`) |
 
 ## 5. Logging

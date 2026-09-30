@@ -106,13 +106,17 @@ The backend serves the **WebAPI**, the **admin frontend SPA**, and the **health 
 
 The SPA fallback is implemented with ASP.NET Core `MapWhen` (see `Program.cs`) and only applies to the HTTP port; a failed `__APP_TITLE__` injection never makes the SPA unavailable (the original index.html is returned when injection fails). The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid JWT.
 
-## 4. Docker deployment
+## 4. Request correlation and telemetry
 
-### 4.1 Deploying SeaweedFS
+Every response (API, SPA, static assets, `/health`, and error envelopes) carries an `x-correlation-id` header, resolved by the ServiceMantle correlation middleware registered as the first HTTP middleware: a single, shape-valid inbound value (1–64 chars, first char alphanumeric, then alphanumeric/`.`/`_`/`-`) is echoed verbatim; anything else is replaced by a generated 32-char lowercase hex id. The same id and the host identity (`ServiceName=quaestura`, `ServiceVersion`, per-start `InstanceId`) are attached to the request log scope. The base OpenTelemetry instrumentation runs **without any exporter** (telemetry stays in-process) and no bootstrap file is written. See [`docs/development/Deployment.md`](../../docs/development/Deployment.md) §6 for the full contract.
+
+## 5. Docker deployment
+
+### 5.1 Deploying SeaweedFS
 
 Quaestura depends on an S3-compatible object store (such as SeaweedFS, S3 port 8333) for question images. Deploying it is outside the scope of this repository; connection details are injected through the `Oss:*` configuration or Consul KV.
 
-### 4.2 Build and deploy
+### 5.2 Build and deploy
 
 The Docker image is **a single image containing both the backend and the frontend** (multi-stage build; `Dockerfile` is in the repository root, and the build context is the repository root):
 
@@ -122,7 +126,7 @@ docker build -t quaestura:latest .
 
 Deployment network: `start.sh` uses the `quaestura-net` bridge network by default; when deployed on the same host as the Ruoyu.Study platform, the platform network can be used instead, and dependencies such as SeaweedFS can also be reached through standalone server addresses configured in Consul.
 
-### 4.3 Local development
+### 5.3 Local development
 
 To change the admin frontend and see the result immediately, build the frontend on its own (dev mode `npm run dev` goes through the Vite proxy 8091 → 5007):
 

@@ -152,8 +152,10 @@ public static class AdminAuthEndpoints
         var adminUserIds = adminPortalOptions.Value.AdminUserIds ?? Array.Empty<string>();
         if (adminUserIds.Contains(userId, StringComparer.OrdinalIgnoreCase))
         {
+            // The callback is invoked by the identity service on behalf of an anonymous
+            // issuance flow: the user identifier is personal data and is never logged.
             loggerFactory.CreateLogger(typeof(AdminAuthEndpoints))
-                .LogInformation("Identity callback: user {UserId} granted the admin role", userId);
+                .LogInformation("Identity callback: granted the admin role to a whitelisted user");
             return Results.Ok(new AdminAuthCallbackResponse { Roles = { RoleConstants.Admin } });
         }
 

@@ -77,6 +77,13 @@ public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        // Disable the remote Loki sink for ordinary test hosts: an empty Loki:Uri means
+        // Console-only with zero remote requests. UseSetting is used (instead of
+        // ConfigureAppConfiguration) because the logging composition reads Loki:Uri while
+        // Program.cs runs, and host settings registered this way take precedence over the
+        // appsettings sources in the minimal-hosting replay. Logging tests override this
+        // with a local fake Loki address.
+        builder.UseSetting("Loki:Uri", "");
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
             configuration.AddInMemoryCollection(new Dictionary<string, string?>

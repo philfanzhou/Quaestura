@@ -24,6 +24,7 @@ using Quaestura.Service.Endpoints;
 using Quaestura.Service.Middleware;
 using Quaestura.Service.Options;
 using Quaestura.Service.Validation;
+using ServiceMantle.Web.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,9 +33,12 @@ builder.Configuration.AddRuoyuConsulConfiguration(builder.Configuration);
 var consulOptions = RuoyuConsulOptions.Bind(builder.Configuration);
 var consulRuntimeState = RuoyuConsulRuntimeState.Instance;
 
-// ========== Serilog (Console + Grafana Loki) ==========
-builder.Configuration.AddRuoyuLokiSink();
-builder.Host.UseRuoyuSerilog("Quaestura");
+// ========== ServiceMantle logging (sanitizing Console + optional Grafana Loki) ==========
+// The single shared logging entry point: mandatory structured sanitization, Console always on,
+// and the remote Loki sink enabled only by a non-empty Loki:Uri. Structured identity comes from
+// the ServiceMantle registration below (ServiceLogContext scopes), and the fixed Loki stream
+// label stays service=Quaestura.
+builder.AddQuaesturaLogging();
 
 var config = builder.Configuration;
 
@@ -122,81 +126,91 @@ var identityTrust = app.Services
 
 var appTitle = config["APP_TITLE"] ?? "Quaestura.Admin";
 
-app.Logger.LogInformation("Quaestura Service starting");
-app.Logger.LogInformation(
-    "Identity trust: Authority={Authority}, Issuers={Issuers}, Audience={Audience}, RequireHttpsMetadata={RequireHttpsMetadata}",
-    identityTrust.Authority,
-    string.Join(",", identityTrust.GetValidIssuers()),
-    identityTrust.Audience,
-    identityTrust.RequireHttpsMetadata);
-app.Logger.LogInformation(
-    "Consul startup diagnostics: Address={Address}, Token={Token}, Source={Source}, KeyCount={KeyCount}, Prefixes={Prefixes}, LastError={LastError}",
-    $"{consulOptions.Host}:{consulOptions.Port}",
-    StartupDiagnosticsFormatter.MaskSecret(consulOptions.Token),
-    consulRuntimeState.Source,
-    consulRuntimeState.KeyCount,
-    StartupDiagnosticsFormatter.SummarizePrefixes(consulRuntimeState.LoadedPrefixes),
-    StartupDiagnosticsFormatter.SummarizeError(consulRuntimeState.LastError));
-app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
-if (!string.IsNullOrEmpty(connectionString))
+// Normal startup logs run inside the shared structured identity scope (ServiceName,
+// ServiceVersion, InstanceId) resolved from the ServiceMantle registration; the former local
+// pipeline's global enrichers (MachineName/ThreadId/WithProperty identity) are gone. HTTP
+// request logs receive the same identity fields plus CorrelationId from the correlation
+// middleware's request scope. The scope covers startup diagnostics, database initialization,
+// and the OSS connectivity check only; it ends before the server starts accepting requests.
+var logContext = app.Services.GetRequiredService<ServiceLogContext>();
+using (logContext.BeginScope(app.Logger))
 {
-    var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
-    app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
-}
-app.Logger.LogInformation(
-    "Effective configuration diagnostics: PostgreSqlHost={PostgreSqlHost}, PostgreSqlPort={PostgreSqlPort}, PostgreSqlUsername={PostgreSqlUsername}, PostgreSqlPassword={PostgreSqlPassword}, DatabaseName={DatabaseName}",
-    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Host"]),
-    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Port"]),
-    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Username"]),
-    StartupDiagnosticsFormatter.SummarizePassword(builder.Configuration["PostgreSql:Password"]),
-    StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["Database:Name"]));
-app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.InternalEndpoint, ossOptions.BucketName);
-app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
+    app.Logger.LogInformation("Quaestura Service starting");
+    app.Logger.LogInformation(
+        "Identity trust: Authority={Authority}, Issuers={Issuers}, Audience={Audience}, RequireHttpsMetadata={RequireHttpsMetadata}",
+        identityTrust.Authority,
+        string.Join(",", identityTrust.GetValidIssuers()),
+        identityTrust.Audience,
+        identityTrust.RequireHttpsMetadata);
+    app.Logger.LogInformation(
+        "Consul startup diagnostics: Address={Address}, Token={Token}, Source={Source}, KeyCount={KeyCount}, Prefixes={Prefixes}, LastError={LastError}",
+        $"{consulOptions.Host}:{consulOptions.Port}",
+        StartupDiagnosticsFormatter.MaskSecret(consulOptions.Token),
+        consulRuntimeState.Source,
+        consulRuntimeState.KeyCount,
+        StartupDiagnosticsFormatter.SummarizePrefixes(consulRuntimeState.LoadedPrefixes),
+        StartupDiagnosticsFormatter.SummarizeError(consulRuntimeState.LastError));
+    app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
+    if (!string.IsNullOrEmpty(connectionString))
+    {
+        var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
+        app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
+    }
+    app.Logger.LogInformation(
+        "Effective configuration diagnostics: PostgreSqlHost={PostgreSqlHost}, PostgreSqlPort={PostgreSqlPort}, PostgreSqlUsername={PostgreSqlUsername}, PostgreSqlPassword={PostgreSqlPassword}, DatabaseName={DatabaseName}",
+        StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Host"]),
+        StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Port"]),
+        StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Username"]),
+        StartupDiagnosticsFormatter.SummarizePassword(builder.Configuration["PostgreSql:Password"]),
+        StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["Database:Name"]));
+    app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.InternalEndpoint, ossOptions.BucketName);
+    app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 
-// Apply database initialization
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
-    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-    if (dbContext.Database.IsRelational())
+    // Apply database initialization
+    using (var scope = app.Services.CreateScope())
     {
-        // Stage 1 — target preparation: create the PostgreSQL database only when it is
-        // verifiably missing and Database:AllowCreate (default true) permits it; an existing
-        // database is never touched. Stage 2 — the strict initializer inspects the target,
-        // executes migrations only for verified empty/pending states, and verifies the final
-        // state; it owns the business tables and migration history. Both stages observe host
-        // shutdown through the same token. The non-relational Testing path skips both stages'
-        // PostgreSQL specifics and keeps using EnsureCreated.
-        var applicationStopping = app.Services
-            .GetRequiredService<IHostApplicationLifetime>()
-            .ApplicationStopping;
-        await QuaesturaDatabaseTargetPreparer.PrepareAsync(
-            builder.Configuration,
-            connectionString,
-            app.Logger,
-            applicationStopping);
-        await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
+        var dbContext = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        if (dbContext.Database.IsRelational())
+        {
+            // Stage 1 — target preparation: create the PostgreSQL database only when it is
+            // verifiably missing and Database:AllowCreate (default true) permits it; an existing
+            // database is never touched. Stage 2 — the strict initializer inspects the target,
+            // executes migrations only for verified empty/pending states, and verifies the final
+            // state; it owns the business tables and migration history. Both stages observe host
+            // shutdown through the same token. The non-relational Testing path skips both stages'
+            // PostgreSQL specifics and keeps using EnsureCreated.
+            var applicationStopping = app.Services
+                .GetRequiredService<IHostApplicationLifetime>()
+                .ApplicationStopping;
+            await QuaesturaDatabaseTargetPreparer.PrepareAsync(
+                builder.Configuration,
+                connectionString,
+                app.Logger,
+                applicationStopping);
+            await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
+        }
+        else
+        {
+            await dbContext.Database.EnsureCreatedAsync();
+        }
     }
-    else
-    {
-        await dbContext.Database.EnsureCreatedAsync();
-    }
-}
 
-// OSS connectivity check
-if (!app.Environment.IsEnvironment("Testing"))
-{
-    using var scope = app.Services.CreateScope();
-    var ossService = scope.ServiceProvider.GetRequiredService<IOssService>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    var connected = await ossService.CheckConnectivityAsync();
-    if (connected)
+    // OSS connectivity check
+    if (!app.Environment.IsEnvironment("Testing"))
     {
-        logger.LogInformation("OSS connection OK");
-    }
-    else
-    {
-        logger.LogWarning("S3 storage connection failed, check OSS configuration");
+        using var ossScope = app.Services.CreateScope();
+        var ossService = ossScope.ServiceProvider.GetRequiredService<IOssService>();
+        var logger = ossScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var connected = await ossService.CheckConnectivityAsync();
+        if (connected)
+        {
+            logger.LogInformation("OSS connection OK");
+        }
+        else
+        {
+            logger.LogWarning("S3 storage connection failed, check OSS configuration");
+        }
     }
 }
 

@@ -249,6 +249,10 @@ Every `edge` push leaves the old manifest behind as an untagged package version 
 
 ## 5. Logging
 
+Logging runs through the shared ServiceMantle pipeline (`ServiceMantle.Logging`, pinned to `0.2.1-rc.1`), registered by `AddQuaesturaLogging` in `src/Host/ServiceMantleComposition.cs`. It is the single logging entry point: a mandatory-sanitizing Serilog Console pipeline plus the opt-in Grafana Loki remote sink behind the same sanitizer. There is no second, unsanitized provider, and sanitization cannot be disabled through configuration. The former local `AddRuoyuLokiSink`/`UseRuoyuSerilog` wiring and the `Serilog` configuration section are gone.
+
+Levels keep the previous contract: `Information` by default, with `Warning` overrides for `Microsoft.AspNetCore` and `Microsoft.EntityFrameworkCore.Database.Command`. Console and Loki observe the same filtered, sanitized events.
+
 Startup log format:
 
 ```
@@ -260,6 +264,26 @@ OSS: <InternalEndpoint>/<Bucket>
 ```
 
 The database is always PostgreSQL, and the connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`. The startup log also prints the Effective configuration diagnostics, reflecting the actual `PostgreSql:*` and `Database:Name` values injected by Consul (with the password redacted).
+
+### 5.1 Structured identity
+
+Startup logs run inside an explicit `ServiceLogContext` scope; request logs receive the same identity fields plus `CorrelationId` from the correlation middleware's request scope (§6.1). Compared with the former local pipeline, the structured `ServiceName` field is now the lowercase service id `quaestura` (was `Quaestura`), `ServiceVersion` resolves from the entry assembly informational version (was a fixed `1.0.0`), and `InstanceId` is the per-host `quaestura-{32-hex}` value (was the machine name). The old global `MachineName`/`ThreadId` enrichers are removed. The Loki **stream label** `service=Quaestura` is unchanged and is deliberately distinct from the lowercase structured field.
+
+### 5.2 Grafana Loki export
+
+- `Loki:Uri` (appsettings, environment, or Consul KV) stays the only remote-sink input. An empty or whitespace value disables the remote sink entirely: Console only, zero remote requests. The sink is never re-enabled from any legacy `Serilog:WriteTo` configuration.
+- Every stream carries exactly the fixed non-secret labels `service=Quaestura` and the sink-owned `level`. Request, user, and instance values are structured log fields, never stream labels.
+- `Loki:AllowInsecureHttp` defaults to `true` as the explicit continuation of the existing trusted-network HTTP deployment contract; set it to `false` to require HTTPS. Network trust is never inferred from the host name. Plain HTTP provides no TLS confidentiality for log content.
+- Invalid endpoint shapes (relative URI, userinfo, query, fragment, or HTTP when not allowed) fail host startup with a stable error code (`loki.invalid_endpoint`) and never echo the submitted value.
+- Delivery is best effort: a bounded in-memory queue with asynchronous batch retries. A Loki outage never blocks business requests, shutdown draining is bounded (`ShutdownDrainTimeout`, 5 s by default), and delivery is neither lossless nor exactly-once; a SIGKILL loses unflushed events.
+
+### 5.3 Sanitization boundary
+
+Structured field values are sanitized before reaching either sink: fields whose names contain sensitive fragments (`password`, `secret`, `token`, `apikey`, `connectionstring`, `credential`, `authorization`, `cookie`, and friends) are replaced with `[REDACTED]`; database connection and builder objects, HTTP message/content/header objects, and certificates are never deconstructed; exceptions keep only their type structure (messages, stack traces, and `Data` are not emitted). Free-text sanitization (secret assignments, credential URIs, connection strings, bearer/JWT-like values, PEM key blocks) is best effort: never interpolate secrets into message text. `Console.WriteLine` calls made before the logging registration are not protected by the shared sink.
+
+### 5.4 Rollback
+
+Reverting the code and restoring the previous Serilog configuration section is sufficient; existing Loki data needs no migration and no database or API surface is involved.
 
 ## 6. Request correlation and telemetry
 
@@ -276,7 +300,7 @@ Every HTTP response — API success and error envelopes (400/401/403/500 include
 
 ### 6.2 Service identity and log scope
 
-The ServiceMantle service id is `quaestura` (lowercase, deliberately distinct from the fixed Loki stream label `Quaestura`). The instance id is `quaestura-{32-hex}` and is regenerated on every host start; it is not a persistent identity. The service version resolves from the entry assembly informational version. Request scopes carry `ServiceName`, `ServiceVersion`, `InstanceId`, and `CorrelationId`. The existing Serilog Console/Loki pipeline is unchanged and coexists with these scopes.
+The ServiceMantle service id is `quaestura` (lowercase, deliberately distinct from the fixed Loki stream label `Quaestura`). The instance id is `quaestura-{32-hex}` and is regenerated on every host start; it is not a persistent identity. The service version resolves from the entry assembly informational version. Request scopes carry `ServiceName`, `ServiceVersion`, `InstanceId`, and `CorrelationId`. These scopes flow through the shared ServiceMantle logging pipeline (§5): startup logs receive the identity fields from an explicit `ServiceLogContext` scope, and request logs from the correlation middleware's request scope.
 
 ### 6.3 Telemetry and sensitive headers
 

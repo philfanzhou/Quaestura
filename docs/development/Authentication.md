@@ -154,7 +154,7 @@ Request and response formats are in [ApiSpec.md §2.6](../overview/ApiSpec.md#26
 | AppSecret | Environment variable or Consul → Quaestura → SignaCore request header | Never returned in a response, never logged, never committed |
 | Access token | SignaCore → Quaestura → browser | Never logged |
 | Refresh token, user info | SignaCore → Quaestura | Discarded |
-| Callback `user_id` | SignaCore → Quaestura | Only compared against the whitelist; logged when the admin role is granted |
+| Callback `user_id` | SignaCore → Quaestura | Only compared against the whitelist; never logged (the role-grant event is logged without any user identifier) |
 
 Login failures are logged without the username.
 

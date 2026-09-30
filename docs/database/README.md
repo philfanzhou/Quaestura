@@ -8,9 +8,7 @@ The service uses PostgreSQL (Npgsql provider) as its only database. `Program.cs`
 
 In production, the PostgreSQL host/port/username/password are injected through the Consul shared configuration; the local `ConnectionStrings:Default` only keeps a password-less dev connection string.
 
-On startup, `DatabaseInitializer.InitializeAsync` applies the EF Core migrations in `src/Database/Migrations/`; no manual migration step is required.
-
-The raw SQL in `DatabaseInitializer` only recreates missing tables when there are no pending migrations.
+On startup the shared ServiceMantle migration orchestrator applies the EF Core migrations in `src/Database/Migrations/` under a real PostgreSQL session advisory lock scoped to the service id `quaestura`; no manual migration step is required. The lock covers the initial inspection, the verified legacy takeover, the migration execution, and the final inspection, so concurrently starting instances serialize: one executes, the others wait for the lock, re-read the state, and skip. The 30-second lock-acquire budget bounds only waiting for the lock, never the execution. The executor (`QuaesturaMigrationExecutor`) owns the strict inspection/execution contract described in [`docs/development/Deployment.md`](../development/Deployment.md) §2.1; the limited legacy-takeover raw SQL registers only the verified `InitialCreate` baseline.
 
 ### Table structure
 

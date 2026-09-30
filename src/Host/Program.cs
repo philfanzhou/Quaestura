@@ -24,6 +24,9 @@ using Quaestura.Service.Endpoints;
 using Quaestura.Service.Middleware;
 using Quaestura.Service.Options;
 using Quaestura.Service.Validation;
+using ServiceMantle;
+using ServiceMantle.Bootstrap;
+using ServiceMantle.Migration;
 using ServiceMantle.Web.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -195,14 +198,18 @@ using (logContext.BeginScope(app.Logger))
         {
             if (dbContext.Database.IsRelational())
             {
-                // Stage 1 — target preparation: create the PostgreSQL database only when it is
-                // verifiably missing and Database:AllowCreate (default true) permits it; an
-                // existing database is never touched. Stage 2 — the strict initializer inspects
-                // the target, executes migrations only for verified empty/pending states, and
-                // verifies the final state; it owns the business tables and migration history.
-                // Both stages observe host shutdown through the same token. The non-relational
-                // Testing path skips both stages' PostgreSQL specifics and keeps using
-                // EnsureCreated.
+                // Stage 1 — target preparation (before any lock): create the PostgreSQL database
+                // only when it is verifiably missing and Database:AllowCreate (default true)
+                // permits it; an existing database is never touched. Stage 2 — the shared migration
+                // orchestrator acquires the real PostgreSQL session advisory lock for this service
+                // id and covers the initial inspection, the verified legacy takeover, the EF Core
+                // migration execution, and the final inspection under that single authority;
+                // success is reported only after the held-lock final inspection passed, which is
+                // also the only point where the health startup gate may record success. The lock
+                // acquire budget is fixed at 30 seconds; it bounds waiting for the lock only,
+                // never the execution itself. Both stages observe host shutdown through the same
+                // token. The non-relational Testing path skips both stages' PostgreSQL specifics
+                // and keeps using EnsureCreated without constructing a real lock.
                 var applicationStopping = app.Services
                     .GetRequiredService<IHostApplicationLifetime>()
                     .ApplicationStopping;
@@ -211,7 +218,34 @@ using (logContext.BeginScope(app.Logger))
                     connectionString,
                     app.Logger,
                     applicationStopping);
-                await DatabaseInitializer.InitializeAsync(dbContext, loggerFactory, applicationStopping);
+
+                var migrationLogger = loggerFactory.CreateLogger("DatabaseMigration");
+                var orchestrator = scope.ServiceProvider
+                    .GetRequiredService<DatabaseMigrationOrchestrator>();
+                var migrationTarget = new BootstrapDatabaseConfiguration(
+                    WellKnownDatabaseProviderIds.PostgreSql,
+                    serverVersion: null,
+                    connectionString);
+                migrationLogger.LogInformation(
+                    "Orchestrating database migration under the PostgreSQL advisory lock (30 s acquire budget)");
+                var migration = await orchestrator.OrchestrateMigrationAsync(
+                    ServiceId.Parse(ServiceMantleComposition.ServiceIdValue),
+                    migrationTarget,
+                    TimeSpan.FromSeconds(30),
+                    applicationStopping);
+                if (!migration.Succeeded)
+                {
+                    migrationLogger.LogError(
+                        "Database migration orchestration failed: {ErrorCode}", migration.ErrorCode);
+                    throw new InvalidOperationException(
+                        $"Database migration orchestration failed (error {migration.ErrorCode}): " +
+                        $"{migration.ErrorMessage}. Refusing to start; the shared orchestrator released " +
+                        "the lock before this refusal.");
+                }
+
+                migrationLogger.LogInformation(
+                    "Database migration orchestration completed (executor was called: {ExecutorWasCalled})",
+                    migration.ExecutorWasCalled);
             }
             else
             {

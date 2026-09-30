@@ -72,12 +72,13 @@ public sealed class TargetPreparationTests
             (await _fixture.DatabaseExistsAsync(database)).Should().BeTrue();
             (await _fixture.GetDatabaseOwnerAsync(database)).Should().Be(_fixture.Username);
 
-            // The original initializer still owns the business tables and history.
+            // The migration orchestration after preparation owns the business tables and history.
             var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<QuaesturaDbContext>()
                 .UseNpgsql(connectionString)
                 .Options;
             using var context = new QuaesturaDbContext(options);
-            await DatabaseInitializer.InitializeAsync(context, NullLoggerFactory.Instance);
+            var migration = await MigrationOrchestration.OrchestrateAsync(context, connectionString);
+            migration.Succeeded.Should().BeTrue();
 
             var expectedTables = new[]
             {

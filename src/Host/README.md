@@ -7,7 +7,7 @@ This document covers environment setup, configuration requirements, and Docker c
 ### 1.1 Requirements
 
 1. **SeaweedFS**: the SeaweedFS service (S3 port 8333) must be started first
-2. **Database**: PostgreSQL; tables are created automatically on startup
+2. **Database**: PostgreSQL; on startup `DatabaseInitializer` applies the EF Core migrations in `src/Database/Migrations/` (the raw SQL fallback only recreates missing tables when no migration is pending)
 
 ### 1.2 WebAPI ports
 
@@ -124,7 +124,7 @@ Deployment network: `start.sh` uses the `quaestura-net` bridge network by defaul
 
 ### 4.3 Local development
 
-To change the admin frontend and see the result immediately, build the frontend on its own (dev mode `npm run dev` goes through the Vite proxy 5173 → 5007):
+To change the admin frontend and see the result immediately, build the frontend on its own (dev mode `npm run dev` goes through the Vite proxy 8091 → 5007):
 
 ```bash
 cd ../frontend

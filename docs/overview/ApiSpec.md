@@ -794,7 +794,7 @@ Role callback invoked by SignaCore while it issues a token for the Quaestura app
 
 ## 4. Examples
 
-> Every request must carry the `Authorization: Bearer <jwt-token>` header (omitted in the examples below).
+> Every request must carry the `Authorization: Bearer <jwt-token>` header (all examples below include it).
 
 ### 4.1 Create a knowledge point
 

@@ -61,7 +61,7 @@ The database connection string is built by `SharedPostgreSqlConnectionStringFact
 
 The connection string is built by `SharedPostgreSqlConnectionStringFactory.BuildOrFallback`: it first composes the production connection string from the Consul shared configuration (`PostgreSql:Host`/`Port`/`Username`/`Password` + `Database:Name`), and falls back to the local `ConnectionStrings:Default` when that is not possible. In production, the PostgreSQL host/port/username/password are overridden by the Consul `PostgreSql:*` keys and do not need to be written to `appsettings.json`.
 
-Database tables are created automatically by `DatabaseInitializer` on startup (`CREATE TABLE IF NOT EXISTS`); no manual database setup is required.
+The database schema is created automatically on startup: `DatabaseInitializer.InitializeAsync` applies the EF Core migrations in `src/Database/Migrations/`, and the raw SQL inside the initializer only recreates missing tables when there are no pending migrations; no manual database setup is required.
 
 #### Overriding through the Consul shared configuration
 
@@ -142,7 +142,7 @@ Without AppId/AppSecret the service still starts and every other endpoint works;
 
 ## 3. Docker deployment
 
-### 3.1 Image build (4-stage multi-stage build)
+### 3.1 Image build (3-stage multi-stage build)
 
 The Dockerfile is `Dockerfile` in the repository root. **A single image contains both the backend (.NET 10 ASP.NET Core) and the frontend (Vue 3 build output)**:
 

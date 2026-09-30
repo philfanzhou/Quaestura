@@ -10,10 +10,10 @@ This document describes the unit test project structure, coverage, and conventio
 
 ## Test frameworks and dependencies
 
-- xUnit 2.6.2
-- Moq 4.20.70
-- FluentAssertions 6.12.0
-- FluentValidation 11.9.0 (for testing RequestValidators)
+- xUnit 2.9.3
+- Moq 4.21.0
+- FluentAssertions 7.2.2
+- FluentValidation 12.1.1 (for testing RequestValidators)
 - Microsoft.EntityFrameworkCore.InMemory 10.0.12 (Domain-layer integration tests + endpoint integration tests)
 
 ## Domain-layer test coverage
@@ -108,7 +108,7 @@ Domain-layer tests use the EF Core InMemory database provided by `TestBase` and 
 
 ### Tag endpoint permission tests
 
-Location: `src/Tests/Endpoints/TagEndpointsAuthTests.cs`
+**These tests do not exist yet.** The table below records the expected coverage per the permission matrix in `Authentication.md` §2.2; writing the tests is tracked separately (see the "known adjacent issues" note of issue #26).
 
 | Scenario | Expected |
 |------|------|
@@ -162,5 +162,5 @@ dotnet test Tests/Quaestura.Tests.csproj --configuration Release
 - Endpoint tests live in `src/Tests/Endpoints/` (optional)
 - Static classes (such as `ImageValidationHelper`) are called directly without mocks
 - Exception assertions use `FluentAssertions`
-- Error message assertions use English (per the `30-backend-routing.md` coding conventions)
+- Error message assertions use English (see the error message conventions in `ErrorHandling.md`)
 - Do not change the code under test to suit the tests; if testability needs improving, update this document before changing the code

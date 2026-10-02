@@ -1,12 +1,12 @@
 ﻿# Quaestura API Specification
 
-This document defines the complete HTTP API of the `Quaestura` service. Every endpoint returns a structured JSON response and follows [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md).
+This document defines the complete HTTP API of the `Quaestura` service. Business endpoints return structured JSON responses; hosted-auth navigation endpoints may redirect and follows [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md).
 
 ## 1. General conventions
 
 ### 1.1 Authentication
 
-Every `/admin/*` endpoint requires JWT Bearer Token authentication (see [Authentication.md](../development/Authentication.md)):
+Every business `/admin/*` endpoint requires authentication: existing clients use JWT Bearer, and the admin SPA uses the hosted server session with CSRF on writes (see [Authentication.md](../development/Authentication.md)):
 
 ```
 Authorization: Bearer <jwt-token>
@@ -16,7 +16,7 @@ The JWT is issued by SignaCore and contains the `sub` (userId) and `role` (teach
 
 A missing or invalid JWT → 401 Unauthorized (returned by the authentication middleware).
 
-> Exception: `POST /admin/auth/login` and `POST /admin/auth/callback` are anonymous (see [§2.6](#26-admin-authentication-adminauth)).
+> Exception: `POST /admin/auth/login`, `POST /admin/auth/callback`, and `/admin/auth/oidc/*` protocol/session endpoints are anonymous (see [§2.6](#26-admin-authentication-adminauth)).
 
 ### 1.2 Response format
 
@@ -839,7 +839,7 @@ Failures never expose driver details, SQL, or connection strings: the PostgreSQL
 
 ## 4. Examples
 
-> Every request must carry the `Authorization: Bearer <jwt-token>` header (all examples below include it).
+> These non-browser examples use `Authorization: Bearer <jwt-token>`. The admin SPA uses Cookie authentication and `X-SignaCore-CSRF` on unsafe requests.
 
 ### 4.1 Create a knowledge point
 
@@ -911,3 +911,13 @@ OAuth-required top-level navigation URLs. Browser business APIs answer 401 for m
 sessions and 403 for bad CSRF. Explicit Authorization headers always retain Bearer precedence and
 existing roles/ownership, including invalid headers alongside valid cookies. Logout revokes locally
 before one upstream attempt; cancellation never restores a ticket or guarantees receipt of JSON.
+
+Only completed failures on exact GET `start`, `callback`, `signin-failed`, and `logout/return`
+HTML top-level navigations (`Accept: text/html;q>0`, `Sec-Fetch-Mode: navigate`,
+`Sec-Fetch-Dest: document`) are projected to `/login?reason=<fixed value>`. Sign-in reasons are
+`cancelled`, `provider_unavailable`, `requires_reauthentication`, `denied`, and `signin_failed`;
+logout-return failure is `logout_failed`. Input query data is never reflected. JSON, fetch/cors,
+missing navigation headers, HTML quality zero, and business API responses retain their existing
+status and body. The package handles logout-return correlation and Cookie deletion first. The SPA
+requires explicit enabling, the default CSRF header, and the fixed landing
+`/login?reason=signed_out`; see [Deployment](../development/Deployment.md#optional-hosted-login-rollout).

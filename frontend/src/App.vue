@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { clearAuth } from './services/auth'
+import { authState, isAuthenticated, logout, recheckSession } from './services/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,7 +10,10 @@ const appTitle = computed(() => window.__APP_TITLE__ || 'Quaestura Admin')
 const isPublicRoute = computed(() => route.meta.public === true)
 
 const sidebarOpen = ref(false)
-const sidebarCollapsed = ref(localStorage.getItem('qbSidebarCollapsed') === 'true')
+const sidebarCollapsed = ref(readSidebarPreference())
+function readSidebarPreference() {
+  try { return localStorage.getItem('qbSidebarCollapsed') === 'true' } catch { return false }
+}
 
 interface NavItem {
   path: string
@@ -40,16 +43,17 @@ const currentTitle = computed(() => (route.meta.title as string | undefined) ?? 
 
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
-  localStorage.setItem('qbSidebarCollapsed', String(sidebarCollapsed.value))
+  try { localStorage.setItem('qbSidebarCollapsed', String(sidebarCollapsed.value)) } catch { /* Storage is optional. */ }
 }
 
 function closeSidebarMobile() {
   sidebarOpen.value = false
 }
 
-function handleLogout() {
-  clearAuth()
-  router.push('/login')
+async function handleLogout() { await logout() }
+async function checkAgain() {
+  await recheckSession()
+  if (!isAuthenticated() && authState.phase !== 'unavailable') await router.replace('/login')
 }
 </script>
 
@@ -91,7 +95,7 @@ function handleLogout() {
         <div class="sidebar-footer-user">
           <div class="sidebar-footer-avatar">A</div>
           <div class="sidebar-footer-info">
-            <div class="sidebar-footer-name">管理员</div>
+            <div class="sidebar-footer-name">{{ authState.displayName || '管理员' }}</div>
             <div class="sidebar-footer-status">内网环境</div>
           </div>
         </div>
@@ -116,12 +120,14 @@ function handleLogout() {
           <span class="header-breadcrumb">{{ currentTitle }}</span>
         </div>
         <div class="header-right">
-          <button class="btn btn-secondary btn-small" title="退出登录" @click="handleLogout">退出登录</button>
+          <button class="btn btn-secondary btn-small" title="退出登录" :disabled="authState.busy || !isAuthenticated()" @click="handleLogout">退出登录</button>
         </div>
       </header>
 
       <main class="content-area">
-        <router-view />
+        <div v-if="authState.message" role="status">{{ authState.message }}</div>
+        <router-view v-if="isAuthenticated() && !authState.busy" />
+        <button v-else-if="!authState.busy" class="btn btn-secondary" @click="checkAgain">重新检查登录状态</button>
       </main>
     </div>
   </div>

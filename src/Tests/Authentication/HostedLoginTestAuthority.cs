@@ -110,4 +110,5 @@ internal sealed class HostedLoginTestClock : TimeProvider
     private DateTimeOffset _now = DateTimeOffset.UtcNow;
     public override DateTimeOffset GetUtcNow() => _now;
     internal void Advance(TimeSpan time) => _now += time;
+    internal void Reset() => _now = DateTimeOffset.UtcNow;
 }

@@ -5,7 +5,7 @@ import type { Question, PagedResult, SingleResult, MutationResult } from '../typ
 class QuestionAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    // Shared Cookie/CSRF client and 401 handling (see httpClient.ts).
     this.client = httpClient
   }
   async search(params: { keyword?: string; level?: number; type?: number; subject: number; grade: number; tagId?: string; page?: number; size?: number }): Promise<PagedResult<Question>> {

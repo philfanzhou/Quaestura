@@ -130,7 +130,7 @@ API-level authentication tests use `WebApplicationFactory<Program>` with a test 
 
 ## 6. Admin login
 
-SignaCore has no login page, so the admin frontend signs in through Quaestura:
+The legacy password endpoints remain temporarily for compatibility pending [#58](https://github.com/philfanzhou/Quaestura/issues/58). The current admin SPA uses hosted sign-in (§7). Legacy callers use this flow:
 
 1. The admin frontend sends the username and password to `POST /admin/auth/login`.
 2. Quaestura calls SignaCore `POST {IdentityService:Authority}/api/auth/token` with the password grant (`{"grantType":"password","username":"...","password":"..."}`), presenting its own `X-Admin-AppId` / `X-Admin-AppSecret` headers. The AppSecret never leaves the server.
@@ -163,7 +163,7 @@ Login failures are logged without the username.
 
 ### 6.3 Response security headers
 
-`POST /admin/auth/login` and `POST /admin/auth/callback` — and only these two JSON endpoints — carry a fixed security response-header baseline, applied by the endpoint-marked ServiceMantle security response-header middleware (registered through the single ServiceMantle composition point, placed after explicit routing and outside the existing exception handler):
+`POST /admin/auth/login`, `POST /admin/auth/callback`, and the hosted-auth endpoints (§7) carry a fixed security response-header baseline, applied by the endpoint-marked ServiceMantle security response-header middleware (registered through the single ServiceMantle composition point, placed after explicit routing and outside the existing exception handler):
 
 ```
 Cache-Control: no-store
@@ -189,10 +189,10 @@ Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'n
 ## 7. Optional hosted administrator login
 
 `SignaCore.Client.AspNetCore` **0.1.11-rc.5** is the official NuGet client. `AdminOidc:Enabled`
-defaults to `false`: existing password login, role callback, Bearer authorization, and the SPA
-continue to work, and every `/admin/auth/oidc/*` entry answers 503. The frontend switch and
-password-flow retirement are separate tasks [#57](https://github.com/philfanzhou/Quaestura/issues/57)
-and [#58](https://github.com/philfanzhou/Quaestura/issues/58).
+defaults to `false`: legacy password endpoints, role callback, and Bearer authorization remain
+available, and every `/admin/auth/oidc/*` entry answers 503. **The current SPA requires explicit
+enabling**; with it disabled, the login page shows a fixed unavailable message. Legacy backend
+retirement is tracked by [#58](https://github.com/philfanzhou/Quaestura/issues/58).
 
 When enabled, register a **Confidential** SignaCore application with Authorization Code and PKCE
 S256, `openid profile`, a **PerApplication** access-token audience equal to `ClientId`, and these
@@ -218,8 +218,9 @@ expiry. The cookie may remain in the browser after the server ticket expires; it
 | `AdminOidc:ClientSecret` | Required; inject through environment or Consul only |
 | `AdminOidc:RedirectUri` | Required; exact public callback URI above |
 | `AdminOidc:PostLogoutRedirectUri` | Exact registered PostLogout URI; optional if no return is wanted |
-| `AdminOidc:PostLogoutReturnPath` | Fixed local landing path; defaults to `/` (recommend `/login`) |
+| `AdminOidc:PostLogoutReturnPath` | Package default `/`; this SPA deployment must set `/login?reason=signed_out` |
 | `AdminOidc:Scope` | Defaults to `openid profile`; must include `openid` |
+| `AdminOidc:AntiforgeryHeaderName` | Keep default `X-SignaCore-CSRF` for the SPA; do not customize |
 | `AdminOidc:TicketCapacity` | Official in-memory store capacity; defaults to 10000 |
 
 Invalid or missing enabled configuration fails startup; diagnostics contain option names, never
@@ -248,6 +249,25 @@ session revoked and returns `200 {"outcome":"local_only"}`. Missing/wrong logout
 a JSON response to a disconnected client. Logout return remains the package's one-time flow and
 always navigates to the fixed local landing path. Issued downstream tokens remain valid to expiry.
 
+The SPA observes session status with same-origin fetch and shared axios Cookie requests. Only
+`authenticated=true && authorization=0` admits management pages. CSRF stays in memory; the shared
+client sends it on every unsafe method. Old storage credentials are only removed, never read.
+401 clears observations and navigates once to login with a safe management-route redirect; 403
+retains the session and never retries the request. Logout failure/lost response triggers one fresh
+session check, with a fixed failure or local-only warning; an unknown result blocks further business
+requests until explicit recheck. Generations prevent stale responses restoring old observations.
+
+Only exact GET `start`, `callback`, `signin-failed`, and `logout/return` routes, with `Accept:
+text/html` at positive quality plus `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
+project completed failures to `/login?reason=<fixed value>`. No input query is copied. AccessDenied
+maps to `cancelled`, AuthorityUnreachable to `provider_unavailable`, RequiresReauthentication to
+`requires_reauthentication`, admission rejection to `denied`, other sign-in failures to
+`signin_failed`, and failed one-time logout return to `logout_failed`. Non-HTML/API failures keep
+400/403/503 Problem Details and correlation codes; logout POST keeps its JSON contract. The return
+adapter runs after package correlation handling, retaining Cookie deletions. Security headers and
+no-store remain. The SPA also recognizes `signed_out` and `logout_local_only`; arbitrary/repeated
+reasons select only a generic fixed message and never authenticate.
+
 Tokens, ID tokens, and client secrets stay server-side; no new JavaScript token storage is added.
 OAuth-required code/state/nonce appear only on top-level authorization/callback navigation, never
 in SPA data, error bodies, logs, or spans. Incoming hosted-auth traces are filtered from the
@@ -258,7 +278,7 @@ failures. Return URLs must be local absolute paths and cannot loop into hosted-a
 
 Storage is **in-process, single-instance only**. Restarting loses pending sign-ins, sessions, and
 logout-return state; users must sign in again. There is no refresh, shared store, database migration,
-or downstream access-token revocation. Roll back by disabling `AdminOidc:Enabled` and reverting the
-image; the legacy frontend/login path remains available. Stub integration tests exercise the real
+or downstream access-token revocation. Roll back by restoring the previous (#55-stage) image and its legacy login configuration, then
+disabling `AdminOidc:Enabled`. Disabling the flag alone with the new SPA cannot restore login. Stub integration tests exercise the real
 Quaestura Host composition, but do not substitute for registered-client, real SignaCore image
 acceptance tracked by [#19](https://github.com/philfanzhou/Quaestura/issues/19).

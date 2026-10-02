@@ -1,52 +1,26 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { login } from '../services/auth'
-import { getApiErrorMessage } from '../components/ApiErrorHandler'
+import { authState, isAuthenticated, recheckSession, reasonMessage, safeReturnPath, startLogin } from '../services/auth'
 
 const route = useRoute()
 const router = useRouter()
-
 const loading = ref(false)
-const error = ref('')
-
-const form = reactive({
-  username: '',
-  password: '',
-})
-
+const checking = ref(false)
 const appTitle = computed(() => window.__APP_TITLE__ || 'Quaestura Admin')
-const canSubmit = computed(() => !!(form.username.trim() && form.password))
-
-/** Only same-site paths are honored; anything else falls back to the default page. */
-function resolveRedirect(): string {
-  const raw = route.query.redirect
-  const target = Array.isArray(raw) ? raw[0] : raw
-  if (typeof target === 'string' && target.startsWith('/') && !target.startsWith('//')) {
-    return target
-  }
-  return '/questions'
-}
-
-async function handleLogin() {
-  if (!canSubmit.value || loading.value) return
+const message = computed(() => authState.phase === 'unavailable'
+  ? '托管登录暂不可用，请联系管理员确认服务已启用。'
+  : authState.phase === 'denied' ? '此账号没有管理员权限。' : reasonMessage(route.query.reason))
+function handleLogin() {
+  if (loading.value) return
   loading.value = true
-  error.value = ''
-
-  const username = form.username.trim()
-  const credential = form.password
-  // The secret only ever lives in this scope and the form model; wipe the
-  // field right after submit. It is never written to storage or logged.
-  form.password = ''
-
-  try {
-    await login(username, credential)
-    router.push(resolveRedirect())
-  } catch (e) {
-    error.value = getApiErrorMessage(e)
-  } finally {
-    loading.value = false
-  }
+  startLogin(route.query.redirect)
+}
+async function checkAgain() {
+  checking.value = true
+  await recheckSession()
+  if (isAuthenticated()) await router.replace(safeReturnPath(route.query.redirect))
+  checking.value = false
 }
 </script>
 
@@ -57,42 +31,12 @@ async function handleLogin() {
         <div class="login-mark">Q</div>
         <div class="login-brand-title">{{ appTitle }}</div>
       </div>
-
       <h1 class="login-title">管理员登录</h1>
-
-      <form class="login-form" @submit.prevent="handleLogin">
-        <div class="form-group">
-          <label for="username">用户名</label>
-          <div class="input-wrap">
-            <input
-              id="username"
-              v-model="form.username"
-              type="text"
-              placeholder="请输入用户名"
-              autocomplete="username"
-            />
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="password">密码</label>
-          <div class="input-wrap">
-            <input
-              id="password"
-              v-model="form.password"
-              type="password"
-              placeholder="请输入密码"
-              autocomplete="current-password"
-            />
-          </div>
-        </div>
-
-        <div v-if="error" class="login-error">{{ error }}</div>
-
-        <button class="btn btn-primary login-submit" type="submit" :disabled="!canSubmit || loading">
-          {{ loading ? '登录中…' : '登录' }}
-        </button>
-      </form>
+      <div v-if="message" class="login-error" role="status">{{ message }}</div>
+      <button class="btn btn-primary login-submit" :disabled="loading || checking || authState.phase === 'unavailable' || authState.phase === 'unknown'" @click="handleLogin">
+        {{ loading ? '登录中…' : '使用 SignaCore 登录' }}
+      </button>
+      <button v-if="authState.phase === 'unavailable' || authState.phase === 'unknown'" class="btn btn-secondary login-submit" :disabled="checking" @click="checkAgain">重新检查登录状态</button>
     </div>
   </div>
 </template>

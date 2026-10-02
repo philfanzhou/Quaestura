@@ -161,7 +161,7 @@ Signing public keys are fetched automatically through OIDC discovery; no keys ne
 
 ### 2.4 Admin login (SignaCore application)
 
-Admin login (`POST /admin/auth/login`, see [Authentication.md §6](./Authentication.md#6-admin-login)) needs Quaestura registered as an application in SignaCore:
+Legacy password login (`POST /admin/auth/login`, see [Authentication.md §6](./Authentication.md#6-admin-login)) needs Quaestura registered as an application in SignaCore:
 
 1. Register a Quaestura application in SignaCore and obtain its AppId and AppSecret.
 2. Set the application's callback URL to `<Quaestura address reachable from SignaCore>/admin/auth/callback`. The address must satisfy SignaCore's callback policy (`Callback:AllowedDomains`, `Callback:RequireHttps`, `Callback:AllowPrivateAddresses`; see SignaCore `docs/development/Configuration.md`). Plain-HTTP or private-address callbacks must be enabled explicitly in SignaCore.
@@ -341,7 +341,15 @@ keys: use the existing Consul configuration source or explicit container environ
 Use one replica and HTTPS termination; the container still listens on **5007**. Keep forwarding
 and public URIs consistent with the registered HTTPS origin. Do not log raw OIDC query URLs at
 reverse proxies. Session/pending/logout-return storage is process-local and is lost on restart.
-No database or object-storage migration is needed. Rollback disables `AdminOidc:Enabled` and
-restores the previous image; users log in again. Existing Bearer API clients and the legacy admin
-frontend remain available until their separately tracked migration. This RC adds a client package;
-it does not itself perform the real SignaCore deployment acceptance.
+The current SPA has switched to hosted login. **Before publishing this same-container UI, set
+`AdminOidc__Enabled=true`, keep the default `X-SignaCore-CSRF` antiforgery header, and set
+`AdminOidc__PostLogoutReturnPath=/login?reason=signed_out`**. Register and validate both exact public
+URIs first. With the default disabled flag, this UI shows a fixed unavailable message; it cannot
+fall back to passwords. Legacy password/role endpoints remain pending their retirement task.
+
+No database or object-storage migration is needed. To roll back, restore the previous (#55-stage)
+image **and legacy login configuration**, then disable `AdminOidc:Enabled`; only disabling the flag
+with the new UI does not recover login. Process-local sessions are lost and users sign in again.
+Do not run database Down migrations or remove data. Existing Bearer API clients remain compatible.
+Playwright is a dev-only test dependency: neither Chromium nor test fixtures are in the runtime
+image. Fake-provider browser tests do not substitute for the real SignaCore deployment acceptance.

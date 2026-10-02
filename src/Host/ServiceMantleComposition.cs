@@ -15,6 +15,7 @@ using ServiceMantle.Database.PostgreSql;
 using ServiceMantle.Migration;
 using ServiceMantle.Persistence.Relational;
 using Quaestura.Database;
+using Quaestura.Host.Authentication;
 using Quaestura.Service.Middleware;
 using ServiceMantle;
 using ServiceMantle.Database.PostgreSql.Migration;
@@ -86,8 +87,8 @@ public static class ServiceMantleComposition
             // automatic header logging; projecting headers stays an explicit caller decision.
             .AddSensitiveHeaders(options =>
                 options.DeniedHeaderNames = ["X-Admin-AppSecret"])
-            // Mandatory security response-header capability for the two admin-auth JSON
-            // endpoints. It exposes no weakening options; the middleware and the per-endpoint
+            // Mandatory security response-header capability for the admin-auth endpoints,
+            // including the optional hosted-auth group. It exposes no weakening options; the middleware and the per-endpoint
             // metadata decide where the fixed baseline applies (see Program.cs and
             // AdminAuthEndpoints). The full ServiceMantle management pipeline is deliberately
             // NOT used: only the capabilities Quaestura wires itself are registered.
@@ -233,6 +234,7 @@ public static class ServiceMantleComposition
                 ? provider.GetRequiredService<EfCoreHealthSnapshotSource<QuaesturaDbContext>>()
                 : provider.GetRequiredService<TestingHealthSnapshotSource>());
 
+        AdminOidcComposition.ConfigureTelemetry(services);
         return services;
     }
 

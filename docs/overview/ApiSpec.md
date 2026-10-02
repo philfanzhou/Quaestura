@@ -886,3 +886,28 @@ curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \
     "grade": 7
   }'
 ```
+
+## Optional hosted-auth endpoints
+
+The official `SignaCore.Client.AspNetCore 0.1.11-rc.5` routes are anonymous protocol entry points
+under `/admin/auth/oidc`. All answer 503 while `AdminOidc:Enabled=false` (the default). Enabling
+requires the [registered confidential client and configuration](../development/Authentication.md#7-optional-hosted-administrator-login).
+The existing `POST /admin/auth/login` and role callback `POST /admin/auth/callback` are unchanged.
+
+| Method / path | Result when enabled |
+| --- | --- |
+| GET `/admin/auth/oidc/start?returnUrl=/questions` | 302 to hosted authorization; target must be local and cannot loop into hosted-auth routes |
+| GET `/admin/auth/oidc/callback` | Official state/issuer/code/ID-token processing, then strict admin access-token admission; success sets opaque session cookie and returns locally; failed admission 403 |
+| GET `/admin/auth/oidc/session` | `{authenticated,requiresReauthentication,displayName,authorization}`; absent/unknown/expired session needs reauthentication |
+| GET `/admin/auth/oidc/csrf` | `{token}` plus antiforgery cookie; send `X-SignaCore-CSRF` on session writes |
+| GET `/admin/auth/oidc/signin-failed` | Fixed safe 400 Problem Details |
+| POST `/admin/auth/oidc/logout` | Valid CSRF: 200 `{outcome:"prepared",logoutUrl:"..."}` or `{outcome:"local_only"}`; missing/wrong CSRF 403 with no side effect |
+| GET `/admin/auth/oidc/logout/return` | Official one-time state/correlation handling; success 302 to fixed landing path, failure fixed 400 |
+
+Consumer failures use ServiceMantle-style Problem Details with `errorCode`, `quaesturaErrorCode`,
+and `correlationId`; no raw query, upstream error, or token is returned. Every new entry has the
+fixed security-header baseline. Tokens stay server-side; code/state/nonce are allowed only in
+OAuth-required top-level navigation URLs. Browser business APIs answer 401 for missing/expired
+sessions and 403 for bad CSRF. Explicit Authorization headers always retain Bearer precedence and
+existing roles/ownership, including invalid headers alongside valid cookies. Logout revokes locally
+before one upstream attempt; cancellation never restores a ticket or guarantees receipt of JSON.

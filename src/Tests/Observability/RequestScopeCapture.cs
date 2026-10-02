@@ -15,6 +15,8 @@ namespace Quaestura.Tests.Observability;
 public sealed class RequestScopeCapture : ILoggerProvider
 {
     private readonly object _gate = new();
+    private int _activeScopes;
+    public int ActiveScopes => Volatile.Read(ref _activeScopes);
     private readonly List<IReadOnlyList<KeyValuePair<string, object?>>> _scopes = [];
 
     public IReadOnlyList<IReadOnlyList<KeyValuePair<string, object?>>> Scopes
@@ -51,7 +53,8 @@ public sealed class RequestScopeCapture : ILoggerProvider
                 owner.Add(fields);
             }
 
-            return NullScope.Instance;
+            Interlocked.Increment(ref owner._activeScopes);
+            return new CaptureScope(owner);
         }
 
         public bool IsEnabled(LogLevel logLevel) => true;
@@ -66,12 +69,12 @@ public sealed class RequestScopeCapture : ILoggerProvider
         }
     }
 
-    private sealed class NullScope : IDisposable
+    private sealed class CaptureScope(RequestScopeCapture owner) : IDisposable
     {
-        public static readonly NullScope Instance = new();
-
+        private int _disposed;
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0) Interlocked.Decrement(ref owner._activeScopes);
         }
     }
 }

@@ -83,13 +83,8 @@ builder.Services.AddMemoryCache(options =>
 builder.Services.AddRuoyuJwtBearer(config, builder.Environment);
 builder.Services.AddQuaesturaHostedLogin(config);
 
-// Admin login: SignaCore client credentials and the admin role whitelist.
-builder.Services.Configure<IdentityServiceClientOptions>(
-    config.GetSection(IdentityServiceClientOptions.SectionName));
+// The independent role issuance callback retains its original whitelist.
 builder.Services.Configure<AdminPortalOptions>(config.GetSection(AdminPortalOptions.SectionName));
-builder.Services.AddHttpClient(
-    IdentityServiceClientOptions.HttpClientName,
-    client => client.Timeout = TimeSpan.FromSeconds(30));
 
 // Add Swagger
 builder.Services.AddEndpointsApiExplorer();
@@ -154,6 +149,10 @@ var logContext = app.Services.GetRequiredService<ServiceLogContext>();
 using (logContext.BeginScope(app.Logger))
 {
     app.Logger.LogInformation("Quaestura Service starting");
+    var hostedConfiguration = app.Services.GetRequiredService<AdminOidcConfigurationStatus>();
+    if (!hostedConfiguration.IsConfigured)
+        app.Logger.LogError("Hosted sign-in is not configured. Missing keys: {MissingKeys}",
+            string.Join(", ", hostedConfiguration.MissingKeys));
     app.Logger.LogInformation(
         "Identity trust: Authority={Authority}, Issuers={Issuers}, Audience={Audience}, RequireHttpsMetadata={RequireHttpsMetadata}",
         identityTrust.Authority,
@@ -333,7 +332,7 @@ app.MapWhen(
 
 app.UseQuaesturaHostedLoginResponses();
 
-// Authentication & authorization (Bearer, or the hosted session when enabled)
+// Authentication & authorization (Bearer, or the configured hosted session)
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -344,7 +343,7 @@ app.MapQuestionKnowledgeEndpoints();
 app.MapTagEndpoints();
 app.MapQuestionTagEndpoints();
 app.MapAdminAuthEndpoints();
-app.MapQuaesturaHostedLogin(config);
+app.MapQuaesturaHostedLogin();
 
 // ========== ServiceMantle health endpoints (anonymous) ==========
 // The library maps GET /health/live (always 200 while the endpoint executes, never resolving

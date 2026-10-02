@@ -195,23 +195,11 @@ public sealed class ServiceMantleProblemDetailsTests : IClassFixture<QuaesturaAp
     }
 
     [Fact]
-    public async Task EndpointExplicitFailure_KeepsBusinessJsonShape()
+    public async Task RetiredPasswordEndpoint_ReturnsExactSafeProblem()
     {
-        // The login endpoint returns its validation failure explicitly (an endpoint-owned
-        // business JSON envelope), so the Problem Details boundary is never involved: the
-        // legacy {success, message} shape survives for explicitly returned failures.
         using var client = CreateClient();
-
         using var response = await client.PostAsync("/admin/auth/login", Json("{}"));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        var body = await response.Content.ReadAsStringAsync();
-        using var document = JsonDocument.Parse(body);
-        document.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
-        document.RootElement.GetProperty("message").GetString()
-            .Should().Be("Username and password are required.");
-        body.Should().NotContain("urn:servicemantle:error");
+        await AdminAuthEndpointsTests.AssertRetired(response);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿# Quaestura API Specification
+# Quaestura API Specification
 
 This document defines the complete HTTP API of the `Quaestura` service. Business endpoints return structured JSON responses; hosted-auth navigation endpoints may redirect and follows [`docs/development/ErrorHandling.md`](../development/ErrorHandling.md).
 
@@ -710,45 +710,36 @@ Remove associations.
 
 ### 2.6 Admin authentication `/admin/auth`
 
-Both endpoints are anonymous. See [Authentication.md §6](../development/Authentication.md#6-admin-login) for the flow and configuration. Unlike the other endpoints, failures return `{"success": false, "message": "..."}` without an `errorCode`.
-
-Both responses — success and every error branch, including the converted 500 envelope — also carry the fixed single-value security header baseline (`Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`); see [Authentication.md §6.3](../development/Authentication.md#63-response-security-headers). This baseline applies only to these two JSON endpoints: the other API routes, `/health`, the SPA, and static assets do not receive it.
+The retired password entry and the independent role callback are anonymous. See
+[Authentication §6](../development/Authentication.md#6-retired-password-login-and-role-callback).
+Both retain the single-value security response headers (`no-store`, `no-cache`, `nosniff`, `DENY`,
+`no-referrer`, and API-only CSP) described in
+[Authentication §6.1](../development/Authentication.md#61-response-security-headers).
+These headers also cover hosted entries, but do not apply to unmarked business/health/SPA routes.
 
 #### POST `/admin/auth/login`
 
-Exchanges an admin's username and password for a SignaCore access token. The username and password are forwarded to SignaCore as-is (no trimming or case folding).
-
-**Request body**:
-
-```json
-{
-  "username": "admin",
-  "password": "********"
-}
-```
-
-**Response 200**:
+**Retired, breaking change:** every request returns 410 `application/problem+json`. There is no
+password exchange or legacy success/message/token response. No body binding or reading occurs,
+including malformed JSON, forms, plain text and empty input, with or without obsolete credentials
+or an existing opaque session Cookie. The server contacts no identity endpoint and changes no
+session. A disconnected client is not guaranteed to receive the response.
 
 ```json
 {
-  "success": true,
-  "message": "Login successful",
-  "accessToken": "<jwt>",
-  "expiresIn": 3600,
-  "expiresAt": 1790000000
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.11",
+  "title": "Password sign-in is no longer available.",
+  "status": 410,
+  "errorCode": "quaestura.auth.password_login_retired",
+  "quaesturaErrorCode": "QUAESTURA_PASSWORD_LOGIN_RETIRED",
+  "correlationId": "0123456789abcdef0123456789abcdef"
 }
 ```
 
-`expiresIn` is in seconds; `expiresAt` is a Unix timestamp in seconds. No refresh token or user info is returned.
-
-**Errors**:
-
-| HTTP | message | When |
-|------|---------|------|
-| 400 | `Username and password are required.` | `username` or `password` is missing, empty, or whitespace |
-| 400 | SignaCore's message, or `Login failed.` when it is empty | SignaCore rejected the credentials (`success: false`) |
-| 502 | `Identity service unavailable.` | SignaCore returned a non-2xx status, an empty or unreadable body, or no access token; or the request failed or timed out (30 seconds) |
-| 503 | `Admin login is not configured.` | `IdentityService:AppId` or `IdentityService:AppSecret` is not configured |
+Only the mapped retired POST selects Bearer before anonymous dispatch to avoid hosted Cookie
+antiforgery parsing a form body. The existing Bearer message-received event also stops only on
+that metadata before credential validation/JWKS retrieval, including a cold cache. Other routes
+retain the original event chain and unsafe Cookie CSRF enforcement.
 
 #### POST `/admin/auth/callback`
 
@@ -887,14 +878,19 @@ curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \
   }'
 ```
 
-## Optional hosted-auth endpoints
+## Hosted-auth endpoints
 
 The official `SignaCore.Client.AspNetCore 0.1.11-rc.5` routes are anonymous protocol entry points
-under `/admin/auth/oidc`. All answer 503 while `AdminOidc:Enabled=false` (the default). Enabling
-requires the [registered confidential client and configuration](../development/Authentication.md#7-optional-hosted-administrator-login).
-The existing `POST /admin/auth/login` and role callback `POST /admin/auth/callback` are unchanged.
+under `/admin/auth/oidc`. They are always registered when Authority, ClientId, ClientSecret, and
+RedirectUri are nonblank; `AdminOidc:Enabled` is ignored. With any missing/empty/whitespace field,
+every hosted entry returns 503 safe Problem Details (`Hosted sign-in is not configured.`,
+`quaestura.oidc.not_configured`, `QUAESTURA_OIDC_NOT_CONFIGURED`, correlation id) and no Cookie.
+The Host still starts with SPA/health/Bearer and no official package state. Missing fields take
+precedence over invalid optional fields; complete invalid configuration keeps fail-fast validation.
+See [registered client/configuration](../development/Authentication.md#7-hosted-administrator-login).
+The role callback is preserved; password POST is retired as specified above.
 
-| Method / path | Result when enabled |
+| Method / path | Result when configured |
 | --- | --- |
 | GET `/admin/auth/oidc/start?returnUrl=/questions` | 302 to hosted authorization; target must be local and cannot loop into hosted-auth routes |
 | GET `/admin/auth/oidc/callback` | Official state/issuer/code/ID-token processing, then strict admin access-token admission; success sets opaque session cookie and returns locally; failed admission 403 |
@@ -920,4 +916,4 @@ logout-return failure is `logout_failed`. Input query data is never reflected. J
 missing navigation headers, HTML quality zero, and business API responses retain their existing
 status and body. The package handles logout-return correlation and Cookie deletion first. The SPA
 requires explicit enabling, the default CSRF header, and the fixed landing
-`/login?reason=signed_out`; see [Deployment](../development/Deployment.md#optional-hosted-login-rollout).
+`/login?reason=signed_out`; see [Deployment](../development/Deployment.md#hosted-login-rollout).

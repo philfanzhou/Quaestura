@@ -31,7 +31,7 @@ namespace Quaestura.Tests.Authentication;
 public sealed class HostedLoginTests
 {
     [Fact]
-    public async Task Disabled_NewRoutesAreUnavailable_WithoutPackageState()
+    public async Task MissingConfiguration_NewRoutesAreUnavailable_WithoutPackageState()
     {
         using var factory = new QuaesturaApiFactory();
         using var client = factory.CreateClient();
@@ -51,14 +51,13 @@ public sealed class HostedLoginTests
     }
 
     [Theory]
-    [InlineData("ClientSecret", "")]
     [InlineData("Authority", "https://authority.test/synthetic-invalid-config-canary")]
     [InlineData("RedirectUri", "https://consumer.test/wrong")]
     [InlineData("PostLogoutRedirectUri", "https://consumer.test/wrong")]
-    [InlineData("ClientId", "")]
     [InlineData("TicketCapacity", "synthetic-invalid-config-canary")]
-    [InlineData("Enabled", "synthetic-invalid-config-canary")]
-    public void Enabled_InvalidConfigurationFailsStartup_WithoutValue(string key, string value)
+    [InlineData("TicketCapacity", "0")]
+    [InlineData("Scope", "profile synthetic-invalid-config-canary")]
+    public void Complete_InvalidConfigurationFailsStartup_WithoutValue(string key, string value)
     {
         using var harness = new HostedLoginHarness(key, value);
         var error = Assert.ThrowsAny<Exception>(() => harness.CreateClient());
@@ -446,14 +445,14 @@ internal sealed class HostedLoginHarness : IDisposable
     private HttpClient? _client;
     internal HttpClient Client => _client ??= CreateClient();
     internal InMemoryTicketStore Store => (InMemoryTicketStore)((AdminSessionAdmission)Factory.Services.GetRequiredService<ITicketStore>()).InnerStore;
-    internal HostedLoginHarness(string? overrideKey = null, string? overrideValue = null, ConcurrentQueue<string>? spans = null, HostedLoginTestAuthority? authority = null, bool realHttp = false, string? browserWebRoot = null)
+    internal HostedLoginHarness(string? overrideKey = null, string? overrideValue = null, ConcurrentQueue<string>? spans = null, HostedLoginTestAuthority? authority = null, bool realHttp = false, string? browserWebRoot = null, IDictionary<string, string?>? overrides = null)
     {
         Authority = authority ?? new HostedLoginTestAuthority();
         Factory = new QuaesturaApiFactory().WithWebHostBuilder(builder =>
         {
             foreach (var item in new Dictionary<string, string>
             {
-                ["AdminOidc:Enabled"] = "true", ["AdminOidc:Authority"] = Authority.Origin,
+                ["AdminOidc:Authority"] = Authority.Origin,
                 ["AdminOidc:ClientId"] = HostedLoginTestAuthority.ClientId, ["AdminOidc:ClientSecret"] = HostedLoginTestAuthority.Secret,
                 ["AdminOidc:RedirectUri"] = "https://consumer.test/admin/auth/oidc/callback",
                 ["AdminOidc:PostLogoutRedirectUri"] = "https://consumer.test/admin/auth/oidc/logout/return", ["AdminOidc:PostLogoutReturnPath"] = "/login"
@@ -465,6 +464,7 @@ internal sealed class HostedLoginHarness : IDisposable
                 builder.UseSetting("AdminOidc:PostLogoutRedirectUri", "https://127.0.0.1:5009/admin/auth/oidc/logout/return");
                 builder.UseSetting("AdminOidc:PostLogoutReturnPath", "/login?reason=signed_out");
             }
+            foreach (var item in overrides ?? new Dictionary<string, string?>()) builder.UseSetting("AdminOidc:" + item.Key, item.Value!);
             if (overrideKey is not null) builder.UseSetting("AdminOidc:" + overrideKey, overrideValue!);
             builder.ConfigureServices(services =>
             {

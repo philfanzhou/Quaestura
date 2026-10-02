@@ -106,7 +106,8 @@ that this browser was previously signed in.
   latch permits at most one top-level `/admin/auth/oidc/start` navigation per document; the SPA
   never fetches authorization/callback URLs or automatically starts a login loop.
 - A session-service failure shows a fixed unavailable message and an explicit recheck button.
-  The new UI requires `AdminOidc:Enabled=true`; it does not use the legacy password API.
+  The UI requires all four nonblank hosted fields (Authority, ClientId, ClientSecret, RedirectUri).
+  `AdminOidc:Enabled` is ignored; the retired password API always returns 410.
 - `reason` selects only fixed messages for `cancelled`, `denied`, `signin_failed`,
   `provider_unavailable`, `requires_reauthentication`, `signed_out`, `logout_local_only`, and
   `logout_failed`. Unknown/repeated reasons produce a generic message and never change admission.

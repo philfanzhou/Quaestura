@@ -50,7 +50,7 @@ The service reads the following claims from the JWT:
 - The health probes (`/health/live`, `/health/ready`, and the `/health` readiness alias) do not require authentication
 - Static files and the SPA fallback do not require authentication (frontend assets)
 - Swagger UI is only exposed in the Development environment and does not require authentication
-- `POST /admin/auth/login` and `POST /admin/auth/callback` are the only `/admin/*` endpoints marked `AllowAnonymous` (see [§6 Admin login](#6-admin-login))
+- `POST /admin/auth/login`, `POST /admin/auth/callback`, and the optional hosted-auth group `/admin/auth/oidc/*` are marked `AllowAnonymous` (see [§6](#6-admin-login) and [§7](#7-optional-hosted-administrator-login))
 
 ### 2.2 Tag endpoint permission matrix
 
@@ -185,3 +185,80 @@ Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'n
 - Brute-force protection: Quaestura does not rate-limit login. SignaCore sees every attempt as coming from Quaestura, so IP-based limiting in SignaCore can affect all admins at once.
 - Callback caller authentication: anyone who can reach `/admin/auth/callback` can ask whether a user ID is whitelisted. It never returns a token and cannot grant privileges by itself.
 - Silent token renewal after expiry.
+
+## 7. Optional hosted administrator login
+
+`SignaCore.Client.AspNetCore` **0.1.11-rc.5** is the official NuGet client. `AdminOidc:Enabled`
+defaults to `false`: existing password login, role callback, Bearer authorization, and the SPA
+continue to work, and every `/admin/auth/oidc/*` entry answers 503. The frontend switch and
+password-flow retirement are separate tasks [#57](https://github.com/philfanzhou/Quaestura/issues/57)
+and [#58](https://github.com/philfanzhou/Quaestura/issues/58).
+
+When enabled, register a **Confidential** SignaCore application with Authorization Code and PKCE
+S256, `openid profile`, a **PerApplication** access-token audience equal to `ClientId`, and these
+exact URIs (replace the origin with your public HTTPS origin):
+
+- Callback: `https://quaestura.example/admin/auth/oidc/callback`
+- PostLogout: `https://quaestura.example/admin/auth/oidc/logout/return`
+
+The role issuance callback remains **POST `/admin/auth/callback`** with the existing whitelist.
+It is separate from the **GET OIDC callback**. Every hosted sign-in requires an access token with
+`admin`: before delegating to the official ticket store, Quaestura validates its RS256 signature
+using the existing Bearer Discovery/JWKS manager, issuer, `aud = ClientId`, lifetime, and unique
+nonempty `iss`/`sub` matching the ID-token identity that the package verified. Rejected admission
+answers fixed 403 without storing a ticket or setting a session cookie. The session retains only
+verified ID-token identity and access-token roles, and expires at the earlier package/access-token
+expiry. The cookie may remain in the browser after the server ticket expires; it cannot authenticate.
+
+| Key (environment variables replace `:` with `__`) | Requirement |
+| --- | --- |
+| `AdminOidc:Enabled` | Optional; `false` by default |
+| `AdminOidc:Authority` | Required when enabled; same identity authority/JWKS as the resource server |
+| `AdminOidc:ClientId` | Required; confidential application's registered id |
+| `AdminOidc:ClientSecret` | Required; inject through environment or Consul only |
+| `AdminOidc:RedirectUri` | Required; exact public callback URI above |
+| `AdminOidc:PostLogoutRedirectUri` | Exact registered PostLogout URI; optional if no return is wanted |
+| `AdminOidc:PostLogoutReturnPath` | Fixed local landing path; defaults to `/` (recommend `/login`) |
+| `AdminOidc:Scope` | Defaults to `openid profile`; must include `openid` |
+| `AdminOidc:TicketCapacity` | Official in-memory store capacity; defaults to 10000 |
+
+Invalid or missing enabled configuration fails startup; diagnostics contain option names, never
+submitted values. HTTPS is required; the official package accepts explicit loopback HTTP only in
+Development/Testing. Keep the authority/JWKS consistent with `IdentityService:Authority`.
+`IdentityService:Audience` remains the existing Bearer contract: do not silently change it to the
+hosted client's audience. Coordinate any downstream migration from Shared to PerApplication
+with its callers before updating that resource-server setting.
+
+An explicit `Authorization` header always selects the original Bearer handler, including malformed
+or empty headers, even when a valid session cookie is present. Bearer keeps the original role and
+ownership rules and needs no CSRF header. Without that header, the official session handler owns
+authentication and validates **all unsafe methods** against its browser-bound antiforgery token.
+Missing/wrong CSRF answers 403 with no business effect. Fetch the pair from
+`GET /admin/auth/oidc/csrf`, retain its cookie, and send the JSON `token` in `X-SignaCore-CSRF` on
+writes. Unauthenticated or expired browser business API requests answer 401 without redirecting.
+
+The official package owns all OIDC requests, state/nonce/PKCE, ID-token checks, ticket keys,
+capacity/expiry cleanup, logout locks, prepared-logout URI validation, and return correlation.
+`POST /admin/auth/oidc/logout` first revokes the local ticket, then makes at most one preparation
+attempt. Quaestura projects only the package's already validated 302 Location into
+`200 {"outcome":"prepared","logoutUrl":"..."}` while preserving its cookie changes; the
+browser may navigate once at top level. Upstream failure, timeout, or forged URI leaves the local
+session revoked and returns `200 {"outcome":"local_only"}`. Missing/wrong logout CSRF answers
+403 without revoking or preparing. Cancellation does not restore a revoked ticket, retry, or promise
+a JSON response to a disconnected client. Logout return remains the package's one-time flow and
+always navigates to the fixed local landing path. Issued downstream tokens remain valid to expiry.
+
+Tokens, ID tokens, and client secrets stay server-side; no new JavaScript token storage is added.
+OAuth-required code/state/nonce appear only on top-level authorization/callback navigation, never
+in SPA data, error bodies, logs, or spans. Incoming hosted-auth traces are filtered from the
+existing instrumentation; the official backchannel disables logging and tracing. Do not enable
+unsanitized reverse-proxy access logs on these URLs. Every hosted-auth endpoint receives the
+ServiceMantle single-value security-header baseline and fixed safe Problem Details for consumer
+failures. Return URLs must be local absolute paths and cannot loop into hosted-auth routes.
+
+Storage is **in-process, single-instance only**. Restarting loses pending sign-ins, sessions, and
+logout-return state; users must sign in again. There is no refresh, shared store, database migration,
+or downstream access-token revocation. Roll back by disabling `AdminOidc:Enabled` and reverting the
+image; the legacy frontend/login path remains available. Stub integration tests exercise the real
+Quaestura Host composition, but do not substitute for registered-client, real SignaCore image
+acceptance tracked by [#19](https://github.com/philfanzhou/Quaestura/issues/19).

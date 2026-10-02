@@ -328,3 +328,20 @@ Reverting this wiring removes the response header and the observability registra
 | PostgreSQL | Required | The service fails to start if the connection fails (`SharedPostgreSqlConnectionStringFactory` cannot build a connection string or the database is unreachable) |
 | SeaweedFS | Yes (image features) | Starts successfully; image features are unavailable and a Warning is logged |
 | SignaCore | Yes (JWT validation) | Starts successfully, but every endpoint that requires authentication returns 401 (OIDC discovery fails, so the signing keys cannot be fetched) |
+
+## Optional hosted-login rollout
+
+The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.11-rc.5`. Hosted login is
+**off by default**. Follow [Authentication §7](./Authentication.md#7-optional-hosted-administrator-login)
+for Confidential/Code/PKCE registration, PerApplication audience migration, exact callback and
+PostLogout URIs, and every `AdminOidc` key. Inject `AdminOidc__ClientSecret` through environment
+or Consul, never image layers or committed settings. `start.sh` does not inject these optional
+keys: use the existing Consul configuration source or explicit container environment injection.
+
+Use one replica and HTTPS termination; the container still listens on **5007**. Keep forwarding
+and public URIs consistent with the registered HTTPS origin. Do not log raw OIDC query URLs at
+reverse proxies. Session/pending/logout-return storage is process-local and is lost on restart.
+No database or object-storage migration is needed. Rollback disables `AdminOidc:Enabled` and
+restores the previous image; users log in again. Existing Bearer API clients and the legacy admin
+frontend remain available until their separately tracked migration. This RC adds a client package;
+it does not itself perform the real SignaCore deployment acceptance.

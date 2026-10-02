@@ -16,6 +16,7 @@
     <PackageReference Include="ServiceMantle.Logging" Version="0.3.0" />
     <PackageReference Include="ServiceMantle.Persistence.Relational" Version="0.3.0" />
     <PackageReference Include="ServiceMantle.Web" Version="0.3.0" />
+    <PackageReference Include="SignaCore.Client.AspNetCore" Version="0.1.11-rc.5" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
   </ItemGroup>
 

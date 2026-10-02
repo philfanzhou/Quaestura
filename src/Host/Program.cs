@@ -18,6 +18,7 @@ using Quaestura.Consul;
 using Quaestura.Database;
 using Quaestura.Domain.Services;
 using Quaestura.Host;
+using Quaestura.Host.Authentication;
 using Quaestura.Service;
 using Quaestura.Service.Endpoints;
 using Quaestura.Service.Options;
@@ -80,6 +81,7 @@ builder.Services.AddMemoryCache(options =>
 // FallbackPolicy = RequireAuthenticatedUser, so every /admin/* endpoint requires
 // a valid JWT unless explicitly decorated with [AllowAnonymous].
 builder.Services.AddRuoyuJwtBearer(config, builder.Environment);
+builder.Services.AddQuaesturaHostedLogin(config);
 
 // Admin login: SignaCore client credentials and the admin role whitelist.
 builder.Services.Configure<IdentityServiceClientOptions>(
@@ -105,7 +107,7 @@ builder.Services.AddSwaggerGen(c =>
 // Runtime instrumentation) and registers NO exporter. AddSensitiveHeaders denies
 // X-Admin-AppSecret for the safe request-header projector without adding header logging.
 // AddSecurityResponseHeaders registers the opt-in capability that applies the fixed six-header
-// baseline to the two admin-auth JSON endpoints marked in AdminAuthEndpoints (the middleware
+// baseline to the existing admin-auth JSON endpoints and hosted-auth group (the middleware
 // below is endpoint-metadata driven; the full management pipeline is deliberately not used).
 builder.Services.AddQuaesturaServiceMantle();
 
@@ -124,7 +126,7 @@ var app = builder.Build();
 // middleware sits inside this scope so problem bodies and logs share the same correlation id.
 app.UseServiceMantleCorrelationId();
 
-// ========== Security response headers for the marked admin-auth JSON endpoints ==========
+// ========== Security response headers for the marked admin-auth endpoints ==========
 // Explicit routing selects the endpoint here (WebApplication would otherwise auto-prepend it),
 // so the endpoint-metadata-driven security middleware below can see the selected endpoint. It
 // sits outside the Problem Details branch on purpose: when a marked endpoint throws and the
@@ -329,7 +331,9 @@ app.MapWhen(
         });
     });
 
-// Authentication & authorization (JWT Bearer)
+app.UseQuaesturaHostedLoginResponses();
+
+// Authentication & authorization (Bearer, or the hosted session when enabled)
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -340,6 +344,7 @@ app.MapQuestionKnowledgeEndpoints();
 app.MapTagEndpoints();
 app.MapQuestionTagEndpoints();
 app.MapAdminAuthEndpoints();
+app.MapQuaesturaHostedLogin(config);
 
 // ========== ServiceMantle health endpoints (anonymous) ==========
 // The library maps GET /health/live (always 200 while the endpoint executes, never resolving

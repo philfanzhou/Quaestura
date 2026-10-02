@@ -140,3 +140,14 @@ npm run build # Production build (outputs dist/, copied into wwwroot/ by Docker 
 ```
 
 Production health snapshots use the shared receipt and PostgreSQL classifier: unfinished/failed startup performs zero database I/O (`pendingSetup`, `health.startup_incomplete` / `health.startup_failed`); connection failures report `health.database_unreachable`; missing mapped objects or revoked SELECT report `health.schema_unavailable`; authentication-class and other unclassified failures report `health.probe_failed` with null state fields. The routes, JSON fields and five-second budget remain unchanged. Non-relational Testing still uses `EnsureCreated` and a minimal tag-query adapter. See [Deployment §2.1](../../docs/development/Deployment.md#21-database-connection) for compatibility, diagnostic changes and rollback.
+
+## Optional official hosted login
+
+`SignaCore.Client.AspNetCore 0.1.11-rc.5` is consumed from NuGet. `AdminOidc:Enabled=false` keeps
+legacy login/Bearer/SPA behavior and returns 503 for `/admin/auth/oidc/*`. Enabled deployment needs
+Confidential Code+PKCE registration, exact HTTPS callback/PostLogout URIs, a ClientId audience,
+and environment/Consul-injected secret; see [Authentication §7](../../docs/development/Authentication.md#7-optional-hosted-administrator-login).
+The Host adapts admin admission, JSON responses, route metadata and scheme selection; all protocol,
+state, ticket keys/storage/cleanup and logout gates belong to the package. Sessions are single
+instance and process-local; restart requires login. Rollback disables the switch and restores the
+image, with no database migration. The port remains 5007; frontend migration is separate.

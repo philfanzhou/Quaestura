@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -55,18 +56,24 @@ public sealed class ServiceMantleLoggingTests
             try
             {
                 using var factory = new QuaesturaApiFactory()
-                    .WithWebHostBuilder(builder => builder.UseSetting("Loki:Uri", address));
+                    .WithWebHostBuilder(builder =>
+                    {
+                        builder.UseSetting("Loki:Uri", address);
+                        builder.UseSetting("AdminPortal:AdminUserIds:0", "synthetic-logging-user");
+                    });
                 using var client = factory.CreateClient();
 
-                // A request-scoped event from the real pipeline: login without client
-                // credentials returns 503 and logs a Warning inside the correlation request
-                // scope, which must carry the shared structured identity.
-                using var loginResponse = await client.PostAsync(
-                    "/admin/auth/login",
-                    Json("{\"username\":\"admin\",\"password\":\"synthetic-not-a-secret\"}"));
-                Assert.Equal(HttpStatusCode.ServiceUnavailable, loginResponse.StatusCode);
+                // The retained role callback logs its grant without personal identifiers.
+                // Both real sinks must receive this event in the correlation/identity scope.
+                using var callbackResponse = await client.PostAsJsonAsync(
+                    "/admin/auth/callback", new { user_id = "synthetic-logging-user" });
+                Assert.Equal(HttpStatusCode.OK, callbackResponse.StatusCode);
                 var correlation = Assert.Single(
-                    loginResponse.Headers.GetValues(ObservabilityTestHelpers.CorrelationHeaderName));
+                    callbackResponse.Headers.GetValues(ObservabilityTestHelpers.CorrelationHeaderName));
+
+                using var retired = await client.PostAsync("/admin/auth/login",
+                    Json("{\"password\":\"synthetic-retired-log-canary\",\"secret\":\"synthetic-retired-log-canary\",\"token\":\"synthetic-retired-log-canary\"}"));
+                await AdminAuthEndpointsTests.AssertRetired(retired);
 
                 // Synthetic secret-bearing events through the real MEL entry point.
                 var loggerFactory = factory.Services.GetRequiredService<ILoggerFactory>();
@@ -112,18 +119,20 @@ public sealed class ServiceMantleLoggingTests
                     // Sanitization is mandatory in the shared pipeline: no synthetic secret
                     // survives into either sink, and denied fields keep the redaction marker.
                     Assert.DoesNotContain(PasswordCanary, actual);
+                    Assert.DoesNotContain("synthetic-retired-log-canary", actual);
                     Assert.DoesNotContain(ConnectionCanary, actual);
                     Assert.DoesNotContain(AppSecretCanary, actual);
                     Assert.DoesNotContain(AuthorizationCanary, actual);
                     Assert.DoesNotContain(CookieCanary, actual);
                     Assert.DoesNotContain(ExceptionCanary, actual);
+                    Assert.DoesNotContain("synthetic-logging-user", actual);
                     Assert.Contains(StructuredLogSanitizer.RedactedValue, actual);
 
                     // The request-scoped event carries the shared structured identity and the
                     // caller correlation id; the legacy MachineName/ThreadId enrichers are gone.
                     var requestLine = actual
                         .Split('\n')
-                        .First(line => line.Contains("Admin login rejected"));
+                        .First(line => line.Contains("Identity callback: granted the admin role"));
                     Assert.Contains(correlation, requestLine);
                     Assert.Contains(logContext.ServiceName, requestLine);
                     Assert.Contains(logContext.ServiceVersion, requestLine);

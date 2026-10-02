@@ -222,3 +222,17 @@ Host tests. `HostedLoginTests`/`HostedLoginPresentationTests` retain API, author
 CSRF, cookie/one-time-return, cancellation, security headers, and real-log/span canary checks.
 No protocol URLs, tokens, secrets, screenshots, traces, or production personal data are recorded in
 browser test artifacts. Real registered SignaCore image acceptance remains a separate parent task.
+
+
+`AdminAuthEndpointsTests` and `RetiredPasswordPipelineTests` prove the retired password POST returns
+fixed 410 for malformed/empty/non-JSON input and old credentials, with throw-on-read request bodies
+on the actual HTTPS Program pipeline, including valid opaque/antiforgery cookies, path case and
+trailing slash. Other unsafe Cookie writes remain 403 with zero effects. `HostedLoginConfigurationTests`
+starts real Program for each null/empty/whitespace required field, checks zero official state/schemes,
+SPA/health/Bearer availability, fixed 503 and key-only logs, ignored Enabled, and missing-field
+precedence over invalid optional settings. Complete illegal configuration retains startup failure.
+The cold-metadata test proves a supplied valid JWT on the retired route fetches no configuration,
+while a subsequent business Bearer still fetches/validates it; configured and missing modes also
+preserve the original message-received event only on other routes.
+Retained callback, Bearer, cookie/CSRF/state/logout and observability tests run normally; the only
+ordinary-solution skip remains the opt-in Playwright process launcher described above.

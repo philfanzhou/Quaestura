@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Moq;
 using Quaestura.Domain.Services;
-using Quaestura.Service.Options;
+using Microsoft.AspNetCore.Http;
 using Quaestura.Tests.Authentication;
 using ServiceMantle.Web.Logging;
 using Xunit;
@@ -206,35 +206,46 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
     [Fact]
     public async Task DownstreamCancellation_Propagates_AndHostKeepsServing()
     {
-        var hang = new HangingIdentityService();
+        var hang = new HangingBusinessRequest();
+        var capture = new RequestScopeCapture();
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["IdentityService:AppId"] = "correlation-test-app",
-                    ["IdentityService:AppSecret"] = "correlation-test-secret",
-                }));
             builder.ConfigureTestServices(services =>
-                services.AddHttpClient(IdentityServiceClientOptions.HttpClientName)
-                    .ConfigurePrimaryHttpMessageHandler(() => new HangingHandler(hang)));
-        });
+            {
+                services.AddHttpContextAccessor();
+                ObservabilityTestHelpers.CaptureRequestScopes(services, capture);
+                services.Replace(ServiceDescriptor.Scoped<ITagService>(provider =>
+                {
+                    var accessor = provider.GetRequiredService<IHttpContextAccessor>();
+                    var tags = new Mock<ITagService>();
+                    tags.Setup(service => service.ListAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>()))
+                        .Returns(async () =>
+                        {
+                            hang.Entered.TrySetResult();
+                            try { await Task.Delay(Timeout.Infinite, accessor.HttpContext!.RequestAborted); }
+                            catch (OperationCanceledException) { hang.Aborted.TrySetResult(); throw; }
+                            return (new List<Quaestura.Database.Entity.Tag>(), 0, 0);
+                        });
+                    return tags.Object;
+                }));
+            }));
         Track(factory);
         using var client = factory.CreateClient();
         using var cts = new CancellationTokenSource();
 
-        var login = client.PostAsync(
-            "/admin/auth/login",
-            Json("{\"username\":\"admin\",\"password\":\"pw\"}"),
-            cts.Token);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/admin/tags");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", QuaesturaApiFactory.CreateToken("https://identity.test.ruoyu.study"));
+        request.Headers.Add(CorrelationHeader, "cancelled-business-probe");
+        var pending = client.SendAsync(request, cts.Token);
         await hang.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         cts.Cancel();
 
         // The middleware never swallows cancellation: the aborted request surfaces as
         // OperationCanceledException on the client, and no response header is promised for an
         // aborted transport.
-        await FluentActions.Awaiting(() => login).Should().ThrowAsync<OperationCanceledException>();
+        await FluentActions.Awaiting(() => pending).Should().ThrowAsync<OperationCanceledException>();
         await hang.Aborted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await WaitForReleasedScopes(capture);
+        capture.Scopes.Should().Contain(fields => ObservabilityTestHelpers.Field(fields, "CorrelationId") == "cancelled-business-probe");
 
         // The released scope leaves the host fully functional for the next request.
         using var health = await client.GetAsync("/health");
@@ -359,21 +370,13 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
     }
 
     [Fact]
-    public async Task ExplicitValidation400_KeepsBusinessJson_WithCorrelationHeader()
+    public async Task RetiredPassword410_HasSameProblemAndHeaderCorrelation()
     {
         using var client = CreateClient();
-
+        client.DefaultRequestHeaders.Add(CorrelationHeader, ValidValue);
         using var response = await client.PostAsync("/admin/auth/login", Json("{}"));
-
-        // The login endpoint returns this failure explicitly (endpoint-owned business JSON,
-        // unchanged by the Problem Details migration); it still gains the correlation header.
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        body.RootElement.GetProperty("success").GetBoolean().Should().BeFalse();
-        body.RootElement.GetProperty("message").GetString()
-            .Should().Be("Username and password are required.");
-        response.Headers.GetValues(CorrelationHeader).Single().Should().MatchRegex(GeneratedIdPattern());
+        await AdminAuthEndpointsTests.AssertRetired(response);
+        response.Headers.GetValues(CorrelationHeader).Single().Should().Be(ValidValue);
     }
 
     [Fact]
@@ -506,29 +509,15 @@ public sealed partial class ServiceMantleCorrelationTests : IClassFixture<Quaest
         correlationId.Should().Be(response.Headers.GetValues(CorrelationHeader).Single());
     }
 
-    private sealed class HangingIdentityService
+    private sealed class HangingBusinessRequest
     {
         public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Aborted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private sealed class HangingHandler(HangingIdentityService state) : HttpMessageHandler
+    private static async Task WaitForReleasedScopes(RequestScopeCapture capture)
     {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            state.Entered.TrySetResult();
-            try
-            {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                state.Aborted.TrySetResult();
-                throw;
-            }
-
-            throw new InvalidOperationException("unreachable");
-        }
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (capture.ActiveScopes != 0) await Task.Delay(10, timeout.Token);
     }
 }

@@ -59,12 +59,6 @@ public class BatchTagQuestionRequest
     public List<string> TagIds { get; set; } = new();
 }
 
-public class AdminLoginRequest
-{
-    public string? Username { get; set; }
-    public string? Password { get; set; }
-}
-
 public class AdminAuthCallbackRequest
 {
     // SignaCore sends {"user_id": "..."}; the default camelCase binding would miss it.

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
 using ServiceMantle.Web.Http;
 using SignaCore.Client.AspNetCore;
 
@@ -110,7 +111,7 @@ internal static class AdminOidcResponseMiddleware
 {
     internal static void UseQuaesturaHostedLoginResponses(this WebApplication app)
     {
-        if (!AdminOidcComposition.IsEnabled(app.Configuration)) return;
+        if (!app.Services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured) return;
         app.Use(async (context, next) =>
         {
             var isOidc = context.Request.Path.StartsWithSegments(AdminOidcComposition.Prefix);

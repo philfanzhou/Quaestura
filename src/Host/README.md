@@ -106,7 +106,7 @@ The backend serves the **WebAPI**, the **admin frontend SPA**, and the **health 
 | `/swagger` | Swagger UI (Development only) |
 | `/` and everything else | Admin frontend SPA (Vue Router history fallback) |
 
-The SPA fallback is implemented with ASP.NET Core `MapWhen` (see `Program.cs`) and only applies to the HTTP port; a failed `__APP_TITLE__` injection never makes the SPA unavailable (the original index.html is returned when injection fails). The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid JWT.
+The SPA fallback is implemented with ASP.NET Core `MapWhen` (see `Program.cs`) and only applies to the HTTP port; a failed `__APP_TITLE__` injection never makes the SPA unavailable (the original index.html is returned when injection fails). The SPA branch is registered before `UseAuthentication()` / `UseAuthorization()`, so static assets and the SPA fallback are served without authentication; `/admin/*` still requires a valid Bearer token or hosted session.
 
 ## 4. Request correlation and telemetry
 
@@ -141,13 +141,25 @@ npm run build # Production build (outputs dist/, copied into wwwroot/ by Docker 
 
 Production health snapshots use the shared receipt and PostgreSQL classifier: unfinished/failed startup performs zero database I/O (`pendingSetup`, `health.startup_incomplete` / `health.startup_failed`); connection failures report `health.database_unreachable`; missing mapped objects or revoked SELECT report `health.schema_unavailable`; authentication-class and other unclassified failures report `health.probe_failed` with null state fields. The routes, JSON fields and five-second budget remain unchanged. Non-relational Testing still uses `EnsureCreated` and a minimal tag-query adapter. See [Deployment §2.1](../../docs/development/Deployment.md#21-database-connection) for compatibility, diagnostic changes and rollback.
 
-## Optional official hosted login
+## Official hosted login
 
-`SignaCore.Client.AspNetCore 0.1.11-rc.5` is consumed from NuGet. `AdminOidc:Enabled=false` keeps
-legacy login/Bearer/SPA behavior and returns 503 for `/admin/auth/oidc/*`. Enabled deployment needs
-Confidential Code+PKCE registration, exact HTTPS callback/PostLogout URIs, a ClientId audience,
-and environment/Consul-injected secret; see [Authentication §7](../../docs/development/Authentication.md#7-optional-hosted-administrator-login).
-The Host adapts admin admission, JSON responses, route metadata and scheme selection; all protocol,
-state, ticket keys/storage/cleanup and logout gates belong to the package. Sessions are single
-instance and process-local; restart requires login. Rollback disables the switch and restores the
-image, with no database migration. The port remains 5007; frontend migration is separate.
+`SignaCore.Client.AspNetCore 0.1.11-rc.5` is consumed from NuGet. The administrator SPA uses only
+hosted login. Nonblank `AdminOidc:Authority/ClientId/ClientSecret/RedirectUri` always register it;
+`AdminOidc:Enabled` is ignored. Missing required fields permit SPA/health/Bearer startup but make
+all hosted entries return safe 503, with one key-name-only startup Error and no package state.
+Complete invalid configuration still fails startup. Deployment needs Confidential Code+PKCE,
+exact HTTPS callback/PostLogout URIs, a ClientId audience, and an environment/Consul secret;
+see [Authentication §7](../../docs/development/Authentication.md#7-hosted-administrator-login).
+
+Password POST `/admin/auth/login` always returns safe 410 without reading/forwarding its body.
+The password DTO/client/options and old AppId/AppSecret shell mapping are removed. The independent
+`user_id` role callback and `AdminPortal:AdminUserIds` remain. Explicit Bearer retains roles,
+ownership, header precedence and no-CSRF writes; issued JWTs stay valid until original expiry.
+Only opaque session Cookies authenticate the browser, and session writes still require CSRF.
+
+The Host adapts admission, responses, route metadata and scheme selection; protocol, state,
+ticket storage/cleanup and logout gates belong to the package. Sessions are single-instance and
+process-local. Rollback restores the previous whole image and its matching configuration;
+recovering a password UI requires the pre-#57 image and its old credentials/switch strategy.
+Changing the ignored Enabled flag cannot recover login. No database migration or port change
+is involved; HTTP remains 5007. See [upgrade/rollback](../../docs/development/Authentication.md#71-upgrade-and-rollback).

@@ -1,4 +1,4 @@
-﻿# Deployment and Operation
+# Deployment and Operation
 
 ## 1. Quick start
 
@@ -159,21 +159,28 @@ The service authenticates with JWT Bearer tokens and trusts JWTs issued by Signa
 
 Signing public keys are fetched automatically through OIDC discovery; no keys need to be configured manually.
 
-### 2.4 Admin login (SignaCore application)
+### 2.4 Hosted administrator login and role callback
 
-Legacy password login (`POST /admin/auth/login`, see [Authentication.md §6](./Authentication.md#6-admin-login)) needs Quaestura registered as an application in SignaCore:
+The SPA signs in only through a Confidential SignaCore Code+PKCE application; complete setup
+before deploying the new image. Configure `AdminOidc:Authority/ClientId/ClientSecret/RedirectUri`,
+PerApplication audience, exact callback/PostLogout URIs, and `PostLogoutReturnPath=/login?reason=signed_out`
+as described in [Authentication §7](./Authentication.md#7-hosted-administrator-login).
+Inject the secret through environment or Consul, never the image or committed files.
 
-1. Register a Quaestura application in SignaCore and obtain its AppId and AppSecret.
-2. Set the application's callback URL to `<Quaestura address reachable from SignaCore>/admin/auth/callback`. The address must satisfy SignaCore's callback policy (`Callback:AllowedDomains`, `Callback:RequireHttps`, `Callback:AllowPrivateAddresses`; see SignaCore `docs/development/Configuration.md`). Plain-HTTP or private-address callbacks must be enabled explicitly in SignaCore.
-3. Inject the credentials and the admin whitelist through environment variables or Consul, never through committed files:
+The independent role callback remains `<Quaestura address reachable from SignaCore>/admin/auth/callback`.
+Its address must satisfy SignaCore's `Callback:AllowedDomains`, `Callback:RequireHttps`, and
+`Callback:AllowPrivateAddresses` policy. It receives `user_id`; the case-insensitive whitelist
+`AdminPortal:AdminUserIds` (`AdminPortal__AdminUserIds__0`, `__1`, etc.) issues the admin role.
+It is separate from GET `/admin/auth/oidc/callback` and does not return tokens.
 
-| Configuration key | Environment variable | Notes |
-|--------|---------|------|
-| `IdentityService:AppId` | `IdentityService__AppId` | `start.sh` passes `IDENTITY_APP_ID` |
-| `IdentityService:AppSecret` | `IdentityService__AppSecret` | `start.sh` passes `IDENTITY_APP_SECRET` |
-| `AdminPortal:AdminUserIds` | `AdminPortal__AdminUserIds__0`, `__1`, ... | SignaCore user IDs that receive the `admin` role; Consul KV works as well |
-
-Without AppId/AppSecret the service still starts and every other endpoint works; login returns 503. Provide TLS between browsers and Quaestura (or keep it on an internal network), because passwords pass through it.
+**Breaking changes:** `POST /admin/auth/login` always returns safe 410 without reading/forwarding
+its body; the password AppId/AppSecret consumer and `IDENTITY_APP_ID/IDENTITY_APP_SECRET` shell
+mapping are removed. `AdminOidc:Enabled` is ignored. Any missing/blank required hosted field permits
+startup but makes all hosted entries return fixed 503, without package state; one startup Error
+lists missing key names only. This classification precedes optional-value validation. Complete
+but invalid hosted settings still fail safely during startup. SPA/health and independently
+configured Bearer APIs keep their original contracts. See [Authentication §6](./Authentication.md#6-retired-password-login-and-role-callback)
+for error codes and [§7.1](./Authentication.md#71-upgrade-and-rollback) for upgrade/rollback.
 
 ## 3. Docker deployment
 
@@ -210,8 +217,6 @@ The container uses the `quaestura-net` network to reach services on the same hos
 | `CONSUL_HTTP_ADDR` | Consul address; the OSS configuration is loaded from `config/ruoyu/shared.json` |
 | `CONSUL_TOKEN` | Consul ACL token |
 | `IdentityService__Authority` | Usually not injected by `start.sh`; the stable HTTPS Authority is read from Consul |
-| `IdentityService__AppId` | `${IDENTITY_APP_ID:-}`; SignaCore AppId for admin login (see §2.4) |
-| `IdentityService__AppSecret` | `${IDENTITY_APP_SECRET:-}`; SignaCore AppSecret for admin login (see §2.4) |
 
 > The HTTP listen port is fixed at 5007 (hardcoded in `Program.cs`) and is no longer controlled by the `ASPNETCORE_URLS` environment variable. The host port mapping is controlled by the `Port` variable in `start.sh` (`-p ${Port}:5007`).
 >
@@ -329,27 +334,29 @@ Reverting this wiring removes the response header and the observability registra
 | SeaweedFS | Yes (image features) | Starts successfully; image features are unavailable and a Warning is logged |
 | SignaCore | Yes (JWT validation) | Starts successfully, but every endpoint that requires authentication returns 401 (OIDC discovery fails, so the signing keys cannot be fetched) |
 
-## Optional hosted-login rollout
+## Hosted-login rollout
 
-The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.11-rc.5`. Hosted login is
-**off by default**. Follow [Authentication §7](./Authentication.md#7-optional-hosted-administrator-login)
-for Confidential/Code/PKCE registration, PerApplication audience migration, exact callback and
-PostLogout URIs, and every `AdminOidc` key. Inject `AdminOidc__ClientSecret` through environment
-or Consul, never image layers or committed settings. `start.sh` does not inject these optional
-keys: use the existing Consul configuration source or explicit container environment injection.
+The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.11-rc.5`. Follow
+[Authentication §7](./Authentication.md#7-hosted-administrator-login) for Confidential/Code/PKCE
+registration, PerApplication audience, exact callback/PostLogout URIs, and every `AdminOidc` key.
+Nonblank Authority, ClientId, ClientSecret and RedirectUri always register the package; the old
+Enabled key has no effect. Inject `AdminOidc__ClientSecret` through environment or Consul, never
+image layers or committed settings. `start.sh` does not map hosted keys: use the existing Consul
+configuration source or explicit container environment injection. Remove obsolete password keys.
 
-Use one replica and HTTPS termination; the container still listens on **5007**. Keep forwarding
-and public URIs consistent with the registered HTTPS origin. Do not log raw OIDC query URLs at
-reverse proxies. Session/pending/logout-return storage is process-local and is lost on restart.
-The current SPA has switched to hosted login. **Before publishing this same-container UI, set
-`AdminOidc__Enabled=true`, keep the default `X-SignaCore-CSRF` antiforgery header, and set
-`AdminOidc__PostLogoutReturnPath=/login?reason=signed_out`**. Register and validate both exact public
-URIs first. With the default disabled flag, this UI shows a fixed unavailable message; it cannot
-fall back to passwords. Legacy password/role endpoints remain pending their retirement task.
+Use one replica and HTTPS termination; the container still listens on **5007**. The real request
+boundary must provide HTTPS semantics for the secure session/antiforgery cookies; keep public
+URIs and trusted forwarding consistent with the registered origin. Do not log raw OIDC query URLs
+at reverse proxies. Session/pending/logout-return storage is process-local and is lost on restart.
+Keep the default `X-SignaCore-CSRF` header and set
+`AdminOidc__PostLogoutReturnPath=/login?reason=signed_out`. Validate both public URIs and the role
+callback before deployment. Missing configuration displays fixed UI unavailability; it cannot
+fall back to passwords. Complete illegal settings refuse startup, even with old Enabled=false.
 
-No database or object-storage migration is needed. To roll back, restore the previous (#55-stage)
-image **and legacy login configuration**, then disable `AdminOidc:Enabled`; only disabling the flag
-with the new UI does not recover login. Process-local sessions are lost and users sign in again.
-Do not run database Down migrations or remove data. Existing Bearer API clients remain compatible.
-Playwright is a dev-only test dependency: neither Chromium nor test fixtures are in the runtime
-image. Fake-provider browser tests do not substitute for the real SignaCore deployment acceptance.
+No database or object-storage migration is needed. Rollback restores a previous whole image
+**and its matching configuration**; restoring the password UI requires a pre-#57 image and its
+password credentials/switch strategy. Altering the now-ignored Enabled key alone does nothing.
+Process-local sessions are lost and users sign in again; never run Down or remove legitimate data.
+Existing explicit Bearer API clients and issued tokens remain compatible through original expiry.
+Playwright is a dev-only dependency; no Chromium or test fixture ships in the runtime image.
+Fake-provider browser tests do not substitute for actual SignaCore image acceptance.

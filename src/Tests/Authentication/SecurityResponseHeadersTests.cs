@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Quaestura.Service.Options;
 using ServiceMantle;
 using Xunit;
@@ -94,73 +96,37 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
     // ---------- real host: marked auth endpoints ----------
 
     [Fact]
-    public async Task MarkedLogin_Handler500_ReturnsProblemDetails_AndGainsBaseline()
+    public async Task MarkedRoleCallback_Handler500_ReturnsSafeProblemWithBaseline()
     {
-        // Any exception that is not HttpRequestException/TaskCanceledException/OperationCanceled
-        // escapes the login handler and is converted by the ServiceMantle Problem Details
-        // boundary into a fixed 500 problem. The stub throws an InvalidOperationException
-        // without "Image" in its message, so it takes the registered unconditional
-        // quaestura.invalid_operation candidate: fixed title, no message projection. The
-        // security middleware sits outside the branch, so its OnStarting assignment still
-        // applies to that problem response.
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["IdentityService:AppId"] = "security-headers-app",
-                    ["IdentityService:AppSecret"] = "security-headers-secret",
-                }));
-            builder.ConfigureTestServices(services =>
-                services.AddHttpClient(IdentityServiceClientOptions.HttpClientName)
-                    .ConfigurePrimaryHttpMessageHandler(() => new ThrowingHandler()));
-        });
+            builder.ConfigureTestServices(services => services.Replace(
+                ServiceDescriptor.Singleton<IOptions<AdminPortalOptions>>(new ThrowingPortalOptions()))));
         using var client = factory.CreateClient();
-
-        using var response = await client.PostAsync("/admin/auth/login", LoginBody("admin", "pw"));
-
+        using var response = await client.PostAsync("/admin/auth/callback", Json("{\"user_id\":\"synthetic-probe-user\"}"));
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-        var responseBody = await response.Content.ReadAsStringAsync();
-        using var body = JsonDocument.Parse(responseBody);
+        var raw = await response.Content.ReadAsStringAsync();
+        using var body = JsonDocument.Parse(raw);
         body.RootElement.GetProperty("errorCode").GetString().Should().Be("quaestura.invalid_operation");
         body.RootElement.GetProperty("title").GetString().Should().Be("An unexpected error occurred.");
-        responseBody.Should().NotContain("security-probe stub failure");
+        raw.Should().NotContain("security-probe failure");
         SecurityResponseHeaders.AssertBaseline(response);
     }
 
     [Fact]
-    public async Task CancelledMarkedLogin_Propagates_AndHostKeepsBaseline()
+    public async Task CancelledMarkedProbe_Propagates_AndHostKeepsBaseline()
     {
         var hang = new HangingState();
-        using var factory = _baseFactory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["IdentityService:AppId"] = "security-headers-app",
-                    ["IdentityService:AppSecret"] = "security-headers-secret",
-                }));
-            builder.ConfigureTestServices(services =>
-                services.AddHttpClient(IdentityServiceClientOptions.HttpClientName)
-                    .ConfigurePrimaryHttpMessageHandler(() => new HangingHandler(hang)));
-        });
-        using var client = factory.CreateClient();
+        await using var app = await StartProbeHostAsync(hang);
+        using var client = app.GetTestClient();
         using var cts = new CancellationTokenSource();
-
-        var login = client.PostAsync("/admin/auth/login", LoginBody("admin", "pw"), cts.Token);
+        var request = client.PostAsync("/probe/cancel", null, cts.Token);
         await hang.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
         cts.Cancel();
-
-        // The security middleware never swallows cancellation: the aborted request surfaces as
-        // OperationCanceledException, and no header rewrite is promised for a started/aborted
-        // response.
-        await FluentActions.Awaiting(() => login).Should().ThrowAsync<OperationCanceledException>();
+        await FluentActions.Awaiting(() => request).Should().ThrowAsync<OperationCanceledException>();
         await hang.Aborted.Task.WaitAsync(TimeSpan.FromSeconds(10));
-
-        // The host keeps serving marked endpoints with the same baseline afterwards.
-        using var next = await client.PostAsync("/admin/auth/login", Json("{}"));
-        next.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var next = await client.PostAsync("/probe/override", null);
+        next.StatusCode.Should().Be(HttpStatusCode.OK);
         SecurityResponseHeaders.AssertBaseline(next);
     }
 
@@ -261,7 +227,7 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
         SecurityResponseHeaders.AssertNotApplied(response);
     }
 
-    private static async Task<WebApplication> StartProbeHostAsync()
+    private static async Task<WebApplication> StartProbeHostAsync(HangingState? hang = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.Logging.ClearProviders();
@@ -284,6 +250,13 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
             context.Response.Headers.ContentSecurityPolicy = "default-src *";
             return Results.Ok(new { success = true });
         }).RequireServiceMantleSecurityResponseHeaders();
+        if (hang is not null)
+            app.MapPost("/probe/cancel", async (HttpContext context) =>
+            {
+                hang.Entered.TrySetResult();
+                try { await Task.Delay(Timeout.Infinite, context.RequestAborted); }
+                catch (OperationCanceledException) { hang.Aborted.TrySetResult(); throw; }
+            }).RequireServiceMantleSecurityResponseHeaders();
         app.MapPost("/probe/throw", ThrowProbeFailure)
             .RequireServiceMantleSecurityResponseHeaders();
         app.MapGet("/probe/unmarked", () => Results.Ok(new { success = true }));
@@ -296,14 +269,9 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
 
     private static StringContent Json(string json) => new(json, Encoding.UTF8, "application/json");
 
-    private static StringContent LoginBody(string username, string password) =>
-        Json(JsonSerializer.Serialize(new { username, password }));
-
-    private sealed class ThrowingHandler : HttpMessageHandler
+    private sealed class ThrowingPortalOptions : IOptions<AdminPortalOptions>
     {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("security-probe stub failure");
+        public AdminPortalOptions Value => throw new InvalidOperationException("security-probe failure");
     }
 
     private sealed class HangingState
@@ -312,23 +280,4 @@ public sealed class SecurityResponseHeadersTests : IClassFixture<QuaesturaApiFac
         public TaskCompletionSource Aborted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
-    private sealed class HangingHandler(HangingState state) : HttpMessageHandler
-    {
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            state.Entered.TrySetResult();
-            try
-            {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                state.Aborted.TrySetResult();
-                throw;
-            }
-
-            throw new InvalidOperationException("unreachable");
-        }
-    }
 }

@@ -16,6 +16,7 @@ using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Instrumentation.Http;
 using ServiceMantle.Web.Http;
 using SignaCore.Client.AspNetCore;
+using Quaestura.Service.Endpoints;
 
 namespace Quaestura.Host.Authentication;
 
@@ -27,7 +28,26 @@ public static class AdminOidcComposition
     public static IServiceCollection AddQuaesturaHostedLogin(
         this IServiceCollection services, IConfiguration configuration)
     {
-        if (!IsEnabled(configuration)) return services;
+        // The anonymous retired POST must not validate a supplied credential or fetch JWKS,
+        // even when hosted login is unconfigured. Preserve the existing event on every other route.
+        services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+        {
+            options.Events ??= new JwtBearerEvents();
+            var previous = options.Events.OnMessageReceived;
+            options.Events.OnMessageReceived = context =>
+            {
+                if (context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<RetiredPasswordLoginMetadata>() is not null)
+                {
+                    context.NoResult();
+                    return Task.CompletedTask;
+                }
+                return previous(context);
+            };
+        });
+
+        var status = AdminOidcConfigurationStatus.Create(configuration);
+        services.AddSingleton(status);
+        if (!status.IsConfigured) return services;
 
         services.AddSignaCoreHostedLogin(options =>
         {
@@ -50,7 +70,8 @@ public static class AdminOidcComposition
             options.AuthorizationDecision = new AdminAuthorizationDecision();
             options.ResponseWriter = new AdminOidcResponseWriter();
             // Even an empty/malformed explicit header must never fall back to a cookie.
-            options.SchemeSelector = context => context.Request.Headers.ContainsKey("Authorization")
+            options.SchemeSelector = context => context.GetEndpoint()?.Metadata.GetMetadata<RetiredPasswordLoginMetadata>() is not null
+                || context.Request.Headers.ContainsKey("Authorization")
                 ? JwtBearerDefaults.AuthenticationScheme : null;
         });
         services.AddTransient<AdminOidcBackchannelMarker>();
@@ -84,11 +105,11 @@ public static class AdminOidcComposition
         return services;
     }
 
-    public static void MapQuaesturaHostedLogin(this WebApplication app, IConfiguration configuration)
+    public static void MapQuaesturaHostedLogin(this WebApplication app)
     {
         var endpoints = app.MapGroup(string.Empty).AllowAnonymous()
             .RequireServiceMantleSecurityResponseHeaders();
-        if (IsEnabled(configuration))
+        if (app.Services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured)
         {
             endpoints.MapSignaCoreHostedLogin(Prefix);
         }
@@ -96,17 +117,9 @@ public static class AdminOidcComposition
         {
             // Cover all new entries without registering any package protocol/session service.
             endpoints.Map(Prefix + "/{**path}", context => AdminOidcResponseWriter.WriteProblemAsync(
-                context, 503, "disabled", "QUAESTURA_OIDC_DISABLED",
-                "Hosted sign-in is disabled.", context.RequestAborted));
+                context, 503, "not_configured", "QUAESTURA_OIDC_NOT_CONFIGURED",
+                "Hosted sign-in is not configured.", context.RequestAborted));
         }
-    }
-
-    internal static bool IsEnabled(IConfiguration configuration)
-    {
-        var raw = configuration[SectionName + ":Enabled"];
-        if (raw is null) return false;
-        if (bool.TryParse(raw, out var enabled)) return enabled;
-        throw new InvalidOperationException("AdminOidc:Enabled must be a Boolean.");
     }
 
     internal static void ConfigureTelemetry(IServiceCollection services)
@@ -147,4 +160,14 @@ internal sealed class AdminAuthorizationDecision : ISignaCoreAuthorizationDecisi
         return ValueTask.FromResult(principal.IsInRole("admin")
             ? SignaCoreAuthorizationDecisionResult.Allowed : SignaCoreAuthorizationDecisionResult.Denied);
     }
+}
+
+// Capture one registration decision: all mappings/middleware use this immutable result.
+internal sealed record AdminOidcConfigurationStatus(string[] MissingKeys)
+{
+    internal bool IsConfigured => MissingKeys.Length == 0;
+    internal static AdminOidcConfigurationStatus Create(IConfiguration configuration) => new(
+        new[] { "Authority", "ClientId", "ClientSecret", "RedirectUri" }
+            .Where(key => string.IsNullOrWhiteSpace(configuration[AdminOidcComposition.SectionName + ":" + key]))
+            .Select(key => AdminOidcComposition.SectionName + ":" + key).ToArray());
 }

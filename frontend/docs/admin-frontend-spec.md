@@ -4,7 +4,7 @@ This document defines the tech stack, directory structure, routes, and backend A
 
 ## 1. Overview
 
-The admin frontend is a Vue 3 single-page application that runs in the **same Docker container** as the Quaestura backend (port 5007 serves both the API and the SPA). **Authentication is required**: users sign in on `/login` through `POST /admin/auth/login`, and every API request carries the issued JWT (see §5.1–§5.2).
+The admin frontend is a Vue 3 single-page application that runs in the **same Docker container** as the Quaestura backend (port 5007 serves both the API and the SPA). **Authentication is required**: users sign in on `/login` through a top-level SignaCore hosted-login navigation, and same-origin API requests use the server session Cookie and CSRF (see §5.1–§5.2).
 
 **Location**: `frontend/` (next to the backend service, following the doclibrary frontend layout).
 
@@ -47,8 +47,8 @@ frontend/     # Next to the backend service
     │   ├── KnowledgeView.vue                 # Knowledge point management (list + create/update/delete)
     │   └── TagView.vue                       # Tag management (list + create/update/delete)
     ├── services/
-    │   ├── auth.ts                           # login/getAuthToken/isAuthenticated/clearAuth
-    │   ├── httpClient.ts                     # Shared axios instance (Bearer + 401 interceptors)
+    │   ├── auth.ts                           # In-memory session/CSRF observations and hosted navigation
+    │   ├── httpClient.ts                     # Shared axios instance (Cookie + CSRF + 401 interceptors)
     │   ├── questionApi.ts
     │   ├── knowledgeApi.ts
     │   └── tagApi.ts
@@ -92,22 +92,55 @@ After removing Element Plus, `ElMessage`/`ElMessageBox` were replaced by:
 
 ### 5.1 Login flow (route guard)
 
-`router.beforeEach` enforces authentication (state table authoritative in issue #24):
+`router.beforeEach` reads `GET /admin/auth/oidc/session` once per document, sharing in-flight
+reads with concurrent guards. Only `authenticated=true && authorization=0` (Allowed) admits an
+administrator. Refreshes and deep links re-read the server. Missing, unknown, expired, and
+restarted sessions all require a new explicit sign-in; `requiresReauthentication` does not prove
+that this browser was previously signed in.
 
-- Not signed in (no token, or `expiresAt` passed — an expired token is cleared) and navigating to any non-public route → redirect to `/login?redirect=<original fullPath>`.
-- Not signed in and navigating to `/login` → allowed; `App.vue` renders public routes without the sidebar layout.
-- Signed in and navigating to `/login` → redirect to `/questions`.
-- Successful login → store token + expiry, then navigate to the `redirect` query value when it is a same-site path starting with `/` (and not `//`); otherwise navigate to `/questions`.
-- Failed login (400/502/503 or network error) → stay on the login page and show the backend message via `getApiErrorMessage`; nothing is stored.
-- Any API call answering 401 → `httpClient` clears the stored token and sends the browser to `/login` via `window.location` (no redirect while already on `/login`). 403 responses do **not** clear the token; the view shows the error and the user stays signed in.
-- The "退出登录" button in the top header clears the token and navigates to `/login`.
+- Protected routes redirect to `/login?redirect=<safe path>`; Allowed sessions on `/login` return
+  to that path. Allowed targets are `/questions`, `/knowledges`, and `/tags` (or `/` normalized to
+  `/questions`) with legal query/hash. Repeated redirect values, external addresses, controls,
+  backslashes, auth parameters, and login/auth loops fall back to `/questions`.
+- The login page preserves its layout and provides one “使用 SignaCore 登录” button. A navigation
+  latch permits at most one top-level `/admin/auth/oidc/start` navigation per document; the SPA
+  never fetches authorization/callback URLs or automatically starts a login loop.
+- A session-service failure shows a fixed unavailable message and an explicit recheck button.
+  The new UI requires `AdminOidc:Enabled=true`; it does not use the legacy password API.
+- `reason` selects only fixed messages for `cancelled`, `denied`, `signin_failed`,
+  `provider_unavailable`, `requires_reauthentication`, `signed_out`, `logout_local_only`, and
+  `logout_failed`. Unknown/repeated reasons produce a generic message and never change admission.
 
-### 5.2 Token storage and shared HTTP client
+### 5.2 Session, CSRF, and shared HTTP client
 
-- `services/auth.ts` stores the access token in `localStorage` under `quaesturaAuthToken` and its expiry (Unix seconds, SignaCore contract) under `quaesturaAuthExpiresAt`; both are written in one synchronous step and removed together by `clearAuth()`. `isAuthenticated()` requires a token **and** a not-yet-passed `expiresAt`.
-- The password only exists in the login form's in-memory state; it is wiped from the form right after submit and is never written to storage or logged.
-- `services/httpClient.ts` exports the single shared axios instance (`timeout: 20000`). Its request interceptor attaches `Authorization: Bearer <token>`; its response interceptor handles 401 as described above. All API clients (`questionApi` / `knowledgeApi` / `tagApi`) must reuse this instance — instances created per client via `axios.create()` would bypass the interceptors and send requests without the token.
-- The token is sent only via the `Authorization` header; no cookies are used. XSS protection of `localStorage` is out of scope (same trade-off as Ruoyu.Admin); deploy behind TLS or restrict the admin frontend to a trusted network.
+`services/auth.ts` retains observations and the CSRF token in JS memory only. On loading it removes
+`quaesturaAuthToken` and `quaesturaAuthExpiresAt` without reading their values; storage exceptions
+cannot block login. The `qbSidebarCollapsed` preference remains optional persistent UI state.
+
+All API services reuse `httpClient` (`timeout: 20000`, `withCredentials: true`). It does not inject
+Authorization. Every unsafe method obtains the single-flight `GET /admin/auth/oidc/csrf` pair and
+sends `X-SignaCore-CSRF`; GET/HEAD/OPTIONS/TRACE do not require it. The deployed SPA uses this
+default header, so do not customize `AdminOidc:AntiforgeryHeaderName`. CSRF acquisition failure or
+caller cancellation dispatches no business write. No 401/403/network/cancellation branch retries
+a write. A generation change makes old session/CSRF responses unusable after logout or 401.
+
+Business 401 invalidates observations and navigates at most once to
+`/login?reason=requires_reauthentication&redirect=<safe current route>`; on `/login` it stays put.
+Business/CSRF 403 remains a page error and retains the session. SignaCore tokens and secrets never
+enter SPA data or browser storage. OAuth code/state/nonce belong only to top-level protocol URLs.
+
+### 5.3 Logout
+
+The header button shares one in-flight logout and is disabled while pending. A valid-CSRF POST to
+`/admin/auth/oidc/logout` returns either `prepared` (navigate once to the package-validated
+`logoutUrl`) or `local_only` (show the fixed warning that the SignaCore session may still exist).
+Deploy with `PostLogoutReturnPath=/login?reason=signed_out`.
+
+A CSRF refusal, cancellation, or lost response does not claim successful logout or replay the
+POST. One new session read reconciles the result: Allowed retains access with a fixed failure
+message; unauthenticated shows the local-only warning; an unavailable result blocks business
+access until an explicit recheck. Server revocation is never undone by the SPA. Cross-tab immediate
+synchronization, upstream confirmation after disconnect, and token refresh are not guaranteed.
 
 ## 6. Backend API integration
 

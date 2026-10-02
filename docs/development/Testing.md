@@ -189,3 +189,36 @@ dotnet test Tests/Quaestura.Tests.csproj --configuration Release
 - Exception assertions use `FluentAssertions`
 - Error message assertions use English (see the error message conventions in `ErrorHandling.md`)
 - Do not change the code under test to suit the tests; if testability needs improving, update this document before changing the code
+
+
+## Hosted-login browser tests
+
+Run the required Release build/test and frontend build, then:
+
+```bash
+cd frontend
+npx playwright install chromium
+npm test
+```
+
+The only added dev dependency is `@playwright/test 1.63.0` (Node >=20). CI installs Chromium with
+`npx playwright install --with-deps chromium` and actually runs `npm test`. Docker builds only the
+SPA artifacts; Chromium is not required for image builds or shipped at runtime.
+
+`hosted-login.spec.ts` drives Chromium through the actual Quaestura `Program`/Kestrel (production HTTP listener on 5007 plus a test-only self-signed
+HTTPS listener on 5009), the
+official SignaCore client, a synthetic HTTP authority on 5008, and the built SPA. It covers deep
+links, callback admission, all management pages, tag CRUD, Cookie/CSRF, fixed failure presentation,
+expiry, prepared/local-only logout, and return failure. The authority uses generated test RSA keys
+and synthetic identities only. `BrowserHostFixture` is explicitly skipped in ordinary solution
+tests; Playwright enables and owns that process fixture with `QUAESTURA_BROWSER_WEBROOT`, then
+stops it in teardown. Ports 5007, 5008, 5009, and the Vite consumer-test port 8091 must be free.
+
+`session-consumer.spec.ts` uses the same source modules in a real Chromium/Vite document with
+intercepted HTTP responses to deterministically exercise single-flight guards/CSRF, unsafe methods,
+401/403, cancellation/network failures, logout reconciliation, generation races, redirect/reason
+validation, and throwing storage. These consumer tests complement, rather than replace, the real
+Host tests. `HostedLoginTests`/`HostedLoginPresentationTests` retain API, authorization, zero-effect
+CSRF, cookie/one-time-return, cancellation, security headers, and real-log/span canary checks.
+No protocol URLs, tokens, secrets, screenshots, traces, or production personal data are recorded in
+browser test artifacts. Real registered SignaCore image acceptance remains a separate parent task.

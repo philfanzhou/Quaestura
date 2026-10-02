@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { clearAuth, isAuthenticated } from '../services/auth'
+import { authState, isAuthenticated, observeSession, safeReturnPath } from '../services/auth'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -39,32 +39,19 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async to => {
   const baseTitle = window.__APP_TITLE__ || 'Quaestura Admin'
   document.title = to.meta.title ? `${to.meta.title} - ${baseTitle}` : baseTitle
-
-  const authed = isAuthenticated()
-  if (!authed) {
-    // Missing or expired token both count as signed out; drop any leftovers.
-    clearAuth()
-  }
-
+  if (authState.busy) return false
+  await observeSession()
   if (to.meta.public) {
-    // Signed-in users should not stay on the login page.
-    if (authed) {
-      next('/questions')
-      return
-    }
-    next()
-    return
+    if (isAuthenticated()) return safeReturnPath(to.query.redirect)
+    return true
   }
-
-  if (!authed) {
-    next({ path: '/login', query: { redirect: to.fullPath } })
-    return
+  if (!isAuthenticated()) {
+    return { path: '/login', query: { redirect: safeReturnPath(to.fullPath), ...(authState.phase === 'denied' ? { reason: 'denied' } : {}) } }
   }
-
-  next()
+  return true
 })
 
 export default router

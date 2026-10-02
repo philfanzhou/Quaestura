@@ -5,7 +5,7 @@ import type { Knowledge, CreateKnowledgeRequest, PagedResult, SingleResult, Muta
 class KnowledgeAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    // Shared Cookie/CSRF client and 401 handling (see httpClient.ts).
     this.client = httpClient
   }
   async list(params: { parentId?: string; grade?: number; subject?: number; name?: string; page?: number; size?: number }): Promise<PagedResult<Knowledge>> {

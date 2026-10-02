@@ -91,3 +91,7 @@ tests/integration/data/
 
 # local git credentials (never commit)
 .git-credentials
+
+# Browser test artifacts (never capture protocol URL contents).
+frontend/test-results/
+frontend/playwright-report/

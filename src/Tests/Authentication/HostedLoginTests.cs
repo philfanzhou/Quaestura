@@ -446,7 +446,7 @@ internal sealed class HostedLoginHarness : IDisposable
     private HttpClient? _client;
     internal HttpClient Client => _client ??= CreateClient();
     internal InMemoryTicketStore Store => (InMemoryTicketStore)((AdminSessionAdmission)Factory.Services.GetRequiredService<ITicketStore>()).InnerStore;
-    internal HostedLoginHarness(string? overrideKey = null, string? overrideValue = null, ConcurrentQueue<string>? spans = null, HostedLoginTestAuthority? authority = null, bool realHttp = false)
+    internal HostedLoginHarness(string? overrideKey = null, string? overrideValue = null, ConcurrentQueue<string>? spans = null, HostedLoginTestAuthority? authority = null, bool realHttp = false, string? browserWebRoot = null)
     {
         Authority = authority ?? new HostedLoginTestAuthority();
         Factory = new QuaesturaApiFactory().WithWebHostBuilder(builder =>
@@ -458,6 +458,13 @@ internal sealed class HostedLoginHarness : IDisposable
                 ["AdminOidc:RedirectUri"] = "https://consumer.test/admin/auth/oidc/callback",
                 ["AdminOidc:PostLogoutRedirectUri"] = "https://consumer.test/admin/auth/oidc/logout/return", ["AdminOidc:PostLogoutReturnPath"] = "/login"
             }) builder.UseSetting(item.Key, item.Value);
+            if (browserWebRoot is not null)
+            {
+                builder.UseWebRoot(browserWebRoot);
+                builder.UseSetting("AdminOidc:RedirectUri", "https://127.0.0.1:5009/admin/auth/oidc/callback");
+                builder.UseSetting("AdminOidc:PostLogoutRedirectUri", "https://127.0.0.1:5009/admin/auth/oidc/logout/return");
+                builder.UseSetting("AdminOidc:PostLogoutReturnPath", "/login?reason=signed_out");
+            }
             if (overrideKey is not null) builder.UseSetting("AdminOidc:" + overrideKey, overrideValue!);
             builder.ConfigureServices(services =>
             {

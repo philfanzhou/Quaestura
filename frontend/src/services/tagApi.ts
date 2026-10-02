@@ -5,7 +5,7 @@ import type { Tag, CreateTagRequest, PagedResult, SingleResult, MutationResult }
 class TagAdminApiClient {
   private client: AxiosInstance
   constructor() {
-    // Shared instance so the auth-header and 401 interceptors apply (see httpClient.ts).
+    // Shared Cookie/CSRF client and 401 handling (see httpClient.ts).
     this.client = httpClient
   }
   async list(params: { name?: string; sortBy?: string; page?: number; size?: number }): Promise<PagedResult<Tag>> {

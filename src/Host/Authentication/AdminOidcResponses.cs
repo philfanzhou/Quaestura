@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,9 +18,18 @@ namespace Quaestura.Host.Authentication;
 internal sealed class AdminOidcResponseWriter : ISignaCoreHostedLoginResponseWriter
 {
     public Task WriteSignInFailureAsync(HttpContext context, SignaCoreSignInReason reason,
-        CancellationToken cancellationToken) => WriteProblemAsync(context,
-        reason == SignaCoreSignInReason.AuthorityUnreachable ? 503 : 400,
-        "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED", "Hosted sign-in could not complete.", cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        if (TryWriteNavigationFailure(context, reason switch
+        {
+            SignaCoreSignInReason.AccessDenied => "cancelled",
+            SignaCoreSignInReason.AuthorityUnreachable => "provider_unavailable",
+            SignaCoreSignInReason.RequiresReauthentication => "requires_reauthentication",
+            _ => "signin_failed"
+        }, cancellationToken)) return Task.CompletedTask;
+        return WriteProblemAsync(context, reason == SignaCoreSignInReason.AuthorityUnreachable ? 503 : 400,
+            "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED", "Hosted sign-in could not complete.", cancellationToken);
+    }
 
     public Task WriteFailurePageAsync(HttpContext context, SignaCoreSignInReason? reason,
         CancellationToken cancellationToken) => WriteSignInFailureAsync(
@@ -32,6 +42,33 @@ internal sealed class AdminOidcResponseWriter : ISignaCoreHostedLoginResponseWri
         if (context.Response.HasStarted) return Task.CompletedTask;
         context.Response.Headers.CacheControl = "no-store";
         return context.Response.WriteAsJsonAsync(status, cancellationToken);
+    }
+
+    // Only completed package outcomes on real top-level HTML navigations are projected.
+    internal static bool IsHtmlNavigation(HttpContext context)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method)
+            || context.Request.Headers["Sec-Fetch-Mode"] != "navigate"
+            || context.Request.Headers["Sec-Fetch-Dest"] != "document") return false;
+        var path = context.Request.Path.Value?.TrimEnd('/');
+        if (path is null || !(path.Equals(AdminOidcComposition.Prefix + "/start", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcComposition.Prefix + "/callback", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcComposition.Prefix + "/signin-failed", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcComposition.Prefix + "/logout/return", StringComparison.OrdinalIgnoreCase))) return false;
+        try { return context.Request.GetTypedHeaders().Accept?.Any(value =>
+            string.Equals(value.MediaType.Value, "text/html", StringComparison.OrdinalIgnoreCase) && (value.Quality ?? 1) > 0) == true; }
+        catch (FormatException) { return false; }
+    }
+
+    internal static bool TryWriteNavigationFailure(HttpContext context, string reason, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (context.Response.HasStarted || !IsHtmlNavigation(context)) return false;
+        context.Response.ContentLength = null;
+        context.Response.ContentType = null;
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Redirect("/login?reason=" + reason);
+        return true;
     }
 
     internal static Task WriteProblemAsync(HttpContext context, int status, string code, string applicationCode,
@@ -86,18 +123,23 @@ internal static class AdminOidcResponseMiddleware
                 && values.Count == 1 && Uri.TryCreate(new Uri("https://local.invalid"), values[0], out var target)
                 && target.AbsolutePath.StartsWith(AdminOidcComposition.Prefix, StringComparison.OrdinalIgnoreCase))
             {
-                await AdminOidcResponseWriter.WriteProblemAsync(context, 400, "invalid_return_url",
-                    "QUAESTURA_OIDC_INVALID_RETURN_URL", "The return address is not allowed.", context.RequestAborted);
+                if (!AdminOidcResponseWriter.TryWriteNavigationFailure(context, "signin_failed", context.RequestAborted))
+                    await AdminOidcResponseWriter.WriteProblemAsync(context, 400, "invalid_return_url",
+                        "QUAESTURA_OIDC_INVALID_RETURN_URL", "The return address is not allowed.", context.RequestAborted);
                 return;
             }
 
-            if (!string.Equals(path, AdminOidcComposition.Prefix + "/logout", StringComparison.OrdinalIgnoreCase) || !HttpMethods.IsPost(context.Request.Method))
+            var logoutPost = string.Equals(path, AdminOidcComposition.Prefix + "/logout", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(context.Request.Method);
+            var logoutReturnNavigation = string.Equals(path, AdminOidcComposition.Prefix + "/logout/return", StringComparison.OrdinalIgnoreCase)
+                && AdminOidcResponseWriter.IsHtmlNavigation(context);
+            if (!logoutPost && !logoutReturnNavigation)
             {
                 try { await next(context); }
                 catch (AdminAdmissionDeniedException)
                 {
-                    await AdminOidcResponseWriter.WriteProblemAsync(context, 403, "admin_denied",
-                        "QUAESTURA_ADMIN_DENIED", "Administrator access denied.", context.RequestAborted);
+                    if (!AdminOidcResponseWriter.TryWriteNavigationFailure(context, "denied", context.RequestAborted))
+                        await AdminOidcResponseWriter.WriteProblemAsync(context, 403, "admin_denied",
+                            "QUAESTURA_ADMIN_DENIED", "Administrator access denied.", context.RequestAborted);
                 }
                 return;
             }
@@ -112,7 +154,14 @@ internal static class AdminOidcResponseMiddleware
             context.RequestAborted.ThrowIfCancellationRequested();
             if (context.Response.HasStarted) return;
 
-            if (context.Response.StatusCode == 302 && !string.IsNullOrEmpty(context.Response.Headers.Location))
+            if (logoutReturnNavigation)
+            {
+                if (context.Response.StatusCode == 400
+                    && AdminOidcResponseWriter.TryWriteNavigationFailure(context, "logout_failed", context.RequestAborted)) return;
+                buffer.Position = 0;
+                await buffer.CopyToAsync(context.Response.Body, context.RequestAborted);
+            }
+            else if (context.Response.StatusCode == 302 && !string.IsNullOrEmpty(context.Response.Headers.Location))
             {
                 var location = context.Response.Headers.Location.ToString();
                 context.Response.StatusCode = 200;

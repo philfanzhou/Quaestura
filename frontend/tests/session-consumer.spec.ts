@@ -181,32 +181,68 @@ for (const outcome of ['403', 'lost-revoked', 'lost-allowed', 'lost-unknown', 'c
 
 test('consumer: old session and CSRF observations cannot revive state after 401', async ({ page }) => {
   await prepare(page, anonymous)
-  await page.unroute('**/admin/auth/oidc/session')
-  await page.route('**/admin/auth/oidc/session', async route => { await new Promise(r => setTimeout(r, 150)); await route.fulfill({ json: allowed }).catch(() => {}) })
-  const phase = await page.evaluate(async () => {
+  const session = await page.evaluate(async allowed => {
     const auth = await import('/src/services/auth.ts')
-    const pending = auth.recheckSession()
-    auth.requireReauthentication()
-    await pending
-    return auth.authState.phase
-  })
-  expect(phase).toBe('anonymous')
+    const originalFetch = window.fetch
+    let dispatched!: () => void
+    const inFlight = new Promise<void>(resolve => { dispatched = resolve })
+    let finishOld!: (response: Response) => void
+    let requestSignal: AbortSignal | undefined
+    let reads = 0
+    window.fetch = async (input, init) => {
+      if (!String(input).endsWith('/session')) return originalFetch(input, init)
+      reads++
+      requestSignal = init?.signal ?? undefined
+      // Deliberately ignore abort: generation must reject a successfully delivered stale observation.
+      return new Promise<Response>(resolve => { finishOld = resolve; dispatched() })
+    }
+    try {
+      const pending = auth.recheckSession()
+      await inFlight
+      const startedBeforeInvalidation = !requestSignal!.aborted
+      auth.requireReauthentication()
+      const lateResponse = new Response(JSON.stringify(allowed), { status: 200 })
+      finishOld(lateResponse)
+      await pending
+      return { phase: auth.authState.phase, displayName: auth.authState.displayName, reads, startedBeforeInvalidation, aborted: requestSignal!.aborted, bodyRead: lateResponse.bodyUsed }
+    } finally { window.fetch = originalFetch }
+  }, allowed)
+  expect(session).toEqual({ phase: 'anonymous', displayName: '', reads: 1, startedBeforeInvalidation: true, aborted: true, bodyRead: true })
   await prepare(page)
-  await page.unroute('**/admin/auth/oidc/csrf')
-  let reads = 0
-  await page.route('**/admin/auth/oidc/csrf', async route => { reads++; await new Promise(r => setTimeout(r, 150)); await route.fulfill({ json: { token: 'synthetic-old' } }).catch(() => {}) })
-  await page.evaluate(async () => {
+  const csrf = await page.evaluate(async () => {
     const auth = await import('/src/services/auth.ts')
-    const pending = auth.getCsrfToken().catch(() => 'rejected')
-    // Keep this document in place to inspect the invalidated generation.
-    history.replaceState(null, '', '/login')
-    auth.requireReauthentication()
-    await pending
-    return auth.authState.phase
+    const originalFetch = window.fetch
+    let dispatched!: () => void
+    const inFlight = new Promise<void>(resolve => { dispatched = resolve })
+    let finishOld!: (response: Response) => void
+    let requestSignal: AbortSignal | undefined
+    let reads = 0
+    window.fetch = async (input, init) => {
+      if (!String(input).endsWith('/csrf')) return originalFetch(input, init)
+      reads++
+      if (reads !== 1) return new Response(JSON.stringify({ token: 'synthetic-fresh' }), { status: 200 })
+      requestSignal = init?.signal ?? undefined
+      return new Promise<Response>(resolve => { finishOld = resolve; dispatched() })
+    }
+    try {
+      const pending = auth.getCsrfToken().catch(() => 'rejected')
+      await inFlight
+      const startedBeforeInvalidation = !requestSignal!.aborted
+      // Keep this document in place to inspect the invalidated generation.
+      history.replaceState(null, '', '/login')
+      auth.requireReauthentication()
+      const lateResponse = new Response(JSON.stringify({ token: 'synthetic-old' }), { status: 200 })
+      finishOld(lateResponse)
+      const oldResult = await pending
+      const phaseAfterOld = auth.authState.phase
+      const rejectedWhileAnonymous = await auth.getCsrfToken().then(() => false, () => true)
+      const readsAfterOld = reads
+      await auth.recheckSession()
+      const freshResult = await auth.getCsrfToken()
+      return { oldResult, phaseAfterOld, rejectedWhileAnonymous, readsAfterOld, freshResult, reads, startedBeforeInvalidation, aborted: requestSignal!.aborted, bodyRead: lateResponse.bodyUsed }
+    } finally { window.fetch = originalFetch }
   })
-  expect(await authResult(page)).toBe('anonymous')
-  expect(reads).toBe(1)
-  expect(await page.evaluate(async () => { const auth = await import('/src/services/auth.ts'); return auth.getCsrfToken().then(() => false, () => true) })).toBe(true)
+  expect(csrf).toEqual({ oldResult: 'rejected', phaseAfterOld: 'anonymous', rejectedWhileAnonymous: true, readsAfterOld: 1, freshResult: 'synthetic-fresh', reads: 2, startedBeforeInvalidation: true, aborted: true, bodyRead: true })
 })
 
 test('consumer: unavailable and restarted/unknown session fail closed with explicit recheck only', async ({ page }) => {

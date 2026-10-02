@@ -788,7 +788,7 @@ Liveness. Always `200` while the endpoint executes; it never resolves the readin
 
 #### GET `/health/ready` and GET `/health`
 
-Readiness. `/health` is an alias of `/health/ready` (it previously returned a fixed `200 {"status":"Healthy"}` — that body is gone). Each request evaluates the current evidence fresh: the recorded outcome of the host's real startup initialization plus one read-only per-request database probe (a minimal query over the business `tag` table). Nothing is cached and nothing is written.
+Readiness. `/health` is an alias of `/health/ready` (it previously returned a fixed `200 {"status":"Healthy"}` — that body is gone). Each request evaluates the current evidence fresh: the shared process-local startup receipt plus a scoped `MappedSchema` probe: zero-row SELECTs over every EF-mapped table and column. Before startup succeeds there is zero database I/O; the non-relational Testing adapter retains its minimal tag query. Nothing is cached and nothing is written.
 
 **Response 200** (ready — initialization succeeded and the database answered this request):
 
@@ -806,12 +806,14 @@ Readiness. `/health` is an alias of `/health/ready` (it previously returned a fi
 
 | Scenario | `status` | `errorCode` |
 |------|------|------|
-| Initialization not finished or failed | `not_ready` | `null` (fields show e.g. `bootstrapConfiguration`/`notStarted`/`running`/`failed`) |
-| This request's database probe failed | `not_ready` | `health.database_unreachable` |
-| Readiness evidence missing, unresolvable, or throwing | `not_ready` | `health.probe_failed` (the three state fields are `null`) |
+| Initialization not started or running | `not_ready` | `health.startup_incomplete` (`pendingSetup`, actual receipt state, `unreachable`) |
+| Initialization failed | `not_ready` | `health.startup_failed` (`pendingSetup`, `failed`, `unreachable`) |
+| This request's connection probe failed | `not_ready` | `health.database_unreachable` |
+| Mapped table/column missing or SELECT privilege revoked | `not_ready` | `health.schema_unavailable` (`completed`, `failed`, `reachable`; process receipt unchanged) |
+| Readiness evidence missing, unresolvable, or throwing (including authentication-class failures) | `not_ready` | `health.probe_failed` (the three state fields are `null`) |
 | Readiness evidence exceeded the probe timeout (5 s by default) | `not_ready` | `health.probe_timeout` (the three state fields are `null`) |
 
-Failures never expose driver details, SQL, or connection strings: every database failure collapses into the fixed `health.database_unreachable` classification. Callers aborting a probe observe their own cancellation instead of a synthesized 200/503. A successful probe says nothing about business correctness, S3 availability, or whether the database stays reachable after the response.
+Failures never expose driver details, SQL, or connection strings: the PostgreSQL classifier distinguishes connection failure from unreadable schema; unclassified failures propagate to the endpoint's safe `health.probe_failed` response. These 0.3.0 classifications and the `pendingSetup` pre-startup phase replace the former tag-only evidence and single database-failure classification. Callers aborting a probe observe their own cancellation instead of a synthesized 200/503. A successful probe proves mapped tables and columns are readable, not constraints, indexes, business correctness, S3 availability, or whether the database stays reachable after the response.
 
 ## 3. Error code dictionary
 

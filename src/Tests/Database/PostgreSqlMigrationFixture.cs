@@ -35,6 +35,10 @@ public sealed class PostgreSqlMigrationFixture : IAsyncLifetime
 
     public Task InitializeAsync() => _container.StartAsync();
 
+    internal Task StopServerAsync() => _container.StopAsync();
+
+    internal Task RestartServerAsync() => _container.StartAsync();
+
     public async Task DisposeAsync() => await _container.DisposeAsync();
 
     /// <summary>

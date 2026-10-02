@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
 using Xunit;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceMantle.Migration;
 
 namespace Quaestura.Tests.Database;
 
@@ -70,10 +74,7 @@ public sealed class HostStartupTargetPreparationTests
             // chain for the safe error code.
             var exception = Record.Exception(() => factory.CreateClient());
             exception.Should().NotBeNull();
-            var preparationException = FindPreparationException(exception!);
-            preparationException.Should().NotBeNull();
-            preparationException!.ErrorCode
-                .Should().Be("database_target_preparation.creation_not_allowed");
+            exception!.ToString().Should().Contain("database_target_preparation.creation_not_allowed");
 
             (await _fixture.DatabaseExistsAsync(database)).Should().BeFalse();
         }
@@ -92,10 +93,94 @@ public sealed class HostStartupTargetPreparationTests
         var exception = Record.Exception(() => factory.CreateClient());
 
         exception.Should().NotBeNull();
-        var preparationException = FindPreparationException(exception!);
-        preparationException.Should().NotBeNull();
-        preparationException!.ErrorCode
-            .Should().Be("database_target_preparation.invalid_configuration");
+        exception!.ToString().Should().Contain("database_target_preparation.invalid_target");
+    }
+
+    [Fact]
+    public async Task Host_ExistingDatabaseWithNoCreatedbRole_StartsSuccessfully()
+    {
+        var role = _fixture.NewRoleName("host_existing");
+        await _fixture.CreateRoleAsync(role, _fixture.PasswordCanary, createDb: false);
+        var database = await _fixture.CreateDatabaseAsync(owner: role);
+        try
+        {
+            using var factory = CreateHostFactory(database, ("PostgreSql:Username", role));
+            using var client = factory.CreateClient();
+            using var health = await client.GetAsync("/health/ready");
+            health.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await _fixture.GetDatabaseOwnerAsync(database)).Should().Be(role);
+        }
+        finally { await _fixture.DropDatabaseIfExistsAsync(database); }
+    }
+
+    [Theory]
+    [InlineData("unreachable", "database_target_preparation.connection_failed")]
+    [InlineData("authentication", "database_target_preparation.authentication_failed")]
+    [InlineData("permission", "database_target_preparation.permission_denied")]
+    [InlineData("identity", "database_target_preparation.permission_denied")]
+    public async Task Host_TargetFailureNeverStartsOrCreates(string failure, string code)
+    {
+        var database = _fixture.NewDatabaseName();
+        var settings = new List<(string Key, string Value)>();
+        string? role = null;
+        if (failure is "permission" or "identity")
+        {
+            role = _fixture.NewRoleName("host_refused");
+            await _fixture.CreateRoleAsync(role, _fixture.PasswordCanary, createDb: false);
+            settings.Add(("PostgreSql:Username", role));
+        }
+        if (failure == "unreachable") settings.Add(("PostgreSql:Port", "1"));
+        if (failure == "authentication") settings.Add(("PostgreSql:Password", "synthetic-invalid-password"));
+        if (failure == "identity")
+        {
+            database = await _fixture.CreateDatabaseAsync();
+            await _fixture.ExecuteAdminAsync($"REVOKE CONNECT ON DATABASE \"{database}\" FROM PUBLIC");
+        }
+        try
+        {
+            using var factory = CreateHostFactory(database, settings.ToArray());
+            var exception = Record.Exception(() => factory.CreateClient());
+            exception.Should().NotBeNull("the real Program must fail before the server starts");
+            exception!.ToString().Should().Contain(code).And.NotContain(_fixture.PasswordCanary)
+                .And.NotContain("synthetic-invalid-password").And.NotContain("password authentication failed");
+            (await _fixture.DatabaseExistsAsync(database)).Should().Be(failure == "identity");
+            if (failure == "identity") (await _fixture.GetDatabaseOwnerAsync(database)).Should().Be(_fixture.Username);
+        }
+        finally { await _fixture.DropDatabaseIfExistsAsync(database); }
+    }
+
+    [Theory]
+    [InlineData(false, "migration.execution_failed")]
+    [InlineData(true, "migration.final_state_invalid")]
+    public async Task Host_MigrationOrFinalInspectionFailureNeverStarts(bool mismatch, string code)
+    {
+        var database = await _fixture.CreateDatabaseAsync();
+        try
+        {
+            using var factory = CreateHostFactory(database).WithWebHostBuilder(builder =>
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IDatabaseMigrationExecutor>();
+                    services.AddSingleton<IDatabaseMigrationExecutor>(new FailingExecutor(mismatch));
+                }));
+            var exception = Record.Exception(() => factory.CreateClient());
+            exception.Should().NotBeNull();
+            exception!.ToString().Should().Contain(code).And.NotContain("synthetic-driver-error");
+        }
+        finally { await _fixture.DropDatabaseIfExistsAsync(database); }
+    }
+
+    private sealed class FailingExecutor(bool mismatch) : IDatabaseMigrationExecutor
+    {
+        private bool executed;
+        public ValueTask<MigrationObservationState> InspectAsync(CancellationToken token = default) =>
+            ValueTask.FromResult(executed ? MigrationObservationState.PendingMigration : MigrationObservationState.Empty);
+        public ValueTask ExecuteAsync(CancellationToken token = default)
+        {
+            executed = true;
+            if (!mismatch) throw new InvalidOperationException("synthetic-driver-error");
+            return ValueTask.CompletedTask;
+        }
     }
 
     // ---------- helpers ----------
@@ -145,17 +230,4 @@ public sealed class HostStartupTargetPreparationTests
         return ids;
     }
 
-    private static Quaestura.Host.DatabaseTargetPreparationException? FindPreparationException(
-        Exception exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is Quaestura.Host.DatabaseTargetPreparationException preparationException)
-            {
-                return preparationException;
-            }
-        }
-
-        return null;
-    }
 }

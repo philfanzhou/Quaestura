@@ -7,14 +7,14 @@ This document covers environment setup, configuration requirements, and Docker c
 ### 1.1 Requirements
 
 1. **SeaweedFS**: the SeaweedFS service (S3 port 8333) must be started first
-2. **Database**: PostgreSQL; on startup the target database is created first when it is verifiably missing and `Database:AllowCreate` (default `true`) permits it, then the shared ServiceMantle migration orchestrator holds the real PostgreSQL session advisory lock for the service id `quaestura` (fixed 30-second acquire budget) while the `QuaesturaMigrationExecutor` strictly inspects the target and applies the EF Core migrations in `src/Database/Migrations/` only for verified empty or pending states; success requires the held-lock final inspection to pass. Verified legacy (EnsureCreated-era) databases are taken over without data loss; unknown or corrupt schemas are refused at startup instead of being silently stamped; concurrently starting instances serialize on the lock and the later ones skip (see [`docs/development/Deployment.md`](../../docs/development/Deployment.md) §2.1)
+2. **Database**: PostgreSQL; startup directly invokes ServiceMantle 0.3.0 `StartupDatabaseGate` in explicit `MultiInstance` mode; on startup the target database is created first when it is verifiably missing and `Database:AllowCreate` (default `true`) permits it, then the shared ServiceMantle migration orchestrator holds the real PostgreSQL session advisory lock for the service id `quaestura` (fixed 30-second acquire budget) while the `QuaesturaMigrationExecutor` strictly inspects the target and applies the EF Core migrations in `src/Database/Migrations/` only for verified empty or pending states; success requires the held-lock final inspection to pass. Verified legacy (EnsureCreated-era) databases are taken over without data loss; unknown or corrupt schemas are refused at startup instead of being silently stamped; concurrently starting instances serialize on the lock and the later ones skip (see [`docs/development/Deployment.md`](../../docs/development/Deployment.md) §2.1)
 
 ### 1.2 WebAPI ports
 
 - **HTTP**: 5007
 - **Swagger UI**: http://localhost:5007/swagger (Development only)
 - **Liveness probe**: http://localhost:5007/health/live (always 200 while serving; never touches the database)
-- **Readiness probe**: http://localhost:5007/health/ready (`/health` is an alias; 200 only after startup initialization succeeded and this request's read-only database probe passed, 503 otherwise)
+- **Readiness probe**: http://localhost:5007/health/ready (`/health` is an alias; 200 only after startup initialization succeeded and this request's scoped, read-only MappedSchema probe of all EF tables and columns passed, 503 otherwise)
 - **WebUI (admin frontend)**: http://localhost:5007/ (same port and process as the API; see [`frontend/docs/admin-frontend-spec.md`](../../frontend/docs/admin-frontend-spec.md))
 
 ### 1.3 Configuration
@@ -138,3 +138,5 @@ npm install
 npm run dev   # Dev mode (Vite dev server + proxy to :5007)
 npm run build # Production build (outputs dist/, copied into wwwroot/ by Docker stage 1)
 ```
+
+Production health snapshots use the shared receipt and PostgreSQL classifier: unfinished/failed startup performs zero database I/O (`pendingSetup`, `health.startup_incomplete` / `health.startup_failed`); connection failures report `health.database_unreachable`; missing mapped objects or revoked SELECT report `health.schema_unavailable`; authentication-class and other unclassified failures report `health.probe_failed` with null state fields. The routes, JSON fields and five-second budget remain unchanged. Non-relational Testing still uses `EnsureCreated` and a minimal tag-query adapter. See [Deployment §2.1](../../docs/development/Deployment.md#21-database-connection) for compatibility, diagnostic changes and rollback.

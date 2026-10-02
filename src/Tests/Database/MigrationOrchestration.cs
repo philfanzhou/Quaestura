@@ -39,12 +39,12 @@ internal static class MigrationOrchestration
     /// Runs one real orchestration: acquire the advisory lock, inspect, execute when required,
     /// re-inspect under the lock, and release.
     /// </summary>
-    internal static Task<MigrationExecutionResult> OrchestrateAsync(
+    internal static Task<StartupDatabaseGateResult> OrchestrateAsync(
         QuaesturaDbContext context,
         string connectionString,
         TimeSpan? acquireTimeout = null,
         CancellationToken cancellationToken = default) =>
-        CreateOrchestrator(new QuaesturaMigrationExecutor(context))
+        new StartupGateHarness(new QuaesturaMigrationExecutor(context))
             .OrchestrateMigrationAsync(
                 ServiceId,
                 Target(connectionString),

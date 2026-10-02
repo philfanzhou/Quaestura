@@ -1,5 +1,4 @@
 using System;
-using System.Data.Common;
 using System.IO;
 using System.Threading.Tasks;
 using FluentValidation;
@@ -168,11 +167,6 @@ using (logContext.BeginScope(app.Logger))
         StartupDiagnosticsFormatter.SummarizePrefixes(consulRuntimeState.LoadedPrefixes),
         StartupDiagnosticsFormatter.SummarizeError(consulRuntimeState.LastError));
     app.Logger.LogInformation("Listening: http://+:{Port}", httpPort);
-    if (!string.IsNullOrEmpty(connectionString))
-    {
-        var csb = new DbConnectionStringBuilder { ConnectionString = connectionString };
-        app.Logger.LogInformation("Database: PostgreSQL {Host}:{Port}/{Database}", csb["Host"], csb.TryGetValue("Port", out var dbPort) ? dbPort : "5432", csb["Database"]);
-    }
     app.Logger.LogInformation(
         "Effective configuration diagnostics: PostgreSqlHost={PostgreSqlHost}, PostgreSqlPort={PostgreSqlPort}, PostgreSqlUsername={PostgreSqlUsername}, PostgreSqlPassword={PostgreSqlPassword}, DatabaseName={DatabaseName}",
         StartupDiagnosticsFormatter.SummarizeValue(builder.Configuration["PostgreSql:Host"]),
@@ -183,80 +177,44 @@ using (logContext.BeginScope(app.Logger))
     app.Logger.LogInformation("OSS: {Endpoint}/{Bucket}", ossOptions.InternalEndpoint, ossOptions.BucketName);
     app.Logger.LogInformation("APP_TITLE: {Title}", appTitle);
 
-    // Apply database initialization. The health readiness evidence observes this gate:
-    // Succeeded is recorded only after the real initialization completed, and a failure is
-    // recorded honestly before the exception stops the host (a failed production host never
-    // listens).
+    // Complete the shared gate before the OSS check and before accepting HTTP requests.
     using (var scope = app.Services.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
-        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-        var startupHealth = app.Services.GetRequiredService<QuaesturaStartupHealthState>();
-        startupHealth.RecordRunning();
-        try
+        var receipt = app.Services.GetRequiredService<StartupDatabaseReceipt>();
+        var stopping = app.Lifetime.ApplicationStopping;
+        if (dbContext.Database.IsRelational())
         {
-            if (dbContext.Database.IsRelational())
+            StartupDatabaseGateOptions options;
+            try { options = QuaesturaStartupDatabaseOptions.Create(config, connectionString); }
+            catch (InvalidOperationException)
             {
-                // Stage 1 — target preparation (before any lock): create the PostgreSQL database
-                // only when it is verifiably missing and Database:AllowCreate (default true)
-                // permits it; an existing database is never touched. Stage 2 — the shared migration
-                // orchestrator acquires the real PostgreSQL session advisory lock for this service
-                // id and covers the initial inspection, the verified legacy takeover, the EF Core
-                // migration execution, and the final inspection under that single authority;
-                // success is reported only after the held-lock final inspection passed, which is
-                // also the only point where the health startup gate may record success. The lock
-                // acquire budget is fixed at 30 seconds; it bounds waiting for the lock only,
-                // never the execution itself. Both stages observe host shutdown through the same
-                // token. The non-relational Testing path skips both stages' PostgreSQL specifics
-                // and keeps using EnsureCreated without constructing a real lock.
-                var applicationStopping = app.Services
-                    .GetRequiredService<IHostApplicationLifetime>()
-                    .ApplicationStopping;
-                await QuaesturaDatabaseTargetPreparer.PrepareAsync(
-                    builder.Configuration,
-                    connectionString,
-                    app.Logger,
-                    applicationStopping);
-
-                var migrationLogger = loggerFactory.CreateLogger("DatabaseMigration");
-                var orchestrator = scope.ServiceProvider
-                    .GetRequiredService<DatabaseMigrationOrchestrator>();
-                var migrationTarget = new BootstrapDatabaseConfiguration(
-                    WellKnownDatabaseProviderIds.PostgreSql,
-                    serverVersion: null,
-                    connectionString);
-                migrationLogger.LogInformation(
-                    "Orchestrating database migration under the PostgreSQL advisory lock (30 s acquire budget)");
-                var migration = await orchestrator.OrchestrateMigrationAsync(
-                    ServiceId.Parse(ServiceMantleComposition.ServiceIdValue),
-                    migrationTarget,
-                    TimeSpan.FromSeconds(30),
-                    applicationStopping);
-                if (!migration.Succeeded)
-                {
-                    migrationLogger.LogError(
-                        "Database migration orchestration failed: {ErrorCode}", migration.ErrorCode);
-                    throw new InvalidOperationException(
-                        $"Database migration orchestration failed (error {migration.ErrorCode}): " +
-                        $"{migration.ErrorMessage}. Refusing to start; the shared orchestrator released " +
-                        "the lock before this refusal.");
-                }
-
-                migrationLogger.LogInformation(
-                    "Database migration orchestration completed (executor was called: {ExecutorWasCalled})",
-                    migration.ExecutorWasCalled);
+                receipt.TryMarkRunning();
+                receipt.TryCompleteFailed(WellKnownDatabaseTargetPreparationErrorCodes.InvalidTarget);
+                throw;
             }
-            else
-            {
-                await dbContext.Database.EnsureCreatedAsync();
-            }
-
-            startupHealth.RecordSucceeded();
+            var result = await app.Services.GetRequiredService<StartupDatabaseGate>().RunAsync(
+                options, receipt, ServiceId.Parse(ServiceMantleComposition.ServiceIdValue), stopping);
+            if (!result.Succeeded)
+                throw new InvalidOperationException($"Database startup gate failed ({result.ErrorCode}); refusing to start.");
+            app.Logger.LogInformation("Database startup gate completed (executor was called: {ExecutorWasCalled})",
+                result.ExecutorWasCalled);
         }
-        catch
+        else
         {
-            startupHealth.RecordFailed();
-            throw;
+            receipt.TryMarkRunning();
+            try
+            {
+                await dbContext.Database.EnsureCreatedAsync(stopping);
+                stopping.ThrowIfCancellationRequested();
+                receipt.TryCompleteSucceeded();
+            }
+            catch (OperationCanceledException) when (stopping.IsCancellationRequested) { throw; }
+            catch
+            {
+                receipt.TryCompleteFailed(WellKnownMigrationErrorCodes.ExecutionFailed);
+                throw;
+            }
         }
     }
 

@@ -45,9 +45,9 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
     {
         using var context1 = _fixture.CreateContext(_database);
         using var context2 = _fixture.CreateContext(_database);
-        var orchestrator1 = MigrationOrchestration.CreateOrchestrator(
+        var orchestrator1 = new StartupGateHarness(
             new QuaesturaMigrationExecutor(context1, NullLogger.Instance));
-        var orchestrator2 = MigrationOrchestration.CreateOrchestrator(
+        var orchestrator2 = new StartupGateHarness(
             new QuaesturaMigrationExecutor(context2, NullLogger.Instance));
         using var barrier = new Barrier(2);
 
@@ -171,7 +171,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
         var scripted = new ScriptedExecutor(
             inspections: [MigrationObservationState.Empty],
             executeFailure: new InvalidOperationException("controlled executor failure"));
-        var failed = await MigrationOrchestration.CreateOrchestrator(scripted)
+        var failed = await new StartupGateHarness(scripted)
             .OrchestrateMigrationAsync(
                 MigrationOrchestration.ServiceId,
                 MigrationOrchestration.Target(ConnectionString),
@@ -197,7 +197,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
         // startup must refuse even though the executor believed it finished.
         var scripted = new ScriptedExecutor(inspections:
             [MigrationObservationState.Empty, MigrationObservationState.PendingMigration]);
-        var mismatch = await MigrationOrchestration.CreateOrchestrator(scripted)
+        var mismatch = await new StartupGateHarness(scripted)
             .OrchestrateMigrationAsync(
                 MigrationOrchestration.ServiceId,
                 MigrationOrchestration.Target(ConnectionString),
@@ -218,7 +218,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
     public async Task LeaseLostDuringExecution_NeverSucceeds_OtherSessionCanAcquire()
     {
         var scripted = new HangingExecutor();
-        var orchestrate = MigrationOrchestration.CreateOrchestrator(scripted)
+        var orchestrate = new StartupGateHarness(scripted)
             .OrchestrateMigrationAsync(
                 MigrationOrchestration.ServiceId,
                 MigrationOrchestration.Target(ConnectionString),
@@ -249,7 +249,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
         // ends with the caller's own cancellation, never a synthesized success or failure.
         using var cts = new CancellationTokenSource();
         var scripted = new CancellingExecutor(cts);
-        var orchestrate = MigrationOrchestration.CreateOrchestrator(scripted)
+        var orchestrate = new StartupGateHarness(scripted)
             .OrchestrateMigrationAsync(
                 MigrationOrchestration.ServiceId,
                 MigrationOrchestration.Target(ConnectionString),

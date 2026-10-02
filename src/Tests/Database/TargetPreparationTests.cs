@@ -8,6 +8,10 @@ using Quaestura.Host;
 using ServiceMantle.Bootstrap;
 using ServiceMantle.Database.PostgreSql;
 using Xunit;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceMantle;
+using ServiceMantle.Migration;
 
 namespace Quaestura.Tests.Database;
 
@@ -109,8 +113,8 @@ public sealed class TargetPreparationTests
             _fixture.GetConnectionString(database),
             ("Database:AllowCreate", "false"));
 
-        var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-        exception.Which.ErrorCode.Should().Be("database_target_preparation.creation_not_allowed");
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("database_target_preparation.creation_not_allowed");
         provider.PrepareCalls.Should().Be(0);
         (await _fixture.DatabaseExistsAsync(database)).Should().BeFalse();
     }
@@ -146,8 +150,8 @@ public sealed class TargetPreparationTests
             new CountingProvider(new PostgreSqlDatabaseTargetPreparationProvider()),
             _fixture.GetConnectionString(database, role, _fixture.PasswordCanary));
 
-        var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-        exception.Which.ErrorCode.Should().Be("database_target_preparation.permission_denied");
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("database_target_preparation.permission_denied");
         exception.Which.ToString().Should().NotContain(_fixture.PasswordCanary);
         (await _fixture.DatabaseExistsAsync(database)).Should().BeFalse();
     }
@@ -159,9 +163,9 @@ public sealed class TargetPreparationTests
 
         var act = () => PrepareAsync(provider, _fixture.GetUnreachableConnectionString("quaestura"));
 
-        var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-        exception.Which.ErrorCode.Should().Be("database_target_preparation.connection_failed");
-        exception.Which.Message.Should().Contain("ServerUnreachable");
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("database_target_preparation.connection_failed");
+        exception.Which.Message.Should().NotContain(_fixture.PasswordCanary);
         provider.PrepareCalls.Should().Be(0, "an unreachable server must never trigger creation");
     }
 
@@ -176,8 +180,8 @@ public sealed class TargetPreparationTests
 
         var act = () => PrepareAsync(provider, builder.ConnectionString);
 
-        var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-        exception.Which.ErrorCode.Should().Be("database_target_preparation.invalid_target");
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.Which.Message.Should().Contain("database_target_preparation.invalid_target");
         provider.PrepareCalls.Should().Be(0);
     }
 
@@ -241,8 +245,8 @@ public sealed class TargetPreparationTests
             var act = () => PrepareAsync(
                 provider, _fixture.GetConnectionString(database, role, _fixture.PasswordCanary));
 
-            var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-            exception.Which.ErrorCode.Should().Be("database_target_preparation.permission_denied");
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("database_target_preparation.permission_denied");
             provider.PrepareCalls.Should().Be(0);
             (await _fixture.GetDatabaseOwnerAsync(database)).Should().Be(ownerBefore);
         }
@@ -271,8 +275,8 @@ public sealed class TargetPreparationTests
             var act = () => PrepareAsync(
                 provider, _fixture.GetConnectionString(database, role, _fixture.PasswordCanary));
 
-            var exception = await act.Should().ThrowAsync<DatabaseTargetPreparationException>();
-            exception.Which.ErrorCode.Should().Be("database_target_preparation.target_conflict");
+            var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+            exception.Which.Message.Should().Contain("database_target_preparation.target_conflict");
             (await _fixture.GetDatabaseOwnerAsync(database)).Should().Be(ownerBefore);
         }
         finally
@@ -289,12 +293,7 @@ public sealed class TargetPreparationTests
         await cancelled.CancelAsync();
         var provider = new CountingProvider(new PostgreSqlDatabaseTargetPreparationProvider());
 
-        var act = () => QuaesturaDatabaseTargetPreparer.PrepareAsync(
-            provider,
-            Configuration(),
-            _fixture.GetConnectionString(database),
-            NullLogger.Instance,
-            cancelled.Token);
+        var act = () => RunGateAsync(provider, Configuration(), _fixture.GetConnectionString(database), cancelled.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         provider.PrepareCalls.Should().Be(0);
@@ -312,7 +311,7 @@ public sealed class TargetPreparationTests
     {
         var configuration = raw is null ? Configuration() : Configuration(("Database:AllowCreate", raw));
 
-        QuaesturaDatabaseTargetPreparer.ReadAllowCreate(configuration).Should().Be(expected);
+        QuaesturaStartupDatabaseOptions.ReadAllowCreate(configuration).Should().Be(expected);
     }
 
     [Theory]
@@ -323,21 +322,102 @@ public sealed class TargetPreparationTests
     {
         var configuration = Configuration(("Database:AllowCreate", raw));
 
-        var act = () => QuaesturaDatabaseTargetPreparer.ReadAllowCreate(configuration);
+        var act = () => QuaesturaStartupDatabaseOptions.ReadAllowCreate(configuration);
 
-        act.Should().Throw<DatabaseTargetPreparationException>()
-            .Which.ErrorCode.Should().Be("database_target_preparation.invalid_configuration");
+        act.Should().Throw<InvalidOperationException>()
+            .Which.Message.Should().Contain("database_target_preparation.invalid_target");
     }
 
     [Fact]
-    public async Task NullConnectionString_SkipsPreparationWithoutTouchingAnything()
+    public async Task NullConnectionString_RejectsBeforeTouchingAnything()
     {
         var provider = new CountingProvider(new PostgreSqlDatabaseTargetPreparationProvider());
 
-        await PrepareAsync(provider, connectionString: null);
+        await FluentActions.Awaiting(() => PrepareAsync(provider, connectionString: null))
+            .Should().ThrowAsync<InvalidOperationException>();
 
         provider.ObserveCalls.Should().Be(0);
         provider.PrepareCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TwoMissingTargetGates_ConvergeWithOneActualMigration()
+    {
+        var database = _fixture.NewDatabaseName();
+        try
+        {
+            var target = MigrationOrchestration.Target(_fixture.GetConnectionString(database));
+            var gates = new[] { new StartupGateHarness(), new StartupGateHarness() };
+            var results = await Task.WhenAll(gates.Select(gate => gate.OrchestrateMigrationAsync(
+                MigrationOrchestration.ServiceId, target, TimeSpan.FromSeconds(30)).AsTask()));
+            results.Should().OnlyContain(result => result.Succeeded);
+            results.Count(result => result.ExecutorWasCalled).Should().Be(1);
+            (await ReadHistoryAsync(_fixture.GetConnectionString(database)))
+                .Should().Equal("20260504115924_InitialCreate", "20260926094240_AddTags");
+        }
+        finally { await _fixture.DropDatabaseIfExistsAsync(database); }
+    }
+
+    [Fact]
+    public async Task CancellationAfterCommittedPreparation_KeepsDatabaseAndStopsBeforeMigration()
+    {
+        var database = _fixture.NewDatabaseName();
+        using var caller = new CancellationTokenSource();
+        var preparation = new CancelAfterPreparation(caller);
+        var gate = new StartupGateHarness(preparation: preparation);
+        try
+        {
+            var run = gate.OrchestrateMigrationAsync(MigrationOrchestration.ServiceId,
+                MigrationOrchestration.Target(_fixture.GetConnectionString(database)), TimeSpan.FromSeconds(30), caller.Token);
+            var assertion = await FluentActions.Awaiting(() => run.AsTask()).Should().ThrowAsync<OperationCanceledException>();
+            assertion.Which.CancellationToken.Should().Be(caller.Token);
+            gate.Receipt.State.Should().Be(ServiceMantle.Health.ServiceMigrationReadinessState.Running);
+            (await _fixture.DatabaseExistsAsync(database)).Should().BeTrue();
+            preparation.Observations.Should().Be(1, "no re-observation or migration follows cancellation");
+            await using var connection = new Npgsql.NpgsqlConnection(_fixture.GetConnectionString(database));
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT to_regclass('public.\"__EFMigrationsHistory\"') IS NULL";
+            ((bool)(await command.ExecuteScalarAsync())!).Should().BeTrue();
+        }
+        finally { await _fixture.DropDatabaseIfExistsAsync(database); }
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("synthetic-credential=invalid")]
+    [InlineData("Host=localhost;Port=invalid;Password=synthetic-credential")]
+    public void InvalidConnectionConfiguration_RefusesSafelyBeforeIo(string? input)
+    {
+        var exception = Record.Exception(() => QuaesturaStartupDatabaseOptions.Create(Configuration(), input));
+        exception.Should().BeOfType<InvalidOperationException>();
+        exception!.ToString().Should().Contain("database_target_preparation.invalid_target")
+            .And.NotContain("synthetic-credential");
+        exception.InnerException.Should().BeNull();
+    }
+
+    private sealed class CancelAfterPreparation(CancellationTokenSource caller) : IDatabaseTargetPreparationProvider
+    {
+        private readonly PostgreSqlDatabaseTargetPreparationProvider inner = new();
+        internal int Observations { get; private set; }
+        public string ProviderId => inner.ProviderId;
+        public BootstrapDatabaseTargetKind TargetKind => inner.TargetKind;
+        public ValueTask<DatabaseTargetObservation> ObserveAsync(BootstrapDatabaseConfiguration target, CancellationToken token)
+        {
+            token.Should().Be(caller.Token);
+            Observations++;
+            return inner.ObserveAsync(target, token);
+        }
+        public async ValueTask<DatabaseTargetPreparationResult> PrepareAsync(
+            DatabaseTargetPreparationRequest request, TimeSpan timeout, CancellationToken token)
+        {
+            token.Should().Be(caller.Token);
+            var result = await inner.PrepareAsync(request, timeout, token);
+            result.Succeeded.Should().BeTrue();
+            await caller.CancelAsync();
+            return result;
+        }
     }
 
     // ---------- helpers ----------
@@ -346,12 +426,23 @@ public sealed class TargetPreparationTests
         IDatabaseTargetPreparationProvider provider,
         string? connectionString,
         params (string Key, string Value)[] settings) =>
-        QuaesturaDatabaseTargetPreparer.PrepareAsync(
-            provider,
-            Configuration(settings),
-            connectionString,
-            NullLogger.Instance,
-            CancellationToken.None);
+        RunGateAsync(provider, Configuration(settings), connectionString);
+
+    private static async Task RunGateAsync(IDatabaseTargetPreparationProvider provider,
+        IConfiguration configuration, string? connectionString, CancellationToken token = default)
+    {
+        var options = QuaesturaStartupDatabaseOptions.Create(configuration, connectionString);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<QuaesturaDbContext>(builder => builder.UseNpgsql(connectionString));
+        services.AddQuaesturaServiceMantle();
+        services.RemoveAll<IDatabaseTargetPreparationProvider>();
+        services.AddSingleton(provider);
+        await using var container = services.BuildServiceProvider();
+        var result = await container.GetRequiredService<StartupDatabaseGate>().RunAsync(
+            options, new StartupDatabaseReceipt(), ServiceId.Parse("quaestura"), token);
+        if (!result.Succeeded) throw new InvalidOperationException($"Database startup failed ({result.ErrorCode}).");
+    }
 
     private static IConfiguration Configuration(params (string Key, string Value)[] settings) =>
         new ConfigurationBuilder()

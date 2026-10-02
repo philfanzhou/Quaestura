@@ -6,8 +6,14 @@ using FluentValidation;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using ServiceMantle.Bootstrap;
+using ServiceMantle.Database.PostgreSql;
+using ServiceMantle.Migration;
+using ServiceMantle.Persistence.Relational;
 using Quaestura.Database;
 using Quaestura.Service.Middleware;
 using ServiceMantle;
@@ -35,8 +41,8 @@ public static class QuaesturaProblemDetailsExtensions
 /// security response-header capability, the base OpenTelemetry instrumentation, the shared
 /// migration orchestration capability (PostgreSQL advisory lock plus the Quaestura migration
 /// executor), and the fixed health probe endpoints capability for Quaestura, together with the
-/// consumer-owned readiness evidence (the thread-safe startup observation and the scoped health
-/// snapshot source). This composition performs zero disk writes and registers no telemetry
+/// shared startup receipt and scoped mapped-schema health source. This composition performs
+/// zero disk writes and registers no telemetry
 /// exporter: the Bootstrap file store stays a lazy singleton that is never resolved, and
 /// instrumentation data stays in-process until an exporter task adds one.
 /// </summary>
@@ -204,17 +210,28 @@ public static class ServiceMantleComposition
             // scope resolves its own executor instance; the lock/state machine itself belongs to
             // the shared orchestrator and is never reimplemented locally.
             .AddDatabaseMigration<QuaesturaMigrationExecutor>()
+            .AddDatabaseTargetPreparationProvider<PostgreSqlDatabaseTargetPreparationProvider>()
             // Fixed /health/live, /health/ready, and /health routes (mapped in Program.cs) with
             // the default bounded snapshot read. No readiness contributors are registered: S3
             // stays in its warning mode and is deliberately not a readiness condition.
             .AddServiceMantleHealthEndpoints();
 
-        // The consumer-owned readiness evidence: one thread-safe in-process observation of the
-        // real database initialization outcome (recorded by the Program.cs startup gate), and
-        // one scoped snapshot source so every readiness request probes through its own
-        // scope/DbContext and never shares a context concurrently.
-        services.AddSingleton<QuaesturaStartupHealthState>();
-        services.AddScoped<IServiceHealthSnapshotSource, QuaesturaHealthSnapshotSource>();
+        // Direct gate invocation in Program.cs; no hosted runner or Bootstrap store resolution.
+        services.AddSingleton<IDatabaseDeploymentCapabilityProvider, QuaesturaDatabaseDeploymentCapability>();
+        services.AddSingleton(provider => new DatabaseDeploymentCapabilityRegistry(
+            provider.GetServices<IDatabaseDeploymentCapabilityProvider>(),
+            provider.GetRequiredService<BootstrapDatabaseProviderRegistry>().ProviderIdResolver));
+        services.AddSingleton<StartupDatabaseReceipt>();
+        services.AddSingleton<StartupDatabaseGate>();
+        services.AddServiceMantleEfCoreHealthSnapshotSource<QuaesturaDbContext>(
+            ServiceId.Parse(ServiceIdValue), new PostgreSqlDatabaseProbeFailureClassifier(),
+            EfCoreHealthSnapshotProbeMode.MappedSchema, errorCodePrefix: "health");
+        services.RemoveAll<IServiceHealthSnapshotSource>();
+        services.AddScoped<TestingHealthSnapshotSource>();
+        services.AddScoped<IServiceHealthSnapshotSource>(provider =>
+            provider.GetRequiredService<QuaesturaDbContext>().Database.IsRelational()
+                ? provider.GetRequiredService<EfCoreHealthSnapshotSource<QuaesturaDbContext>>()
+                : provider.GetRequiredService<TestingHealthSnapshotSource>());
 
         return services;
     }

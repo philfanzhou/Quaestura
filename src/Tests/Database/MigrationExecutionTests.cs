@@ -257,15 +257,15 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
 
         var result = await MigrationOrchestration.OrchestrateAsync(context, invalid);
 
-        // Authentication failures refuse to start with the stable lock classification only:
+        // Authentication failures refuse during preparation with the shared classification only:
         // the result surfaces never carry the canary, the connection string, SQL, or any
         // driver detail.
         result.Succeeded.Should().BeFalse();
         result.ErrorCode.Should().Be(
-            ServiceMantle.Migration.WellKnownMigrationErrorCodes.LockFailed);
-        result.ErrorMessage.Should().NotContain(_fixture.PasswordCanary);
-        result.ErrorMessage.Should().NotContain(invalid);
-        result.ErrorMessage.Should().NotContain(_fixture.GetConnectionString(_database));
+            ServiceMantle.Bootstrap.WellKnownDatabaseTargetPreparationErrorCodes.AuthenticationFailed);
+        result.ToString().Should().NotContain(_fixture.PasswordCanary);
+        result.ToString().Should().NotContain(invalid);
+        result.ToString().Should().NotContain(_fixture.GetConnectionString(_database));
         result.ToString().Should().NotContain(_fixture.PasswordCanary);
     }
 

@@ -10,6 +10,13 @@ using Quaestura.Host;
 using ServiceMantle.Health;
 using ServiceMantle.Installation;
 using Xunit;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using ServiceMantle.Migration;
+using ServiceMantle.Persistence.Relational;
+using ServiceMantle.Database.PostgreSql;
+using Quaestura.Database;
 
 namespace Quaestura.Tests.Database;
 
@@ -41,35 +48,25 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
 
     public async Task DisposeAsync() => await _fixture.DropDatabaseAsync(_database);
 
-    private QuaesturaHealthSnapshotSource CreateSucceededSource(string? connectionString = null)
+    private EfCoreHealthSnapshotSource<QuaesturaDbContext> CreateSucceededSource(string? connectionString = null)
     {
         var context = connectionString is null
             ? _fixture.CreateContext(_database)
             : _fixture.CreateContextWithConnectionString(connectionString);
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
-        return new QuaesturaHealthSnapshotSource(context, state);
-    }
-
-    private async Task SetAllowConnectionsAsync(bool allowed)
-    {
-        await using var connection = new NpgsqlConnection(_fixture.GetConnectionString("postgres"));
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"ALTER DATABASE \"{_database}\" WITH ALLOW_CONNECTIONS {(allowed ? "true" : "false")}";
-        await command.ExecuteNonQueryAsync();
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
+        return new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, context, new PostgreSqlDatabaseProbeFailureClassifier(), "health");
     }
 
     [Fact]
     public async Task MigratedDatabase_SnapshotIsReadyWithFullEvidence_AndWritesNothing()
     {
         using var context = _fixture.CreateContext(_database);
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
-        var source = new QuaesturaHealthSnapshotSource(context, state);
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, context, new PostgreSqlDatabaseProbeFailureClassifier(), "health");
 
         var stateBefore = await MigrationGoldenStates.CaptureStateAsync(context);
         var snapshot = await source.GetSnapshotAsync();
@@ -91,21 +88,22 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
         using var baseline = _fixture.CreateContext(_database);
         var stateBefore = await MigrationGoldenStates.CaptureStateAsync(baseline);
 
-        await SetAllowConnectionsAsync(false);
+        var connectionString = _fixture.GetConnectionString(_database);
+        await _fixture.StopServerAsync();
         ServiceHealthSnapshot disconnected;
         try
         {
             // A brand-new evaluation (new context, new connection) must observe the failure:
             // no stale readiness is cached across requests.
-            disconnected = await CreateSucceededSource().GetSnapshotAsync();
+            disconnected = await CreateSucceededSource(connectionString).GetSnapshotAsync();
         }
         finally
         {
-            await SetAllowConnectionsAsync(true);
+            await _fixture.RestartServerAsync();
         }
 
         disconnected.DatabaseStatus.Should().Be(ServiceDatabaseReadinessState.Unreachable);
-        disconnected.ErrorCode.Should().Be(QuaesturaHealthSnapshotSource.DatabaseUnreachableErrorCode);
+        disconnected.ErrorCode.Should().Be("health.database_unreachable");
         ServiceHealthEvaluator.Evaluate(disconnected).IsReady.Should().BeFalse();
         disconnected.Phase.Should().Be(ServiceStartupPhase.Completed);
         disconnected.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Succeeded);
@@ -126,30 +124,18 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
     {
         var loggerProvider = new CapturingLoggerProvider();
         using var loggerFactory = LoggerFactory.Create(b => b.AddProvider(loggerProvider));
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
         using var context = _fixture.CreateContextWithConnectionString(
             _fixture.GetInvalidPasswordConnectionString(_database));
-        var source = new QuaesturaHealthSnapshotSource(
-            context, state, loggerFactory.CreateLogger<QuaesturaHealthSnapshotSource>());
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, context, new PostgreSqlDatabaseProbeFailureClassifier(), "health");
 
-        var snapshot = await source.GetSnapshotAsync();
-
-        // Auth failures collapse into the same fixed safe classification as any other
-        // unreachable state; the snapshot never carries driver details.
-        snapshot.DatabaseStatus.Should().Be(ServiceDatabaseReadinessState.Unreachable);
-        snapshot.ErrorCode.Should().Be(QuaesturaHealthSnapshotSource.DatabaseUnreachableErrorCode);
-        ServiceHealthEvaluator.Evaluate(snapshot).IsReady.Should().BeFalse();
-        snapshot.ToString().Should()
-            .NotContain(_fixture.PasswordCanary)
-            .And.NotContain("Npgsql")
-            .And.NotContain("Postgres");
-
-        // The local warning log records the exception type name only, never the secret.
-        loggerProvider.Messages.Should().ContainSingle();
-        loggerProvider.Messages[0].Should().Contain("Health database probe failed");
-        loggerProvider.Messages[0].Should().NotContain(_fixture.PasswordCanary);
+        // SQLSTATE class 28 is deliberately unclassified by the shared source. The HTTP
+        // endpoint projects health.probe_failed with null evidence (covered below).
+        await FluentActions.Awaiting(() => source.GetSnapshotAsync().AsTask())
+            .Should().ThrowAsync<PostgresException>();
+        loggerProvider.Messages.Should().BeEmpty("the shared source does not log driver details");
     }
 
     [Fact]
@@ -163,10 +149,10 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
         await lockHolder.Database.ExecuteSqlRawAsync("LOCK TABLE tag IN ACCESS EXCLUSIVE MODE");
 
         using var probeContext = _fixture.CreateContext(_database);
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
-        var source = new QuaesturaHealthSnapshotSource(probeContext, state);
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, probeContext, new PostgreSqlDatabaseProbeFailureClassifier(), "health");
         using var cts = new CancellationTokenSource();
 
         var probe = source.GetSnapshotAsync(cts.Token).AsTask();
@@ -218,14 +204,14 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
     {
         const int parallelism = 8;
         using var barrier = new Barrier(parallelism);
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
         var contexts = Enumerable.Range(0, parallelism)
             .Select(_ => _fixture.CreateContext(_database))
             .ToArray();
         var sources = contexts
-            .Select(context => new QuaesturaHealthSnapshotSource(context, state))
+            .Select(context => new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, context, new PostgreSqlDatabaseProbeFailureClassifier(), "health"))
             .ToArray();
 
         try
@@ -233,12 +219,12 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
             var stateBefore =
                 await MigrationGoldenStates.CaptureStateAsync(_fixture.CreateContext(_database));
 
-            var snapshots = await Task.WhenAll(Enumerable.Range(0, parallelism).Select(async i =>
+            var snapshots = await Task.WhenAll(Enumerable.Range(0, parallelism).Select(i => Task.Run(async () =>
             {
-                barrier.SignalAndWait(TimeSpan.FromSeconds(30));
+                barrier.SignalAndWait(TimeSpan.FromSeconds(30)).Should().BeTrue();
                 // Each concurrent evaluation goes through its own context and connection.
                 return await sources[i].GetSnapshotAsync();
-            }));
+            })));
 
             foreach (var snapshot in snapshots)
             {
@@ -260,6 +246,84 @@ public sealed class ServiceMantleHealthPostgreSqlTests : IAsyncLifetime
                 await context.DisposeAsync();
             }
         }
+    }
+
+    [Fact]
+    public async Task EndpointBudget_CancelsBlockedMappedSchemaQuery_WithProbeTimeout()
+    {
+        await using var holder = _fixture.CreateContext(_database);
+        await holder.Database.OpenConnectionAsync();
+        await using var transaction = await holder.Database.BeginTransactionAsync();
+        await holder.Database.ExecuteSqlRawAsync("LOCK TABLE tag IN ACCESS EXCLUSIVE MODE");
+        try
+        {
+            using var baseFactory = new Quaestura.Tests.Authentication.QuaesturaApiFactory();
+            using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+                services.Replace(ServiceDescriptor.Scoped<IServiceHealthSnapshotSource>(_ => CreateSucceededSource()))));
+            using var client = factory.CreateClient();
+            using var response = await client.GetAsync("/health/ready");
+            response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            var json = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+            json.GetProperty("errorCode").GetString().Should().Be("health.probe_timeout");
+            foreach (var field in new[] { "phase", "migrationStatus", "databaseStatus" })
+                json.GetProperty(field).ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        }
+        finally { await transaction.RollbackAsync(); }
+    }
+
+    [Theory]
+    [InlineData("ALTER TABLE question_content RENAME TO unavailable_content")]
+    [InlineData("ALTER TABLE tag RENAME COLUMN name TO unavailable_name")]
+    public async Task MappedSchema_MissingTableOrColumn_IsReachableButNotReady(string sql)
+    {
+        using var context = _fixture.CreateContext(_database);
+        await context.Database.ExecuteSqlRawAsync(sql);
+        var receipt = new StartupDatabaseReceipt();
+        receipt.TryMarkRunning(); receipt.TryCompleteSucceeded();
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(receipt, context,
+            new PostgreSqlDatabaseProbeFailureClassifier(), "health");
+        var snapshot = await source.GetSnapshotAsync();
+        snapshot.ErrorCode.Should().Be("health.schema_unavailable");
+        snapshot.Phase.Should().Be(ServiceStartupPhase.Completed);
+        snapshot.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Failed);
+        snapshot.DatabaseStatus.Should().Be(ServiceDatabaseReadinessState.Reachable);
+        receipt.State.Should().Be(ServiceMigrationReadinessState.Succeeded);
+        context.ChangeTracker.Entries().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task MappedSchema_RevokedSelect_IsSchemaUnavailable()
+    {
+        var role = $"health_read_{Guid.NewGuid():N}";
+        using var admin = _fixture.CreateContext(_database);
+        // Synthetic role, per-run fixture credentials. SQL and credentials are never logged.
+        await using var connection = new NpgsqlConnection(_fixture.GetConnectionString(_database));
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE ROLE \"{role}\" LOGIN PASSWORD '{_fixture.PasswordCanary}'; GRANT CONNECT ON DATABASE \"{_database}\" TO \"{role}\"; GRANT USAGE ON SCHEMA public TO \"{role}\"; GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{role}\"; REVOKE SELECT ON question_content FROM \"{role}\";";
+        await command.ExecuteNonQueryAsync();
+        var builder = new NpgsqlConnectionStringBuilder(_fixture.GetConnectionString(_database)) { Username = role, Pooling = false };
+        var snapshot = await CreateSucceededSource(builder.ConnectionString).GetSnapshotAsync();
+        snapshot.ErrorCode.Should().Be("health.schema_unavailable");
+        snapshot.DatabaseStatus.Should().Be(ServiceDatabaseReadinessState.Reachable);
+        snapshot.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Failed);
+    }
+
+    [Fact]
+    public async Task RealAuthenticationFailure_EndpointReturnsOnlySafeNullEvidence()
+    {
+        using var factory = new Quaestura.Tests.Authentication.QuaesturaApiFactory().WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Scoped<IServiceHealthSnapshotSource>(
+                _ => CreateSucceededSource(_fixture.GetInvalidPasswordConnectionString(_database))))));
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/health/ready");
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain(_fixture.PasswordCanary).And.NotContain("password authentication failed");
+        var json = System.Text.Json.JsonDocument.Parse(body).RootElement;
+        json.GetProperty("errorCode").GetString().Should().Be("health.probe_failed");
+        foreach (var field in new[] { "phase", "migrationStatus", "databaseStatus" })
+            json.GetProperty(field).ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
     }
 
     [Fact]

@@ -8,12 +8,15 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
-using Quaestura.Database;
 using Quaestura.Host;
 using Quaestura.Tests.Authentication;
 using ServiceMantle.Health;
 using ServiceMantle.Installation;
 using Xunit;
+using ServiceMantle.Migration;
+using ServiceMantle.Persistence.Relational;
+using ServiceMantle.Database.PostgreSql;
+using Quaestura.Database;
 
 namespace Quaestura.Tests.Database;
 
@@ -67,7 +70,7 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
 
         var source1 = scope1.ServiceProvider.GetRequiredService<IServiceHealthSnapshotSource>();
         var source2 = scope2.ServiceProvider.GetRequiredService<IServiceHealthSnapshotSource>();
-        source1.Should().BeOfType<QuaesturaHealthSnapshotSource>();
+        source1.Should().BeOfType<TestingHealthSnapshotSource>();
         source1.Should().NotBeSameAs(source2);
 
         scope1.ServiceProvider.GetRequiredService<QuaesturaDbContext>()
@@ -162,7 +165,7 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
                         ServiceStartupPhase.Completed,
                         ServiceMigrationReadinessState.Succeeded,
                         ServiceDatabaseReadinessState.Unreachable,
-                        QuaesturaHealthSnapshotSource.DatabaseUnreachableErrorCode))))));
+                        "health.database_unreachable"))))));
         using var client = factory.CreateClient();
 
         using var live = await client.GetAsync("/health/live");
@@ -174,7 +177,7 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
         body.GetProperty("status").GetString().Should().Be("not_ready");
         body.GetProperty("databaseStatus").GetString().Should().Be("unreachable");
         body.GetProperty("errorCode").GetString()
-            .Should().Be(QuaesturaHealthSnapshotSource.DatabaseUnreachableErrorCode);
+            .Should().Be("health.database_unreachable");
     }
 
     [Fact]
@@ -239,18 +242,17 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
                 $"Host=127.0.0.1;Port=1;Database=health_probe;Username=probe;Password={passwordCanary};Timeout=2;Pooling=false")
             .Options;
         using var context = new QuaesturaDbContext(options);
-        var state = new QuaesturaStartupHealthState();
-        state.RecordRunning();
-        state.RecordSucceeded();
-        var source = new QuaesturaHealthSnapshotSource(
-            context, state, NullLogger<QuaesturaHealthSnapshotSource>.Instance);
+        var state = new StartupDatabaseReceipt();
+        state.TryMarkRunning();
+        state.TryCompleteSucceeded();
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(state, context, new PostgreSqlDatabaseProbeFailureClassifier(), "health");
 
         var snapshot = await source.GetSnapshotAsync(CancellationToken.None);
 
         snapshot.Phase.Should().Be(ServiceStartupPhase.Completed);
         snapshot.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Succeeded);
         snapshot.DatabaseStatus.Should().Be(ServiceDatabaseReadinessState.Unreachable);
-        snapshot.ErrorCode.Should().Be(QuaesturaHealthSnapshotSource.DatabaseUnreachableErrorCode);
+        snapshot.ErrorCode.Should().Be("health.database_unreachable");
         // The snapshot carries finite states and the safe code only — never driver details.
         snapshot.ToString().Should().NotContain(passwordCanary).And.NotContain("Npgsql");
         ServiceHealthEvaluator.Evaluate(snapshot).IsReady.Should().BeFalse();
@@ -263,8 +265,8 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
             new DbContextOptionsBuilder<QuaesturaDbContext>()
                 .UseInMemoryDatabase($"health-cancel-{Guid.NewGuid():N}")
                 .Options);
-        var state = new QuaesturaStartupHealthState();
-        var source = new QuaesturaHealthSnapshotSource(context, state);
+        var state = new StartupDatabaseReceipt();
+        var source = new TestingHealthSnapshotSource(context, state);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -277,40 +279,79 @@ public sealed class ServiceMantleHealthContractTests : IClassFixture<QuaesturaAp
     [Fact]
     public void StartupState_DefaultsToNotStarted_AndTerminalStatesAreFinal()
     {
-        var state = new QuaesturaStartupHealthState();
-        state.MigrationStatus.Should().Be(ServiceMigrationReadinessState.NotStarted);
-        state.StartupGatePassed.Should().BeFalse();
+        var state = new StartupDatabaseReceipt();
+        state.State.Should().Be(ServiceMigrationReadinessState.NotStarted);
+
         // The default enum value never counts as success.
         ServiceHealthEvaluator.Evaluate(new ServiceHealthSnapshot(
                 ServiceStartupPhase.BootstrapConfiguration,
-                state.MigrationStatus,
+                state.State,
                 ServiceDatabaseReadinessState.Reachable))
             .IsReady.Should().BeFalse();
 
-        state.RecordRunning();
-        state.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Running);
-        state.StartupGatePassed.Should().BeFalse();
+        state.TryMarkRunning();
+        state.State.Should().Be(ServiceMigrationReadinessState.Running);
 
-        state.RecordFailed();
-        state.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Failed);
-        state.RecordSucceeded();
-        state.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Failed,
+
+        state.TryCompleteFailed("migration.execution_failed");
+        state.State.Should().Be(ServiceMigrationReadinessState.Failed);
+        state.TryCompleteSucceeded();
+        state.State.Should().Be(ServiceMigrationReadinessState.Failed,
             "a terminal failure is final");
 
-        var succeeded = new QuaesturaStartupHealthState();
-        succeeded.RecordRunning();
-        succeeded.RecordSucceeded();
-        succeeded.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Succeeded);
-        succeeded.StartupGatePassed.Should().BeTrue();
-        succeeded.RecordFailed();
-        succeeded.RecordRunning();
-        succeeded.MigrationStatus.Should().Be(ServiceMigrationReadinessState.Succeeded,
+        var succeeded = new StartupDatabaseReceipt();
+        succeeded.TryMarkRunning();
+        succeeded.TryCompleteSucceeded();
+        succeeded.State.Should().Be(ServiceMigrationReadinessState.Succeeded);
+
+        succeeded.TryCompleteFailed("migration.execution_failed");
+        succeeded.TryMarkRunning();
+        succeeded.State.Should().Be(ServiceMigrationReadinessState.Succeeded,
             "a terminal success is final");
         ServiceHealthEvaluator.Evaluate(new ServiceHealthSnapshot(
                 ServiceStartupPhase.Completed,
-                succeeded.MigrationStatus,
+                succeeded.State,
                 ServiceDatabaseReadinessState.Reachable))
             .IsReady.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(ServiceMigrationReadinessState.NotStarted, "health.startup_incomplete")]
+    [InlineData(ServiceMigrationReadinessState.Running, "health.startup_incomplete")]
+    [InlineData(ServiceMigrationReadinessState.Failed, "health.startup_failed")]
+    public async Task RelationalReceiptBeforeSuccess_UsesNoDatabaseIo(
+        ServiceMigrationReadinessState state, string code)
+    {
+        var receipt = new StartupDatabaseReceipt();
+        if (state != ServiceMigrationReadinessState.NotStarted) receipt.TryMarkRunning();
+        if (state == ServiceMigrationReadinessState.Failed) receipt.TryCompleteFailed("migration.execution_failed");
+        // This context has no relational provider: any relational API would throw.
+        using var context = new QuaesturaDbContext(new DbContextOptionsBuilder<QuaesturaDbContext>()
+            .UseInMemoryDatabase($"zero-io-{Guid.NewGuid():N}").Options);
+        var source = new EfCoreHealthSnapshotSource<QuaesturaDbContext>(receipt, context,
+            new PostgreSqlDatabaseProbeFailureClassifier(), "health", EfCoreHealthSnapshotProbeMode.MappedSchema);
+        var snapshot = await source.GetSnapshotAsync();
+        snapshot.Phase.Should().Be(ServiceStartupPhase.PendingSetup);
+        snapshot.MigrationStatus.Should().Be(state);
+        snapshot.ErrorCode.Should().Be(code);
+    }
+
+    [Fact]
+    public void TestingHost_DoesNotResolveGateOrRegisterHostedRunner()
+    {
+        // Removing the gate ensures the Testing startup never resolves the PostgreSQL flow.
+        using var factory = _baseFactory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<StartupDatabaseGate>();
+            services.RemoveAll<ServiceMantle.Bootstrap.IDatabaseTargetPreparationProvider>();
+            services.RemoveAll<ServiceMantle.Migration.IDatabaseMigrationLockProvider>();
+        }));
+        using var client = factory.CreateClient();
+        factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .Should().NotContain(service => service.GetType().Name == "StartupDatabaseGateHostedService");
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IServiceHealthSnapshotSource>()
+            .Should().BeOfType<TestingHealthSnapshotSource>();
     }
 
     // ---------- routing coexistence ----------

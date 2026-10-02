@@ -77,6 +77,11 @@ public sealed class QuaesturaApiFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        // Keep the non-relational host independent of external Consul and cache files.
+        // Tests that exercise Consul can override these supported host settings.
+        builder.UseSetting("Consul:Host", "127.0.0.1");
+        builder.UseSetting("Consul:Port", "1");
+        builder.UseSetting("Consul:EnableCache", "false");
         // Disable the remote Loki sink for ordinary test hosts: an empty Loki:Uri means
         // Console-only with zero remote requests. UseSetting is used (instead of
         // ConfigureAppConfiguration) because the logging composition reads Loki:Uri while

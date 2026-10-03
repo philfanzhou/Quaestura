@@ -1,6 +1,6 @@
 # Quaestura 协作规范
 
-Quaestura 是通用的题库与知识点管理服务：.NET 10 最小 API、Vue 3 管理前端、单容器部署（API + SPA 同进程，容器内监听 5007）。它于 2026-09-25 从 Ruoyu.Study monorepo 的 `ruoyu.questionBank` 迁出（保留子树提交历史），采用 MIT License。
+Quaestura 是通用的题库与知识点管理服务：.NET 最小 API、Vue 3 管理前端、单容器部署（API + SPA 同进程，容器内监听 5007）。它于 2026-09-25 从 Ruoyu.Study monorepo 的 `ruoyu.questionBank` 迁出（保留子树提交历史），采用 MIT License。
 
 ## 维护方式
 

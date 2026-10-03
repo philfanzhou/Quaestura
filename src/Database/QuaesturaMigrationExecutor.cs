@@ -8,10 +8,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using ServiceMantle.Migration;
+using ServiceMantle.Persistence.Relational.Migration;
+using SharedSchemaSnapshot = ServiceMantle.Migration.SchemaSnapshot;
 
 namespace Quaestura.Database;
 
@@ -501,72 +502,37 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
     private static string[]? ReadTextArray(DbDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string[]>(ordinal);
 
-    // ---------- expected schema (derived from the current EF model) ----------
+    // ---------- shared expectation plus consumer-owned names ----------
 
     private IReadOnlyDictionary<string, ExpectedTable> BuildExpectedTables()
     {
+        var structures = EfCoreExpectedSchemaDerivation.Derive(_context.Model).Tables
+            .ToDictionary(table => table.Name, StringComparer.Ordinal);
         var expected = new Dictionary<string, ExpectedTable>(StringComparer.Ordinal);
-        foreach (var entityType in _context.Model.GetEntityTypes())
+        foreach (var table in _context.Model.GetRelationalModel().Tables)
         {
-            var tableName = entityType.GetTableName();
-            var storeObject = StoreObjectIdentifier.Create(entityType, StoreObjectType.Table);
-            if (tableName is null || storeObject is null)
-            {
-                continue;
-            }
-
-            if (!KnownTableNames.Contains(tableName))
+            if (!KnownTableNames.Contains(table.Name))
             {
                 throw new InvalidOperationException(
-                    $"The EF model contains table '{tableName}' outside the supported migration contract.");
+                    $"The EF model contains table '{table.Name}' outside the supported migration contract.");
             }
 
-            var columns = entityType.GetProperties()
-                .Select(property => new ExpectedColumn(
-                    property.GetColumnName(storeObject.Value)!,
-                    property.GetColumnType(storeObject.Value)!,
-                    !property.IsNullable))
-                .ToList();
-
-            var primaryKey = entityType.FindPrimaryKey();
-            ExpectedConstraint? expectedPrimaryKey = primaryKey is null
-                ? null
-                : new ExpectedConstraint(
-                    primaryKey.GetName()!,
-                    primaryKey.Properties
-                        .Select(property => property.GetColumnName(storeObject.Value)!)
-                        .ToList());
-
-            var foreignKeys = entityType.GetForeignKeys()
-                .Select(foreignKey =>
-                {
-                    var principalEntity = foreignKey.PrincipalEntityType;
-                    var principalStoreObject =
-                        StoreObjectIdentifier.Create(principalEntity, StoreObjectType.Table)!.Value;
-                    return new ExpectedForeignKey(
-                        foreignKey.GetConstraintName(storeObject.Value, principalStoreObject)!,
-                        foreignKey.Properties
-                            .Select(property => property.GetColumnName(storeObject.Value)!)
-                            .ToList(),
-                        principalEntity.GetTableName()!,
-                        foreignKey.PrincipalKey.Properties
-                            .Select(property => property.GetColumnName(principalStoreObject)!)
-                            .ToList(),
-                        MapDeleteRule(foreignKey.DeleteBehavior));
-                })
-                .ToList();
-
-            var indexes = entityType.GetIndexes()
-                .Select(index => new ExpectedIndex(
-                    index.GetDatabaseName(storeObject.Value)!,
-                    index.Properties
-                        .Select(property => property.GetColumnName(storeObject.Value)!)
-                        .ToList(),
-                    index.IsUnique))
-                .ToList();
-
-            expected[tableName] = new ExpectedTable(
-                tableName, columns, expectedPrimaryKey, foreignKeys, indexes);
+            var derived = structures[table.Name];
+            // Preserve the existing comparison dimensions: the model and database use public,
+            // while identity generation and stored defaults were never inspection guarantees.
+            var structure = new SchemaTable(table.Name,
+                derived.Columns.Select(column => new SchemaColumn(
+                    column.Name, column.DataType, column.IsNullable)).ToList(),
+                derived.PrimaryKey,
+                derived.ForeignKeys.Select(key => new SchemaForeignKey(
+                    key.Columns, key.ReferencedTable, key.ReferencedColumns, key.DeleteRule,
+                    SchemaName)).ToList(),
+                derived.Indexes, SchemaName);
+            expected[table.Name] = new ExpectedTable(table.Name, structure, table.PrimaryKey?.Name,
+                table.ForeignKeyConstraints.Select((key, index) =>
+                    new ExpectedForeignKey(key.Name, structure.ForeignKeys[index])).ToList(),
+                table.Indexes.Select((index, position) =>
+                    new ExpectedIndex(index.Name, structure.Indexes[position])).ToList());
         }
 
         foreach (var tableName in KnownTableNames.Where(name => !expected.ContainsKey(name)))
@@ -577,17 +543,6 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
         return expected;
     }
-
-    private static string MapDeleteRule(DeleteBehavior behavior) => behavior switch
-    {
-        DeleteBehavior.Cascade or DeleteBehavior.ClientCascade => "c",
-        DeleteBehavior.Restrict => "r",
-        DeleteBehavior.SetNull => "n",
-        // Optional relationships default to ClientSetNull; migrations emit no ON DELETE clause
-        // for them, which PostgreSQL stores as NO ACTION.
-        DeleteBehavior.NoAction or DeleteBehavior.ClientNoAction or DeleteBehavior.ClientSetNull => "a",
-        _ => throw new InvalidOperationException($"Unsupported delete behavior '{behavior}'."),
-    };
 
     // ---------- validation ----------
 
@@ -610,38 +565,23 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     private static string? ValidateTable(SchemaSnapshot snapshot, ExpectedTable expected)
     {
-        if (!snapshot.TableExists(expected.Name))
+        if (!snapshot.TableExists(expected.Name) || snapshot.GetColumns(expected.Name).Count == 0)
         {
             return $"table '{expected.Name}' is missing";
         }
 
-        var actualColumns = snapshot.GetColumns(expected.Name);
-        foreach (var column in expected.Columns)
+        var differences = SchemaEvidenceComparer.Compare(
+            new SharedSchemaSnapshot([snapshot.ToSharedTable(expected.Name)]),
+            new ExpectedSchema([expected.Structure]));
+        var columnMismatch = differences.FirstOrDefault(difference => difference.Kind is
+            SchemaDifferenceKind.MissingColumn or SchemaDifferenceKind.ExtraColumn or
+            SchemaDifferenceKind.ColumnTypeMismatch or SchemaDifferenceKind.ColumnNullabilityMismatch);
+        if (columnMismatch is not null)
         {
-            if (!actualColumns.TryGetValue(column.Name, out var actual))
-            {
-                return $"table '{expected.Name}' is missing column '{column.Name}'";
-            }
-
-            if (!string.Equals(actual.Type, column.Type, StringComparison.Ordinal))
-            {
-                return $"column '{expected.Name}.{column.Name}' has type '{actual.Type}' but the supported version requires '{column.Type}'";
-            }
-
-            if (actual.NotNull != column.NotNull)
-            {
-                return $"column '{expected.Name}.{column.Name}' has nullability {(actual.NotNull ? "NOT NULL" : "NULL")} but the supported version requires {(column.NotNull ? "NOT NULL" : "NULL")}";
-            }
+            return columnMismatch.ToString();
         }
 
-        var extraColumn = actualColumns.Keys.FirstOrDefault(name =>
-            expected.Columns.All(column => !string.Equals(column.Name, name, StringComparison.Ordinal)));
-        if (extraColumn is not null)
-        {
-            return $"table '{expected.Name}' contains column '{extraColumn}' outside the supported version";
-        }
-
-        if (expected.PrimaryKey is not null)
+        if (expected.PrimaryKeyName is not null)
         {
             var actualPrimaryKey = snapshot.GetPrimaryKey(expected.Name);
             if (actualPrimaryKey is null)
@@ -649,15 +589,17 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                 return $"table '{expected.Name}' is missing its primary key";
             }
 
-            if (!NameMatches(actualPrimaryKey.Name, expected.PrimaryKey.Name))
+            if (!NameMatches(actualPrimaryKey.Name, expected.PrimaryKeyName))
             {
-                return $"table '{expected.Name}' has primary key '{actualPrimaryKey.Name}' but the supported version requires '{expected.PrimaryKey.Name}'";
+                return $"table '{expected.Name}' has primary key '{actualPrimaryKey.Name}' but the supported version requires '{expected.PrimaryKeyName}'";
             }
+        }
 
-            if (!actualPrimaryKey.Columns.SequenceEqual(expected.PrimaryKey.Columns, StringComparer.Ordinal))
-            {
-                return $"primary key '{expected.PrimaryKey.Name}' covers [{string.Join(", ", actualPrimaryKey.Columns)}] but the supported version requires [{string.Join(", ", expected.PrimaryKey.Columns)}]";
-            }
+        var primaryKeyMismatch = differences.FirstOrDefault(difference =>
+            difference.Kind == SchemaDifferenceKind.PrimaryKeyMismatch);
+        if (primaryKeyMismatch is not null)
+        {
+            return primaryKeyMismatch.ToString();
         }
 
         var actualForeignKeys = snapshot.GetForeignKeys(expected.Name);
@@ -670,10 +612,10 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                 return $"table '{expected.Name}' is missing foreign key '{foreignKey.Name}'";
             }
 
-            if (!actual.Columns.SequenceEqual(foreignKey.Columns, StringComparer.Ordinal) ||
-                !string.Equals(actual.PrincipalTable, foreignKey.PrincipalTable, StringComparison.Ordinal) ||
-                !actual.PrincipalColumns.SequenceEqual(foreignKey.PrincipalColumns, StringComparer.Ordinal) ||
-                !string.Equals(actual.DeleteRule, foreignKey.DeleteRule, StringComparison.Ordinal))
+            if (!actual.Columns.SequenceEqual(foreignKey.Shape.Columns, StringComparer.Ordinal) ||
+                !string.Equals(actual.PrincipalTable, foreignKey.Shape.ReferencedTable, StringComparison.Ordinal) ||
+                !actual.PrincipalColumns.SequenceEqual(foreignKey.Shape.ReferencedColumns, StringComparer.Ordinal) ||
+                SchemaSnapshot.MapDeleteRule(actual.DeleteRule) != foreignKey.Shape.DeleteRule)
             {
                 return $"foreign key '{foreignKey.Name}' on table '{expected.Name}' does not match the supported version's columns, reference, or delete behavior";
             }
@@ -695,10 +637,10 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
             // Expression or predicate variants keep their declared key count; a column count that
             // does not cover it means the index is not the plain column index the model requires.
-            if (actual.IsUnique != index.IsUnique ||
-                actual.ResolvedColumns.Length != index.Columns.Count ||
-                actual.KeyCount != index.Columns.Count ||
-                !actual.ResolvedColumns.SequenceEqual(index.Columns, StringComparer.Ordinal))
+            if (actual.IsUnique != index.Shape.IsUnique ||
+                actual.ResolvedColumns.Length != index.Shape.Columns.Count ||
+                actual.KeyCount != index.Shape.Columns.Count ||
+                !actual.ResolvedColumns.SequenceEqual(index.Shape.Columns, StringComparer.Ordinal))
             {
                 return $"index '{index.Name}' on table '{expected.Name}' does not match the supported version's columns or uniqueness";
             }
@@ -709,7 +651,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
             return $"table '{expected.Name}' contains an index outside the supported version";
         }
 
-        return null;
+        return differences.FirstOrDefault()?.ToString();
     }
 
     /// <summary>
@@ -726,48 +668,9 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
         await _context.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await using var transaction = await _context.Database
-                .BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            var connection = _context.Database.GetDbConnection();
-            var dbTransaction = transaction.GetDbTransaction();
-
-            await using (var createHistory = connection.CreateCommand())
-            {
-                createHistory.Transaction = dbTransaction;
-                createHistory.CommandText = $$"""
-                    CREATE TABLE IF NOT EXISTS "{{HistoryTableName}}" (
-                        "MigrationId" character varying(150) NOT NULL,
-                        "ProductVersion" character varying(32) NOT NULL,
-                        CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
-                    )
-                    """;
-                await createHistory.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await using (var insertBaseline = connection.CreateCommand())
-            {
-                insertBaseline.Transaction = dbTransaction;
-                // Duplicate registrations re-read the legitimate state instead of failing or
-                // double-stamping; parameters keep the write injection-free.
-                insertBaseline.CommandText = $$"""
-                    INSERT INTO "{{HistoryTableName}}" ("MigrationId", "ProductVersion")
-                    SELECT @migrationId, @productVersion
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM "{{HistoryTableName}}" WHERE "MigrationId" = @migrationId
-                    )
-                    """;
-                var idParameter = insertBaseline.CreateParameter();
-                idParameter.ParameterName = "@migrationId";
-                idParameter.Value = InitialCreateMigrationId;
-                insertBaseline.Parameters.Add(idParameter);
-                var versionParameter = insertBaseline.CreateParameter();
-                versionParameter.ParameterName = "@productVersion";
-                versionParameter.Value = EfProductVersion;
-                insertBaseline.Parameters.Add(versionParameter);
-                await insertBaseline.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await new EfCoreMigrationBaselineWriter(_context).WriteBaselineAsync(
+                _context.Database.GetDbConnection(), InitialCreateMigrationId, EfProductVersion,
+                cancellationToken).ConfigureAwait(false);
             _logger?.LogInformation(
                 "Registered the verified {MigrationId} baseline for the legacy database",
                 InitialCreateMigrationId);
@@ -822,23 +725,14 @@ internal sealed record MigrationInspection(
 
 // ---------- shapes ----------
 
-internal sealed record ExpectedColumn(string Name, string Type, bool NotNull);
+internal sealed record ExpectedForeignKey(string Name, SchemaForeignKey Shape);
 
-internal sealed record ExpectedConstraint(string Name, IReadOnlyList<string> Columns);
-
-internal sealed record ExpectedForeignKey(
-    string Name,
-    IReadOnlyList<string> Columns,
-    string PrincipalTable,
-    IReadOnlyList<string> PrincipalColumns,
-    string DeleteRule);
-
-internal sealed record ExpectedIndex(string Name, IReadOnlyList<string> Columns, bool IsUnique);
+internal sealed record ExpectedIndex(string Name, SchemaIndex Shape);
 
 internal sealed record ExpectedTable(
     string Name,
-    IReadOnlyList<ExpectedColumn> Columns,
-    ExpectedConstraint? PrimaryKey,
+    SchemaTable Structure,
+    string? PrimaryKeyName,
     IReadOnlyList<ExpectedForeignKey> ForeignKeys,
     IReadOnlyList<ExpectedIndex> Indexes);
 
@@ -915,6 +809,32 @@ internal sealed class SchemaSnapshot
 
         list.Add(index);
     }
+
+    /// <summary>
+    /// Projects only inspected business tables into the shared model. Expression indexes stay
+    /// in the local inventory and are rejected by the named-object check before acceptance.
+    /// </summary>
+    internal SchemaTable ToSharedTable(string table) => new(
+        table,
+        GetColumns(table).Values.Select(column => new SchemaColumn(
+            column.Name, column.Type, !column.NotNull)).ToList(),
+        GetPrimaryKey(table) is { } primaryKey ? new SchemaPrimaryKey(primaryKey.Columns) : null,
+        GetForeignKeys(table).Select(key => new SchemaForeignKey(
+            key.Columns, key.PrincipalTable, key.PrincipalColumns, MapDeleteRule(key.DeleteRule),
+            "public")).ToList(),
+        GetIndexes(table).Where(index => index.ResolvedColumns.Length > 0 &&
+                                       index.KeyCount == index.ResolvedColumns.Length)
+            .Select(index => new SchemaIndex(index.ResolvedColumns, index.IsUnique)).ToList(),
+        "public");
+
+    internal static SchemaForeignKeyDeleteRule MapDeleteRule(string rule) => rule switch
+    {
+        "c" => SchemaForeignKeyDeleteRule.Cascade,
+        "r" => SchemaForeignKeyDeleteRule.Restrict,
+        "n" => SchemaForeignKeyDeleteRule.SetNull,
+        "d" => SchemaForeignKeyDeleteRule.SetDefault,
+        _ => SchemaForeignKeyDeleteRule.NoAction,
+    };
 
     internal bool TableExists(string table) => _tables.Contains(table);
 

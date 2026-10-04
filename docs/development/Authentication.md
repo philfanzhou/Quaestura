@@ -31,6 +31,20 @@ Configured through `appsettings.json` or environment variables:
 | `IdentityService:RequireHttpsMetadata` | `IdentityService__RequireHttpsMetadata` | Yes | Defaults to `true`; set to `false` only when SignaCore also explicitly allows HTTP |
 | `IdentityService:ClockSkewSeconds` | `IdentityService__ClockSkewSeconds` | Yes | Tolerance for token time validation, currently 30 seconds |
 
+Discovery/JWKS provides signing keys and refresh only. Accepted Bearer issuers come from an
+immutable factory snapshot of nonempty, trimmed, Ordinal-distinct `Issuer` and
+`AdditionalValidIssuers`. Matching is exact, including case and trailing slashes. Discovery
+cannot add trust: an issuer outside the snapshot receives 401, with a fixed English diagnostic
+naming only these configuration keys and no token-sourced `InvalidIssuer` value. This diagnostic
+guarantee applies to issuer rejection, not every independent framework failure message.
+
+Before upgrading, check `IdentityService:Issuer` against actual issued tokens and explicitly list
+migration issuers in `AdditionalValidIssuers`, removing them when the migration ends. Deployments
+that relied on automatic discovery issuer acceptance now receive 401. Rolling back the image
+and matching configuration restores the previous behavior and its known trust gap. Signature-key
+compromise remains outside this guarantee. Hosted login retains its separate exact
+`AdminOidc:Authority` and client-audience contract.
+
 ### 1.3 JWT claims
 
 The service reads the following claims from the JWT:
@@ -116,6 +130,13 @@ When the user is authenticated but lacks the required role, or the ownership che
 ### 4.1 Unit tests
 
 - `ClaimsPrincipalExtensions`, role mapping, Issuer/Audience/signature/time boundaries, and Cookie/Header precedence are provided by `Quaestura.Common` (the shared authentication components copied from `ruoyu.common`)
+- `ExplicitIssuerTrustTests` exercises the production `AddRuoyuJwtBearer` registration and real
+  JwtBearerHandler with HTTPS discovery/JWKS, both default BaseConfigurationManager and a non-base
+  HTTP discovery manager: explicit/migration issuers succeed, discovery-only/unknown/empty/case/slash
+  variants fail, and key refresh cannot expand trust. Invalid signatures, audience and expiry still
+  fail without executing the protected endpoint. Factory tests cover immutable normalization,
+  clone/list mutation, independent concurrent parameter sets and safe diagnostics. Real logs and
+  HTTP401 remain free of token and unknown/discovery issuer canaries.
 - `JwtBearerApiTests` exercises the real JwtBearer pipeline to cover valid tokens on protected APIs, 401 for unknown Issuers, and anonymous access to `/health`
 
 ### 4.2 Integration tests

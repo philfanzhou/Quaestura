@@ -22,6 +22,7 @@ using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using OpenTelemetry;
 using OpenTelemetry.Trace;
 using Quaestura.Host.Authentication;
+using Quaestura.Common.Authentication;
 using SignaCore.Client.AspNetCore;
 using Xunit;
 
@@ -475,9 +476,15 @@ internal sealed class HostedLoginHarness : IDisposable
                     options.MapInboundClaims = false;
                     options.Configuration = new OpenIdConnectConfiguration { Issuer = Authority.Origin };
                     options.Configuration.SigningKeys.Add(Authority.Key);
-                    options.TokenValidationParameters.ValidIssuers = [Authority.Origin];
-                    options.TokenValidationParameters.IssuerSigningKeys = [Authority.Key];
-                    options.TokenValidationParameters.RoleClaimType = "role";
+                    // Capture explicit fixture trust through the production factory as the Host does.
+                    options.TokenValidationParameters = IdentityTokenValidationParametersFactory.Create(
+                        new IdentityAuthenticationOptions
+                        {
+                            Authority = Authority.Origin,
+                            Issuer = Authority.Origin,
+                            Audience = options.TokenValidationParameters.ValidAudience!,
+                            ClockSkewSeconds = (int)options.TokenValidationParameters.ClockSkew.TotalSeconds
+                        }, [Authority.Key], roleClaimType: "role");
                 });
                 if (spans is not null) services.ConfigureOpenTelemetryTracerProvider((_, builder) => builder.AddProcessor(new SimpleActivityExportProcessor(new SpanCollector(spans))));
             });

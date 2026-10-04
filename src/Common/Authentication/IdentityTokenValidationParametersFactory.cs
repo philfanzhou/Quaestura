@@ -12,12 +12,19 @@ public static class IdentityTokenValidationParametersFactory
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        var validIssuers = Array.AsReadOnly(options.GetValidIssuers().ToArray());
+
         var parameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKeys = signingKeys,
             ValidateIssuer = true,
-            ValidIssuers = options.GetValidIssuers(),
+            ValidIssuers = validIssuers,
+            // Discovery supplies signing keys, never an additional trust anchor.
+            IssuerValidator = (issuer, _, _) => validIssuers.Contains(issuer, StringComparer.Ordinal)
+                ? issuer
+                : throw new SecurityTokenInvalidIssuerException(
+                    "Token issuer must match IdentityService:Issuer or IdentityService:AdditionalValidIssuers."),
             ValidateAudience = true,
             ValidAudience = options.Audience,
             ValidateLifetime = true,

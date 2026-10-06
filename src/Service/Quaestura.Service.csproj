@@ -15,7 +15,7 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <!-- Endpoint-metadata marking for the two admin-auth JSON endpoints
          (RequireServiceMantleSecurityResponseHeaders). Pinned to the same version as Host. -->
-    <PackageReference Include="ServiceMantle.Web" Version="0.3.0" />
+    <PackageReference Include="ServiceMantle.Web" Version="0.3.1-rc.1" />
   </ItemGroup>
 
   <ItemGroup>

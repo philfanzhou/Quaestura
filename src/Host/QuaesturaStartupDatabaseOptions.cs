@@ -22,12 +22,9 @@ public static class QuaesturaStartupDatabaseOptions
             if (string.IsNullOrWhiteSpace(builder.Host) || string.IsNullOrWhiteSpace(builder.Database) ||
                 string.IsNullOrWhiteSpace(builder.Username))
                 throw InvalidTarget();
-            return new StartupDatabaseGateOptions(
+            return PostgreSqlStartupDatabaseGateOptions.Create(
                 new BootstrapDatabaseConfiguration(WellKnownDatabaseProviderIds.PostgreSql, null, builder.ConnectionString),
-                DatabaseDeploymentMode.MultiInstance, TimeSpan.FromSeconds(30),
-                enableTargetPreparation: true, allowTargetCreation: allowCreate,
-                maintenanceConnectionString: PostgreSqlMaintenanceConnection.DeriveConnectionString(builder.ConnectionString),
-                preparationTimeout: TimeSpan.FromSeconds(30));
+                allowTargetCreation: allowCreate);
         }
         catch (Exception exception) when (exception is ArgumentException or FormatException)
         {

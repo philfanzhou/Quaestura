@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ServiceMantle;
 using ServiceMantle.Migration;
+using ServiceMantle.Health;
 
 namespace Quaestura.Tests.Database;
 
@@ -32,6 +33,31 @@ public sealed class TargetPreparationTests
     public TargetPreparationTests(PostgreSqlTargetPreparationFixture fixture)
     {
         _fixture = fixture;
+    }
+
+    [Fact]
+    public void SharedDirectComposition_PreservesDefaultCreationAndBudgetsWithoutHostedGate()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddQuaesturaServiceMantle();
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetServices<IDatabaseDeploymentCapabilityProvider>().Should()
+            .ContainSingle().Which.Should().BeOfType<PostgreSqlDatabaseDeploymentCapabilityProvider>();
+        services.Should().NotContain(descriptor =>
+            descriptor.ImplementationType != null && descriptor.ImplementationType.Name == "StartupDatabaseGateHostedService");
+        provider.GetRequiredService<StartupDatabaseGate>().Should().NotBeNull();
+        provider.GetRequiredService<StartupDatabaseReceipt>().State.Should().Be(ServiceMigrationReadinessState.NotStarted);
+        var options = QuaesturaStartupDatabaseOptions.Create(Configuration(),
+            "Host=localhost;Database=quaestura;Username=owner");
+        options.DeploymentMode.Should().Be(DatabaseDeploymentMode.MultiInstance);
+        options.LockWaitBudget.Should().Be(TimeSpan.FromSeconds(30));
+        options.PreparationTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.EnableTargetPreparation.Should().BeTrue();
+        options.AllowTargetCreation.Should().BeTrue();
+        new Npgsql.NpgsqlConnectionStringBuilder(options.MaintenanceConnectionString)
+            .Database.Should().Be("postgres");
     }
 
     [Fact]

@@ -218,12 +218,8 @@ public static class ServiceMantleComposition
             .AddServiceMantleHealthEndpoints();
 
         // Direct gate invocation in Program.cs; no hosted runner or Bootstrap store resolution.
-        services.AddSingleton<IDatabaseDeploymentCapabilityProvider, QuaesturaDatabaseDeploymentCapability>();
-        services.AddSingleton(provider => new DatabaseDeploymentCapabilityRegistry(
-            provider.GetServices<IDatabaseDeploymentCapabilityProvider>(),
-            provider.GetRequiredService<BootstrapDatabaseProviderRegistry>().ProviderIdResolver));
-        services.AddSingleton<StartupDatabaseReceipt>();
-        services.AddSingleton<StartupDatabaseGate>();
+        services.AddServiceMantlePostgreSqlDeploymentCapability();
+        services.AddServiceMantleStartupDatabaseGateServices();
         services.AddServiceMantleEfCoreHealthSnapshotSource<QuaesturaDbContext>(
             ServiceId.Parse(ServiceIdValue), new PostgreSqlDatabaseProbeFailureClassifier(),
             EfCoreHealthSnapshotProbeMode.MappedSchema, errorCodePrefix: "health");

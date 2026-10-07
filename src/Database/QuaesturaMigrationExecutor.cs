@@ -1,15 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.Data;
-using System.Data.Common;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using ServiceMantle.Database.PostgreSql.Migration;
 using ServiceMantle.Migration;
 using ServiceMantle.Persistence.Relational.Migration;
 using SharedSchemaSnapshot = ServiceMantle.Migration.SchemaSnapshot;
@@ -38,6 +36,13 @@ namespace Quaestura.Database;
 /// history that claims a version the schema contradicts). Unknown state is never stamped,
 /// repaired, or silently accepted.</item>
 /// </list>
+/// <para>
+/// Schema evidence (applied history plus the columns, constraints, and indexes of the six business
+/// tables) is read by the shared <see cref="PostgreSqlSchemaEvidenceReader"/> with extended object
+/// evidence, scoped to the contract tables so unrelated tables never influence the classification.
+/// Name comparisons stay consumer-owned and case-insensitive; the shared comparer runs with name
+/// comparison off and carries the shape and key-detail differences instead.
+/// </para>
 /// <para>
 /// <c>ExecuteAsync</c> re-verifies first, stamps only the verified InitialCreate baseline for a
 /// legacy takeover in its own parameterized transaction, and then lets EF Core run the remaining
@@ -225,14 +230,55 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     private async Task<MigrationInspection> InspectOpenDatabaseAsync(CancellationToken cancellationToken)
     {
-        var connection = _context.Database.GetDbConnection();
         var expected = BuildExpectedTables();
+        var evidence = await ReadSchemaEvidenceAsync(cancellationToken).ConfigureAwait(false);
 
-        var tableNames = await QueryTableNamesAsync(connection, cancellationToken).ConfigureAwait(false);
-        var presentBusinessTables = KnownTableNames.Where(tableNames.Contains).ToList();
-        var applied = tableNames.Contains(HistoryTableName)
-            ? await QueryAppliedMigrationIdsAsync(connection, cancellationToken).ConfigureAwait(false)
-            : [];
+        switch (evidence)
+        {
+            case { State: SchemaEvidenceReadState.TargetDatabaseMissing }:
+                // The catalog vanished between opening the connection and reading the evidence;
+                // it classifies exactly like a missing target database at open time.
+                return MigrationInspection.Of(
+                    MigrationObservationState.Empty,
+                    "the target database does not exist yet");
+
+            case { State: SchemaEvidenceReadState.ReadFailed }:
+                _logger?.LogWarning(
+                    "Database inspection could not read the target structure: {Failure}",
+                    evidence.Message);
+                return MigrationInspection.Of(
+                    MigrationObservationState.InspectionFailed,
+                    $"the database structure could not be read ({evidence.Message})");
+
+            case { State: SchemaEvidenceReadState.Succeeded, Snapshot: { } snapshot }:
+                return ClassifySnapshot(evidence.AppliedMigrationIds, snapshot, expected);
+
+            default:
+                throw new InvalidOperationException(
+                    $"The schema evidence reader returned an unsupported state: {evidence.State}.");
+        }
+    }
+
+    private async Task<SchemaEvidenceReadResult> ReadSchemaEvidenceAsync(
+        CancellationToken cancellationToken)
+    {
+        var connection = _context.Database.GetDbConnection() as NpgsqlConnection
+            ?? throw new InvalidOperationException(
+                "The migration executor requires the target database connection to be an Npgsql connection.");
+        var options = new PostgreSqlSchemaEvidenceReadOptions(
+            includeExtendedObjectEvidence: true,
+            tables: KnownTableNames.Select(table => (SchemaName, table)).ToList());
+        return await new PostgreSqlSchemaEvidenceReader()
+            .ReadAsync(connection, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    private MigrationInspection ClassifySnapshot(
+        IReadOnlyList<string> applied,
+        SharedSchemaSnapshot snapshot,
+        IReadOnlyDictionary<string, SchemaTable> expected)
+    {
+        var presentBusinessTables = KnownTableNames
+            .Where(table => FindTable(snapshot, table) is not null).ToList();
 
         var unknownIds = applied.Where(id => !KnownMigrationIds.Contains(id)).ToList();
         if (unknownIds.Count > 0)
@@ -247,8 +293,6 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
             return MigrationInspection.Failed(
                 $"the migration history [{Join(applied)}] is not a known ordered prefix of [{Join(KnownMigrationIds)}]");
         }
-
-        var snapshot = await ReadSchemaSnapshotAsync(connection, cancellationToken).ConfigureAwait(false);
 
         if (prefixLength == KnownMigrationIds.Count)
         {
@@ -287,7 +331,8 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                 $"the tables of the {InitialCreateMigrationId} version do not verify: {initialMismatch}");
         }
 
-        var presentTagTables = TagTableNames.Where(tableNames.Contains).ToList();
+        var presentTagTables = TagTableNames
+            .Where(table => FindTable(snapshot, table) is not null).ToList();
         if (presentTagTables.Count == 1)
         {
             return MigrationInspection.Failed(
@@ -342,173 +387,18 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
         return true;
     }
 
-    private static async Task<HashSet<string>> QueryTableNamesAsync(
-        DbConnection connection, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT c.relname
-            FROM pg_class c
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'public' AND c.relkind = 'r'
-            """;
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        await using var reader = await command
-            .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            names.Add(reader.GetString(0));
-        }
-
-        return names;
-    }
-
-    private static async Task<List<string>> QueryAppliedMigrationIdsAsync(
-        DbConnection connection, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText =
-            $"""SELECT "MigrationId" FROM "{HistoryTableName}" ORDER BY "MigrationId" """;
-        var ids = new List<string>();
-        await using var reader = await command
-            .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            ids.Add(reader.GetString(0));
-        }
-
-        return ids;
-    }
-
-    private static async Task<SchemaSnapshot> ReadSchemaSnapshotAsync(
-        DbConnection connection, CancellationToken cancellationToken)
-    {
-        var tables = KnownTableNames.ToArray();
-        var snapshot = new SchemaSnapshot();
-
-        await using (var columns = connection.CreateCommand())
-        {
-            columns.CommandText = """
-                SELECT c.relname, a.attname, format_type(a.atttypid, a.atttypmod), a.attnotnull
-                FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                JOIN pg_attribute a ON a.attrelid = c.oid
-                WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relname = ANY(@tables)
-                  AND a.attnum > 0 AND NOT a.attisdropped
-                ORDER BY c.relname, a.attnum
-                """;
-            AddTableArrayParameter(columns, tables);
-            await using var reader = await columns
-                .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                snapshot.AddColumn(
-                    reader.GetString(0),
-                    new ActualColumn(
-                        reader.GetString(1),
-                        reader.GetString(2),
-                        reader.GetBoolean(3)));
-            }
-        }
-
-        await using (var constraints = connection.CreateCommand())
-        {
-            constraints.CommandText = """
-                SELECT c.relname, con.conname, con.contype::text, con.confdeltype::text, fc.relname,
-                       (SELECT array_agg(a.attname ORDER BY k.ord)
-                          FROM unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
-                          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum),
-                       (SELECT array_agg(a.attname ORDER BY k.ord)
-                          FROM unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
-                          JOIN pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum)
-                FROM pg_constraint con
-                JOIN pg_class c ON c.oid = con.conrelid
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                LEFT JOIN pg_class fc ON fc.oid = con.confrelid
-                WHERE n.nspname = 'public' AND c.relname = ANY(@tables)
-                  AND con.contype = ANY(ARRAY['p', 'f']::"char"[])
-                ORDER BY c.relname, con.conname
-                """;
-            AddTableArrayParameter(constraints, tables);
-            await using var reader = await constraints
-                .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var table = reader.GetString(0);
-                var name = reader.GetString(1);
-                var kind = reader.GetString(2);
-                var deleteRule = reader.IsDBNull(3) ? null : reader.GetString(3);
-                var principalTable = reader.IsDBNull(4) ? null : reader.GetString(4);
-                var columns = ReadTextArray(reader, 5) ?? [];
-                var principalColumns = ReadTextArray(reader, 6) ?? [];
-                if (kind == "p")
-                {
-                    snapshot.SetPrimaryKey(table, new ActualConstraint(name, columns));
-                }
-                else
-                {
-                    snapshot.AddForeignKey(table, new ActualForeignKey(
-                        name, columns, principalTable ?? string.Empty, principalColumns, deleteRule ?? "a"));
-                }
-            }
-        }
-
-        await using (var indexes = connection.CreateCommand())
-        {
-            indexes.CommandText = """
-                SELECT c.relname, ic.relname, i.indisunique, array_length(i.indkey, 1),
-                       (SELECT array_agg(a.attname ORDER BY k.ord)
-                          FROM unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord)
-                          JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum)
-                FROM pg_index i
-                JOIN pg_class ic ON ic.oid = i.indexrelid
-                JOIN pg_class c ON c.oid = i.indrelid
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'public' AND c.relname = ANY(@tables)
-                  AND NOT i.indisprimary
-                  AND NOT EXISTS (
-                      SELECT 1 FROM pg_constraint con WHERE con.conindid = i.indexrelid
-                  )
-                ORDER BY c.relname, ic.relname
-                """;
-            AddTableArrayParameter(indexes, tables);
-            await using var reader = await indexes
-                .ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var keyCount = reader.IsDBNull(3) ? -1 : reader.GetInt32(3);
-                var indexColumns = ReadTextArray(reader, 4) ?? [];
-                snapshot.AddIndex(
-                    reader.GetString(0),
-                    new ActualIndex(
-                        reader.GetString(1),
-                        indexColumns,
-                        reader.GetBoolean(2),
-                        keyCount));
-            }
-        }
-
-        return snapshot;
-    }
-
-    private static void AddTableArrayParameter(DbCommand command, string[] tables)
-    {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = "@tables";
-        parameter.Value = tables;
-        command.Parameters.Add(parameter);
-    }
-
-    private static string[]? ReadTextArray(DbDataReader reader, int ordinal) =>
-        reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string[]>(ordinal);
-
     // ---------- shared expectation plus consumer-owned names ----------
 
-    private IReadOnlyDictionary<string, ExpectedTable> BuildExpectedTables()
+    private IReadOnlyDictionary<string, SchemaTable> BuildExpectedTables()
     {
-        var structures = EfCoreExpectedSchemaDerivation.Derive(_context.Model).Tables
-            .ToDictionary(table => table.Name, StringComparer.Ordinal);
-        var expected = new Dictionary<string, ExpectedTable>(StringComparer.Ordinal);
+        // Extended derivation outputs the PK/FK/index names and key column counts directly, so the
+        // expected shape pairs with the reader's extended evidence without local name pairing.
+        var derived = EfCoreExpectedSchemaDerivation.Derive(
+                _context.Model,
+                new EfCoreExpectedSchemaDerivationOptions(includeExtendedObjectEvidence: true))
+            .Tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
+
+        var expected = new Dictionary<string, SchemaTable>(StringComparer.Ordinal);
         foreach (var table in _context.Model.GetRelationalModel().Tables)
         {
             if (!KnownTableNames.Contains(table.Name))
@@ -517,22 +407,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                     $"The EF model contains table '{table.Name}' outside the supported migration contract.");
             }
 
-            var derived = structures[table.Name];
-            // Preserve the existing comparison dimensions: the model and database use public,
-            // while identity generation and stored defaults were never inspection guarantees.
-            var structure = new SchemaTable(table.Name,
-                derived.Columns.Select(column => new SchemaColumn(
-                    column.Name, column.DataType, column.IsNullable)).ToList(),
-                derived.PrimaryKey,
-                derived.ForeignKeys.Select(key => new SchemaForeignKey(
-                    key.Columns, key.ReferencedTable, key.ReferencedColumns, key.DeleteRule,
-                    SchemaName)).ToList(),
-                derived.Indexes, SchemaName);
-            expected[table.Name] = new ExpectedTable(table.Name, structure, table.PrimaryKey?.Name,
-                table.ForeignKeyConstraints.Select((key, index) =>
-                    new ExpectedForeignKey(key.Name, structure.ForeignKeys[index])).ToList(),
-                table.Indexes.Select((index, position) =>
-                    new ExpectedIndex(index.Name, structure.Indexes[position])).ToList());
+            expected[table.Name] = derived[table.Name];
         }
 
         foreach (var tableName in KnownTableNames.Where(name => !expected.ContainsKey(name)))
@@ -546,9 +421,14 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     // ---------- validation ----------
 
+    private static SchemaTable? FindTable(SharedSchemaSnapshot snapshot, string tableName) =>
+        snapshot.Tables.FirstOrDefault(table =>
+            string.Equals(table.Schema, SchemaName, StringComparison.Ordinal) &&
+            string.Equals(table.Name, tableName, StringComparison.Ordinal));
+
     private static string? ValidateTables(
-        SchemaSnapshot snapshot,
-        IReadOnlyDictionary<string, ExpectedTable> expected,
+        SharedSchemaSnapshot snapshot,
+        IReadOnlyDictionary<string, SchemaTable> expected,
         IEnumerable<string> tableNames)
     {
         foreach (var tableName in tableNames)
@@ -563,16 +443,18 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
         return null;
     }
 
-    private static string? ValidateTable(SchemaSnapshot snapshot, ExpectedTable expected)
+    private static string? ValidateTable(SharedSchemaSnapshot snapshot, SchemaTable expected)
     {
-        if (!snapshot.TableExists(expected.Name) || snapshot.GetColumns(expected.Name).Count == 0)
+        var actual = FindTable(snapshot, expected.Name);
+        if (actual is null || actual.Columns.Count == 0)
         {
             return $"table '{expected.Name}' is missing";
         }
 
         var differences = SchemaEvidenceComparer.Compare(
-            new SharedSchemaSnapshot([snapshot.ToSharedTable(expected.Name)]),
-            new ExpectedSchema([expected.Structure]));
+            new SharedSchemaSnapshot([NormalizeOutsideContract(actual)]),
+            new ExpectedSchema([NormalizeOutsideContract(expected)]),
+            new SchemaEvidenceComparisonOptions(compareObjectNames: false, compareIndexKeyDetails: true));
         var columnMismatch = differences.FirstOrDefault(difference => difference.Kind is
             SchemaDifferenceKind.MissingColumn or SchemaDifferenceKind.ExtraColumn or
             SchemaDifferenceKind.ColumnTypeMismatch or SchemaDifferenceKind.ColumnNullabilityMismatch);
@@ -581,17 +463,16 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
             return columnMismatch.ToString();
         }
 
-        if (expected.PrimaryKeyName is not null)
+        if (expected.PrimaryKey is { Name: { } expectedPrimaryKeyName })
         {
-            var actualPrimaryKey = snapshot.GetPrimaryKey(expected.Name);
-            if (actualPrimaryKey is null)
+            if (actual.PrimaryKey is null)
             {
                 return $"table '{expected.Name}' is missing its primary key";
             }
 
-            if (!NameMatches(actualPrimaryKey.Name, expected.PrimaryKeyName))
+            if (!NameMatches(actual.PrimaryKey.Name, expectedPrimaryKeyName))
             {
-                return $"table '{expected.Name}' has primary key '{actualPrimaryKey.Name}' but the supported version requires '{expected.PrimaryKeyName}'";
+                return $"table '{expected.Name}' has primary key '{actual.PrimaryKey.Name}' but the supported version requires '{expectedPrimaryKeyName}'";
             }
         }
 
@@ -602,20 +483,20 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
             return primaryKeyMismatch.ToString();
         }
 
-        var actualForeignKeys = snapshot.GetForeignKeys(expected.Name);
+        var actualForeignKeys = actual.ForeignKeys;
         foreach (var foreignKey in expected.ForeignKeys)
         {
-            var actual = actualForeignKeys.FirstOrDefault(candidate =>
+            var match = actualForeignKeys.FirstOrDefault(candidate =>
                 NameMatches(candidate.Name, foreignKey.Name));
-            if (actual is null)
+            if (match is null)
             {
                 return $"table '{expected.Name}' is missing foreign key '{foreignKey.Name}'";
             }
 
-            if (!actual.Columns.SequenceEqual(foreignKey.Shape.Columns, StringComparer.Ordinal) ||
-                !string.Equals(actual.PrincipalTable, foreignKey.Shape.ReferencedTable, StringComparison.Ordinal) ||
-                !actual.PrincipalColumns.SequenceEqual(foreignKey.Shape.ReferencedColumns, StringComparer.Ordinal) ||
-                SchemaSnapshot.MapDeleteRule(actual.DeleteRule) != foreignKey.Shape.DeleteRule)
+            if (!match.Columns.SequenceEqual(foreignKey.Columns, StringComparer.Ordinal) ||
+                !string.Equals(match.ReferencedTable, foreignKey.ReferencedTable, StringComparison.Ordinal) ||
+                !match.ReferencedColumns.SequenceEqual(foreignKey.ReferencedColumns, StringComparer.Ordinal) ||
+                match.DeleteRule != foreignKey.DeleteRule)
             {
                 return $"foreign key '{foreignKey.Name}' on table '{expected.Name}' does not match the supported version's columns, reference, or delete behavior";
             }
@@ -626,21 +507,21 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
             return $"table '{expected.Name}' contains a foreign key outside the supported version";
         }
 
-        var actualIndexes = snapshot.GetIndexes(expected.Name);
+        var actualIndexes = actual.Indexes;
         foreach (var index in expected.Indexes)
         {
-            var actual = actualIndexes.FirstOrDefault(candidate => NameMatches(candidate.Name, index.Name));
-            if (actual is null)
+            var match = actualIndexes.FirstOrDefault(candidate => NameMatches(candidate.Name, index.Name));
+            if (match is null)
             {
                 return $"table '{expected.Name}' is missing index '{index.Name}'";
             }
 
-            // Expression or predicate variants keep their declared key count; a column count that
-            // does not cover it means the index is not the plain column index the model requires.
-            if (actual.IsUnique != index.Shape.IsUnique ||
-                actual.ResolvedColumns.Length != index.Shape.Columns.Count ||
-                actual.KeyCount != index.Shape.Columns.Count ||
-                !actual.ResolvedColumns.SequenceEqual(index.Shape.Columns, StringComparer.Ordinal))
+            // Expression or predicate variants keep their declared key count; only a plain column
+            // index whose columns and key count equal the model's satisfies the supported version.
+            if (match.IsUnique != index.IsUnique ||
+                match.HasExpressionKeys ||
+                match.KeyColumnCount != index.KeyColumnCount ||
+                !match.Columns.SequenceEqual(index.Columns, StringComparer.Ordinal))
             {
                 return $"index '{index.Name}' on table '{expected.Name}' does not match the supported version's columns or uniqueness";
             }
@@ -655,10 +536,34 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
     }
 
     /// <summary>
-    /// Known constraint and index names are compared case-insensitively; the semantics
-    /// (columns, uniqueness, references, delete behavior) must still match exactly.
+    /// Projects the evidence dimensions that were never inspection guarantees out of the shared
+    /// comparison: the shared reader reports identity generation and stored defaults while the
+    /// shared comparer flags identity differences unconditionally. Schema identifiers are
+    /// canonicalized because the EF model leaves the schema unset (empty) while the reader
+    /// reports the physical <c>public</c> schema.
     /// </summary>
-    private static bool NameMatches(string actual, string expected) =>
+    private static SchemaTable NormalizeOutsideContract(SchemaTable table) => new(
+        table.Name,
+        table.Columns.Select(column => new SchemaColumn(
+            column.Name, column.DataType, column.IsNullable,
+            SchemaIdentityKind.None, hasStoredDefault: false)).ToList(),
+        table.PrimaryKey is { } primaryKey
+            ? new SchemaPrimaryKey(primaryKey.Columns, primaryKey.Name)
+            : null,
+        table.ForeignKeys.Select(key => new SchemaForeignKey(
+            key.Columns, key.ReferencedTable, key.ReferencedColumns, key.DeleteRule,
+            SchemaName, key.Name)).ToList(),
+        table.Indexes.Select(index => new SchemaIndex(
+            index.Columns, index.IsUnique, index.Name, index.KeyColumnCount, index.IncludedColumns))
+            .ToList(),
+        SchemaName);
+
+    /// <summary>
+    /// Known constraint and index names are compared case-insensitively; the semantics
+    /// (columns, uniqueness, references, delete behavior) must still match exactly. The shared
+    /// comparer matches names ordinally, so name comparison stays in this consumer.
+    /// </summary>
+    private static bool NameMatches(string? actual, string? expected) =>
         string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
 
     // ---------- execution ----------
@@ -721,134 +626,4 @@ internal sealed record MigrationInspection(
 
     internal static MigrationInspection Failed(string reason) =>
         new(MigrationObservationState.InspectionFailed, reason, false);
-}
-
-// ---------- shapes ----------
-
-internal sealed record ExpectedForeignKey(string Name, SchemaForeignKey Shape);
-
-internal sealed record ExpectedIndex(string Name, SchemaIndex Shape);
-
-internal sealed record ExpectedTable(
-    string Name,
-    SchemaTable Structure,
-    string? PrimaryKeyName,
-    IReadOnlyList<ExpectedForeignKey> ForeignKeys,
-    IReadOnlyList<ExpectedIndex> Indexes);
-
-internal sealed record ActualColumn(string Name, string Type, bool NotNull);
-
-internal sealed record ActualConstraint(string Name, string[] Columns);
-
-internal sealed record ActualForeignKey(
-    string Name,
-    string[] Columns,
-    string PrincipalTable,
-    string[] PrincipalColumns,
-    string DeleteRule);
-
-internal sealed record ActualIndex(
-    string Name,
-    string[] ResolvedColumns,
-    bool IsUnique,
-    int KeyCount);
-
-/// <summary>
-/// The actual structure read from PostgreSQL catalogs for the known business tables.
-/// </summary>
-internal sealed class SchemaSnapshot
-{
-    private readonly Dictionary<string, Dictionary<string, ActualColumn>> _columns =
-        new(StringComparer.Ordinal);
-    private readonly Dictionary<string, ActualConstraint?> _primaryKeys =
-        new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<ActualForeignKey>> _foreignKeys =
-        new(StringComparer.Ordinal);
-    private readonly Dictionary<string, List<ActualIndex>> _indexes =
-        new(StringComparer.Ordinal);
-    private readonly HashSet<string> _tables = new(StringComparer.Ordinal);
-
-    internal void AddColumn(string table, ActualColumn column)
-    {
-        _tables.Add(table);
-        if (!_columns.TryGetValue(table, out var columns))
-        {
-            columns = new Dictionary<string, ActualColumn>(StringComparer.Ordinal);
-            _columns[table] = columns;
-        }
-
-        columns[column.Name] = column;
-    }
-
-    internal void SetPrimaryKey(string table, ActualConstraint primaryKey)
-    {
-        _tables.Add(table);
-        _primaryKeys[table] = primaryKey;
-    }
-
-    internal void AddForeignKey(string table, ActualForeignKey foreignKey)
-    {
-        _tables.Add(table);
-        if (!_foreignKeys.TryGetValue(table, out var list))
-        {
-            list = [];
-            _foreignKeys[table] = list;
-        }
-
-        list.Add(foreignKey);
-    }
-
-    internal void AddIndex(string table, ActualIndex index)
-    {
-        _tables.Add(table);
-        if (!_indexes.TryGetValue(table, out var list))
-        {
-            list = [];
-            _indexes[table] = list;
-        }
-
-        list.Add(index);
-    }
-
-    /// <summary>
-    /// Projects only inspected business tables into the shared model. Expression indexes stay
-    /// in the local inventory and are rejected by the named-object check before acceptance.
-    /// </summary>
-    internal SchemaTable ToSharedTable(string table) => new(
-        table,
-        GetColumns(table).Values.Select(column => new SchemaColumn(
-            column.Name, column.Type, !column.NotNull)).ToList(),
-        GetPrimaryKey(table) is { } primaryKey ? new SchemaPrimaryKey(primaryKey.Columns) : null,
-        GetForeignKeys(table).Select(key => new SchemaForeignKey(
-            key.Columns, key.PrincipalTable, key.PrincipalColumns, MapDeleteRule(key.DeleteRule),
-            "public")).ToList(),
-        GetIndexes(table).Where(index => index.ResolvedColumns.Length > 0 &&
-                                       index.KeyCount == index.ResolvedColumns.Length)
-            .Select(index => new SchemaIndex(index.ResolvedColumns, index.IsUnique)).ToList(),
-        "public");
-
-    internal static SchemaForeignKeyDeleteRule MapDeleteRule(string rule) => rule switch
-    {
-        "c" => SchemaForeignKeyDeleteRule.Cascade,
-        "r" => SchemaForeignKeyDeleteRule.Restrict,
-        "n" => SchemaForeignKeyDeleteRule.SetNull,
-        "d" => SchemaForeignKeyDeleteRule.SetDefault,
-        _ => SchemaForeignKeyDeleteRule.NoAction,
-    };
-
-    internal bool TableExists(string table) => _tables.Contains(table);
-
-    internal IReadOnlyDictionary<string, ActualColumn> GetColumns(string table) =>
-        _columns.TryGetValue(table, out var columns)
-            ? columns
-            : new Dictionary<string, ActualColumn>(StringComparer.Ordinal);
-
-    internal ActualConstraint? GetPrimaryKey(string table) =>
-        _primaryKeys.TryGetValue(table, out var primaryKey) ? primaryKey : null;
-
-    internal IReadOnlyList<ActualForeignKey> GetForeignKeys(string table) =>
-        _foreignKeys.TryGetValue(table, out var list) ? list : [];
-
-    internal IReadOnlyList<ActualIndex> GetIndexes(string table) =>
-        _indexes.TryGetValue(table, out var list) ? list : [];
 }

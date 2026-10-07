@@ -13,9 +13,9 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-    <PackageReference Include="ServiceMantle" Version="0.3.1-rc.1" />
-    <PackageReference Include="ServiceMantle.Database.PostgreSql" Version="0.3.1-rc.1" />
-    <PackageReference Include="ServiceMantle.Persistence.Relational" Version="0.3.1-rc.1" />
+    <PackageReference Include="ServiceMantle" Version="0.3.1" />
+    <PackageReference Include="ServiceMantle.Database.PostgreSql" Version="0.3.1" />
+    <PackageReference Include="ServiceMantle.Persistence.Relational" Version="0.3.1" />
   </ItemGroup>
 
   <ItemGroup>

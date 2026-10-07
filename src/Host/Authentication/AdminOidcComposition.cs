@@ -76,7 +76,8 @@ public static class AdminOidcComposition
         });
         services.AddTransient<AdminOidcBackchannelMarker>();
         services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName)
-            .AddHttpMessageHandler<AdminOidcBackchannelMarker>();
+            .AddHttpMessageHandler<AdminOidcBackchannelMarker>()
+            .AddServiceMantleCorrelationIdPropagation();
 
         // Keep the official factory and every storage/cleanup/concurrency behavior it owns.
         var store = services.Last(descriptor => descriptor.ServiceType == typeof(ITicketStore));

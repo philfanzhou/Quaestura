@@ -79,7 +79,7 @@ public static class ServiceMantleComposition
         services
             .AddServiceMantle(
                 ServiceId.Parse(ServiceIdValue),
-                InstanceId.Parse($"{ServiceIdValue}-{Guid.NewGuid():N}"))
+                InstanceId.CreateRandom(ServiceId.Parse(ServiceIdValue)))
             // Default options: AspNetCore + HttpClient tracing and runtime metrics, no exporter.
             .AddOpenTelemetryInstrumentation()
             // Deny the SignaCore admin-login secret explicitly so the safe request-header

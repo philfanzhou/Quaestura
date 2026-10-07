@@ -42,6 +42,7 @@ public sealed partial class ServiceMantleIdentityTests : IClassFixture<Quaestura
 
         serviceId.Value.Should().Be(ServiceMantleComposition.ServiceIdValue).And.Be("quaestura");
         instanceId.Value.Should().MatchRegex(InstanceIdPattern());
+        _factory.Services.GetRequiredService<InstanceId>().Should().Be(instanceId);
 
         logContext.ServiceName.Should().Be(serviceId.Value);
         logContext.InstanceId.Should().Be(instanceId.Value);

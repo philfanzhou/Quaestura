@@ -13,6 +13,7 @@ Quaestura 是通用的题库与知识点管理服务：.NET 最小 API、Vue 3 �
 ## 文档与沟通语言
 
 - 流程与约束文档（本文件）、GitHub issue/PR 正文和 review 全程使用中文；Issue 标题使用中文，建议格式为 `[模块] 简明动作`。
+- 中文聊天回复、进度汇报、Issue、PR 和 review 使用日常中文，说明具体动作、结果和限制，避免照搬内部流程术语。构建输出按实际对象称为文件、安装包或镜像；处理问题时直接说明检查了什么、如何分类、原因和下一步。
 - PR 标题和 commit message 使用英文 conventional commit 格式（`feat:` / `fix:` / `docs:` / `test:` / `refactor:` / `chore:` / `ci:` 等）；subject 说明做了什么，需要时用 body 说明原因。
 - `README.md`、`CONTRIBUTING.md`、`SECURITY.md`、`docs/`、`CONTEXT.md`、代码注释、日志与 API/异常消息等面向使用者的文字使用英文。
 - 从 Ruoyu.Study 继承的中文文档、注释与日志的英文化由 #3 跟踪：新增内容直接用英文；修改现有中文内容时不顺带整篇翻译，翻译不与功能改动混在同一提交。
@@ -27,11 +28,11 @@ Quaestura 是通用的题库与知识点管理服务：.NET 最小 API、Vue 3 �
 ## 项目边界与架构
 
 - 领域语言见根目录 `CONTEXT.md`（Question Catalog：Question / Question Content / Knowledge Point / Tag）。
-- `src/Common`（Quaestura.Common）与 `src/Consul`（Quaestura.Consul）是从 Ruoyu.Study 的 `ruoyu.common` **复制**而来的类库（2026-09-25 快照），没有编译期上游同步；上游修复需要人工评估是否回合。不得反向引用 `src/Host`。
-- `src/Database`（EF Core + Migrations）、`src/Domain`（领域服务）、`src/Service`（最小 API 端点与校验）、`src/Host`（宿主组合、认证、Consul、Serilog/Loki）、`src/Tests`。依赖方向：Host → Service → Domain → Database → Common。
+- `src/Common`（Quaestura.Common）与 `src/Consul`（Quaestura.Consul）是从 Ruoyu.Study 的 `ruoyu.common` **复制**而来的类库（2026-09-25 快照），没有编译期上游同步；上游修复需要人工评估是否引入本仓库。不得反向引用 `src/Host`。
+- `src/Database`（EF Core + Migrations）、`src/Domain`（领域服务）、`src/Service`（最小 API 端点与校验）、`src/Host`（应用启动和组件配置、认证、Consul、Serilog/Loki）、`src/Tests`。依赖方向：Host → Service → Domain → Database → Common。
 - 认证信任 SignaCore（或任何兼容 OIDC discovery/JWKS 的签发方）签发的 RS256 JWT；授权规则见 `docs/development/Authentication.md`。
 - 数据库为 PostgreSQL（默认库名 `quaestura`），对象存储为 S3 兼容服务（题目图片存于 `questions/` 前缀）。
-- API 监听端口 5007 硬编码在 `src/Host/Program.cs`；改端口属于部署契约变更，必须同步 `start.sh`、`Dockerfile` 与部署文档。
+- API 监听端口 5007 硬编码在 `src/Host/Program.cs`；改端口属于部署要求变更，必须同步 `start.sh`、`Dockerfile` 与部署文档。
 
 ## 验证
 

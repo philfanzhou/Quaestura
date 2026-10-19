@@ -1,5 +1,9 @@
+# Compile static web assets and framework-dependent .NET assemblies on the build host.
+# UseAppHost=false and no RuntimeIdentifier keep the output portable; the final
+# runtime image and its OS packages are selected separately for each target platform.
+
 # ========== Stage 1: Build Admin Frontend ==========
-FROM node:20-alpine AS frontend-build
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend-build
 ARG NPM_REGISTRY=https://mirrors.huaweicloud.com/repository/npm/
 ENV npm_config_registry=${NPM_REGISTRY}
 ENV npm_config_replace_registry_host=always
@@ -10,7 +14,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ========== Stage 2: Build & Publish Backend ==========
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 

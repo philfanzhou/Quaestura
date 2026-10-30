@@ -5,7 +5,7 @@ Quaestura 是通用的题库与知识点管理服务：.NET 最小 API、Vue 3 �
 ## 维护方式
 
 - 本文件是 AI 协作流程、项目边界和验证约束的统一入口。
-- Codex 直接读取本文件；Claude Code 通过根目录 `CLAUDE.md` 导入本文件。
+- Codex 直接读取本文件；Claude Code v2.1.277+ 同样直接读取本文件，无需 `CLAUDE.md` 导入。
 - `main` 受 ruleset 保护：禁止直接推送、强推和删除，只能通过 PR 合并，且必须通过 `Build & Test`、`Analyze (csharp)`、`Analyze (javascript-typescript)` 检查。
 - CI 见 `.github/workflows/ci.yml` 与 `codeql.yml`；推送前仍须本地运行「验证」一节的全部命令。
 - 版本发布只通过推送 `MAJOR.MINOR.PATCH`（或 `-rc.NUMBER`）tag 触发，流程见 `docs/development/Deployment.md`「版本发布」一节；不得手工创建 Release 或推送镜像。

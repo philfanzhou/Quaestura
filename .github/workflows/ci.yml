@@ -89,8 +89,11 @@ jobs:
           path: reports/
           if-no-files-found: ignore
 
+  # The multi-platform build exists only to validate the image a release tag publishes, so it
+  # runs on release tags only; normal CI keeps the single-platform image build in build-test.
   container-platforms:
     name: Build AMD64 and ARM64 images
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -103,7 +106,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Build both complete runtime images on pull requests before a release needs them.
+      # Build both complete runtime images on release tags before the publish job needs them.
       # A multi-platform build stays in BuildKit cache; load:true requires a different image store.
       - name: Build both platforms without publishing
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -116,14 +119,11 @@ jobs:
             NPM_REGISTRY=${{ env.NPM_REGISTRY }}
           cache-from: type=gha,scope=quaestura-release
 
-  # Runs for release tags and for default-branch pushes. A default-branch push publishes only the
-  # moving `edge` tag; `latest` and the semver tags stay tag-only, gated below.
+  # Runs only for release tags. A default-branch push runs CI only (build, tests and the
+  # single-platform image check) and never publishes an image.
   publish-container:
     name: Publish GHCR Image
-    if: >-
-      github.event_name == 'push' &&
-      (startsWith(github.ref, 'refs/tags/') ||
-      github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    if: startsWith(github.ref, 'refs/tags/')
     needs: [build-test, container-platforms]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -169,18 +169,13 @@ jobs:
           # flavour off leaves that gate as the only source of `latest`.
           flavor: latest=false
           tags: |
-            # Only produced on a default-branch push. The tag moves rather than accumulating, but
-            # each push leaves the previous manifest, with its provenance and SBOM attestations,
-            # behind as an untagged package version, which GHCR does not prune on its own.
-            type=edge,branch=${{ github.event.repository.default_branch }}
-            # The semver rules read the tag name and yield nothing on a branch ref.
-            # A pre-release gets only its exact immutable version. Stable releases additionally
-            # move the minor channel and latest; an RC must never replace either production tag.
+            # The semver rules read the tag name. A pre-release gets only its exact immutable
+            # version. Stable releases additionally move the minor channel and latest;
+            # an RC must never replace either production tag.
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
             # Release tags carry no `v` prefix here, so the gate must not require one. Without
-            # this gate the rule is unconditional and the first default-branch push would move
-            # `latest` onto a development build.
+            # this gate the rule is unconditional and an RC would move `latest`.
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
 
       - name: Build and publish image

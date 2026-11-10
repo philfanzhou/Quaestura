@@ -120,9 +120,13 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Equal(new[] { "actual-signacore-start" }, capture.Headers["/.well-known/openid-configuration"]);
         var query = QueryHelpers.ParseQuery(startResponse.Headers.Location!.Query);
         harness.Authority.Nonce = query["nonce"]!;
+        var binding = startResponse.Headers.GetValues("Set-Cookie").Single(cookie =>
+            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName
+                + SignaCoreHostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
         using var callback = new HttpRequestMessage(HttpMethod.Get,
             "/admin/auth/oidc/callback?code=synthetic-code-canary&state=" + Uri.EscapeDataString(query["state"]!)
             + "&iss=" + Uri.EscapeDataString(harness.Authority.Origin));
+        callback.Headers.Add("Cookie", binding.Split(';')[0]);
         callback.Headers.Add(CorrelationHeaderName, "actual-signacore-callback");
         using var callbackResponse = await client.SendAsync(callback);
         Assert.Equal(HttpStatusCode.Found, callbackResponse.StatusCode);

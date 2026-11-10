@@ -23,7 +23,11 @@ internal sealed class AdminOidcResponseWriter : ISignaCoreHostedLoginResponseWri
     {
         if (TryWriteNavigationFailure(context, reason switch
         {
-            SignaCoreSignInReason.AccessDenied => "cancelled",
+            // The current package reports a cancelled sign-in as UserCanceled; AccessDenied stays
+            // a legacy value. Both keep the SPA's existing `cancelled` outcome. A denied
+            // pre-sign-in authorization shares the admission-denied `denied` outcome.
+            SignaCoreSignInReason.AccessDenied or SignaCoreSignInReason.UserCanceled => "cancelled",
+            SignaCoreSignInReason.PreSignInDenied => "denied",
             SignaCoreSignInReason.AuthorityUnreachable => "provider_unavailable",
             SignaCoreSignInReason.RequiresReauthentication => "requires_reauthentication",
             _ => "signin_failed"

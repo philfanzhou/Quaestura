@@ -880,7 +880,7 @@ curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \
 
 ## Hosted-auth endpoints
 
-The official `SignaCore.Client.AspNetCore 0.1.11-rc.5` routes are anonymous protocol entry points
+The official `SignaCore.Client.AspNetCore 0.1.21` routes are anonymous protocol entry points
 under `/admin/auth/oidc`. They are always registered when Authority, ClientId, ClientSecret, and
 RedirectUri are nonblank; `AdminOidc:Enabled` is ignored. With any missing/empty/whitespace field,
 every hosted entry returns 503 safe Problem Details (`Hosted sign-in is not configured.`,

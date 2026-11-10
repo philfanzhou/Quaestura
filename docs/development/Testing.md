@@ -219,7 +219,8 @@ intercepted HTTP responses to deterministically exercise single-flight guards/CS
 401/403, cancellation/network failures, logout reconciliation, generation races, redirect/reason
 validation, and throwing storage. These consumer tests complement, rather than replace, the real
 Host tests. `HostedLoginTests`/`HostedLoginPresentationTests` retain API, authorization, zero-effect
-CSRF, cookie/one-time-return, cancellation, security headers, and real-log/span canary checks.
+CSRF, cookie/browser-binding/one-time-return, cancellation, security headers, and real-log/span
+canary checks.
 No protocol URLs, tokens, secrets, screenshots, traces, or production personal data are recorded in
 browser test artifacts. Real registered SignaCore image acceptance remains a separate parent task.
 

@@ -59,6 +59,9 @@ public static class AdminOidcComposition
             options.PostLogoutRedirectUri = section["PostLogoutRedirectUri"];
             options.PostLogoutReturnPath = section["PostLogoutReturnPath"] ?? options.PostLogoutReturnPath;
             options.Scope = section["Scope"] ?? options.Scope;
+            // The 0.1.16+ client defaults token lifetime tolerance to zero. Keep the 30-second
+            // tolerance this deployment already relied on, matching the Bearer trust snapshot.
+            options.Validation.ClockSkew = TimeSpan.FromSeconds(30);
             options.SessionCookieName = section["SessionCookieName"] ?? options.SessionCookieName;
             options.AntiforgeryHeaderName = section["AntiforgeryHeaderName"] ?? options.AntiforgeryHeaderName;
             if (section["TicketCapacity"] is { } capacity)

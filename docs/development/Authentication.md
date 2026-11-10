@@ -198,7 +198,7 @@ HSTS, and CORS are deployment responsibilities. No state is persisted by this re
 
 ## 7. Hosted administrator login
 
-`SignaCore.Client.AspNetCore` **0.1.11-rc.5** is the official NuGet client and hosted sign-in is
+`SignaCore.Client.AspNetCore` **0.1.21** is the official NuGet client and hosted sign-in is
 the sole administrator UI login. `AdminOidc:Enabled` is retired and completely ignored, including
 `false` and malformed strings. With nonblank `Authority`, `ClientId`, `ClientSecret`, and
 `RedirectUri`, the package is always registered. With any required field absent, empty, or
@@ -240,8 +240,11 @@ expiry. The cookie may remain in the browser after the server ticket expires; it
 
 Complete but invalid configuration (URI, capacity, scope, or malformed numbers) still fails startup
 through explicit parsing and official ValidateOnStart; diagnostics contain option names, never
-submitted values. Missing required fields follow the safe 503 policy above. HTTPS is required; the official package accepts explicit loopback HTTP only in
-Development/Testing. Keep the authority/JWKS consistent with `IdentityService:Authority`.
+submitted values. Missing required fields follow the safe 503 policy above. The **0.1.21** client
+accepts structurally valid `http` and `https` Authority, callback, and post-logout URIs equally in
+every environment, mirroring SignaCore's transport decision (ADR 0008); a public deployment must
+still terminate TLS in front of the service and register HTTPS URIs. Keep the authority/JWKS
+consistent with `IdentityService:Authority`.
 `IdentityService:Audience` remains the existing Bearer contract: do not silently change it to the
 hosted client's audience. Coordinate any downstream migration from Shared to PerApplication
 with its callers before updating that resource-server setting.
@@ -265,6 +268,12 @@ session revoked and returns `200 {"outcome":"local_only"}`. Missing/wrong logout
 a JSON response to a disconnected client. Logout return remains the package's one-time flow and
 always navigates to the fixed local landing path. Issued downstream tokens remain valid to expiry.
 
+The **0.1.21** client also binds every pending sign-in to the browser that started it: the start
+endpoint sets a one-time, HttpOnly, SameSite=Lax `<session cookie>-login-binding.<state>` cookie
+scoped to the callback path with a five-minute lifetime, and the callback consumes it before
+redeeming the code. A missing, replayed, or mismatched binding fails closed with the bounded
+`signin_failed` outcome; browsers and reverse proxies must pass that cookie through unchanged.
+
 The SPA observes session status with same-origin fetch and shared axios Cookie requests. Only
 `authenticated=true && authorization=0` admits management pages. CSRF stays in memory; the shared
 client sends it on every unsafe method. Old storage credentials are only removed, never read.
@@ -276,9 +285,10 @@ requests until explicit recheck. Generations prevent stale responses restoring o
 Only exact GET `start`, `callback`, `signin-failed`, and `logout/return` routes, with `Accept:
 text/html` at positive quality plus `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
 project completed failures to `/login?reason=<fixed value>`. No input query is copied. AccessDenied
-maps to `cancelled`, AuthorityUnreachable to `provider_unavailable`, RequiresReauthentication to
-`requires_reauthentication`, admission rejection to `denied`, other sign-in failures to
-`signin_failed`, and failed one-time logout return to `logout_failed`. Non-HTML/API failures keep
+(legacy) and UserCanceled map to `cancelled`, PreSignInDenied to `denied`, AuthorityUnreachable to
+`provider_unavailable`, RequiresReauthentication to `requires_reauthentication`, admission rejection
+to `denied`, other sign-in failures to `signin_failed`, and failed one-time logout return to
+`logout_failed`. Non-HTML/API failures keep
 400/403/503 Problem Details and correlation codes; logout POST keeps its JSON contract. The return
 adapter runs after package correlation handling, retaining Cookie deletions. Security headers and
 no-store remain. The SPA also recognizes `signed_out` and `logout_local_only`; arbitrary/repeated
@@ -315,3 +325,13 @@ and requires sign-in; database, history, and object storage are unchanged, so ne
 Stub and browser tests exercise the real Quaestura Host but do not replace actual registered-client
 SignaCore image acceptance tracked by [#19](https://github.com/philfanzhou/Quaestura/issues/19)
 and [#54](https://github.com/philfanzhou/Quaestura/issues/54).
+
+#### Client package 0.1.21 alignment
+
+The client package moves from 0.1.11-rc.5 to 0.1.21. No route, session Cookie name, CSRF header,
+configuration key, database schema, or object storage changes; there is no migration in either
+direction. The observable deltas are covered above: the one-time login-binding cookie, the current
+client's strict token and logout response validation (this Host keeps a 30-second clock tolerance
+explicitly), the user-cancel reason reported as `UserCanceled`, and `http`/`https` URIs accepted
+equally. Roll back by redeploying the previous whole image with its matching configuration; a
+restart loses the process-local sessions and requires sign-in again either way.

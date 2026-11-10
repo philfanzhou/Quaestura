@@ -85,7 +85,7 @@ public sealed class HostedLoginTests
         using var harness = new HostedLoginHarness();
         using var response = await harness.Login(mode);
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.False(response.Headers.Contains("Set-Cookie"));
+        HostedLoginHarness.AssertNoSessionCookie(response);
         Assert.Equal(0, harness.Store.Count);
         SecurityResponseHeaders.AssertBaseline(response);
         using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -178,33 +178,57 @@ public sealed class HostedLoginTests
     public async Task OfficialCallbackFailures_NeverCreateSession(string mode)
     {
         using var harness = new HostedLoginHarness();
-        var callback = await harness.Start(mode == "bad-nonce" || mode == "exchange-failed" ? mode : "admin");
+        var started = await harness.Start(mode == "bad-nonce" || mode == "exchange-failed" ? mode : "admin");
+        var callback = started.CallbackPath;
         if (mode == "bad-state") callback = callback.Replace("state=", "state=synthetic-wrong-state");
         if (mode == "bad-issuer") callback = callback.Replace(Uri.EscapeDataString(HostedLoginTestAuthority.Issuer), Uri.EscapeDataString("https://other.test"));
         if (mode == "denied") callback = callback.Replace("code=synthetic-code-canary", "error=access_denied");
         if (mode == "duplicate-state") callback += "&state=synthetic-duplicate-state";
-        using var response = await harness.Client.GetAsync(callback);
+        using var response = await harness.Get(callback, started.BindingCookie);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, harness.Store.Count);
-        Assert.False(response.Headers.Contains("Set-Cookie"));
+        HostedLoginHarness.AssertNoSessionCookie(response);
         Assert.DoesNotContain("synthetic-code-canary", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task OfficialCallback_RequiresTheOneTimeBrowserBindingCookie()
+    {
+        foreach (var binding in new[] { null, "synthetic-wrong-binding" })
+        {
+            using var harness = new HostedLoginHarness();
+            var started = await harness.Start("admin");
+            using var response = await harness.Get(started.CallbackPath, binding);
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(0, harness.Authority.Exchanges);
+            Assert.Equal(0, harness.Store.Count);
+            HostedLoginHarness.AssertNoSessionCookie(response);
+        }
+        using var success = new HostedLoginHarness();
+        var signIn = await success.Start("admin");
+        using var signedIn = await success.Get(signIn.CallbackPath, signIn.BindingCookie);
+        Assert.Equal(HttpStatusCode.Found, signedIn.StatusCode);
+        Assert.Equal(1, success.Store.Count);
+        using var replay = await success.Get(signIn.CallbackPath, signIn.BindingCookie);
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+        Assert.Equal(1, success.Store.Count);
     }
 
     [Fact]
     public async Task OfficialCallback_IsSingleUse_AndCancellationDoesNotSignIn()
     {
         using var harness = new HostedLoginHarness();
-        var callback = await harness.Start("admin");
-        using var first = await harness.Client.GetAsync(callback);
+        var started = await harness.Start("admin");
+        using var first = await harness.Get(started.CallbackPath, started.BindingCookie);
         Assert.Equal(HttpStatusCode.Found, first.StatusCode);
-        using var replay = await harness.Client.GetAsync(callback);
+        using var replay = await harness.Get(started.CallbackPath, started.BindingCookie);
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
         Assert.Equal(1, harness.Authority.Exchanges);
         Assert.Equal(1, harness.Store.Count);
-        var canceledCallback = await harness.Start("cancel-exchange");
+        var canceled = await harness.Start("cancel-exchange");
         using var cancellation = new CancellationTokenSource();
         harness.Authority.ExchangeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        var pending = harness.Client.GetAsync(canceledCallback, cancellation.Token);
+        var pending = harness.Get(canceled.CallbackPath, canceled.BindingCookie, cancellation.Token);
         await harness.Authority.ExchangeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
@@ -344,7 +368,7 @@ public sealed class HostedLoginTests
         Assert.Equal(HttpStatusCode.Found, first.StatusCode);
         using var full = await harness.Login("admin");
         Assert.Equal(HttpStatusCode.BadRequest, full.StatusCode);
-        Assert.False(full.Headers.Contains("Set-Cookie"));
+        HostedLoginHarness.AssertNoSessionCookie(full);
         Assert.Equal(1, harness.Store.Count);
         Assert.Contains(harness.Factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>(),
             service => service.GetType().Name == "TicketStoreCleanupService");
@@ -438,6 +462,8 @@ public sealed class HostedLoginTests
 
 internal sealed record BrowserSession(string Cookie, string? Csrf);
 
+internal sealed record StartedSignIn(string CallbackPath, string BindingCookie);
+
 internal sealed class HostedLoginHarness : IDisposable
 {
     internal readonly HostedLoginTestAuthority Authority;
@@ -491,20 +517,46 @@ internal sealed class HostedLoginHarness : IDisposable
         });
     }
     internal HttpClient CreateClient() => Factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://consumer.test"), AllowAutoRedirect = false, HandleCookies = false });
-    internal async Task<string> Start(string mode)
+    internal async Task<StartedSignIn> Start(string mode)
     {
         Authority.Mode = mode;
         using var start = await Client.GetAsync("/admin/auth/oidc/start?returnUrl=%2Fquestions");
         Assert.Equal(HttpStatusCode.Found, start.StatusCode); SecurityResponseHeaders.AssertBaseline(start);
         var query = QueryHelpers.ParseQuery(start.Headers.Location!.Query); Authority.Nonce = query["nonce"]!;
-        return "/admin/auth/oidc/callback?code=synthetic-code-canary&state=" + Uri.EscapeDataString(query["state"]!) + "&iss=" + Uri.EscapeDataString(Authority.Origin);
+        // The 0.1.21 package binds every pending sign-in to a per-state browser cookie that the
+        // callback must present. A test client carries no cookies, so the harness passes it on.
+        var binding = start.Headers.GetValues("Set-Cookie").Single(cookie =>
+            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName
+                + SignaCoreHostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
+        return new StartedSignIn(
+            "/admin/auth/oidc/callback?code=synthetic-code-canary&state="
+                + Uri.EscapeDataString(query["state"]!) + "&iss=" + Uri.EscapeDataString(Authority.Origin),
+            binding.Split(';')[0]);
     }
-    internal async Task<HttpResponseMessage> Login(string mode) => await Client.GetAsync(await Start(mode));
+    internal async Task<HttpResponseMessage> Login(string mode)
+    {
+        var started = await Start(mode);
+        return await Get(started.CallbackPath, started.BindingCookie);
+    }
+    internal async Task<HttpResponseMessage> Get(string path, string? cookie = null, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (cookie is not null) request.Headers.Add("Cookie", cookie);
+        return await Client.SendAsync(request, cancellationToken);
+    }
+    internal static void AssertNoSessionCookie(HttpResponseMessage response)
+    {
+        var cookies = response.Headers.TryGetValues("Set-Cookie", out var values)
+            ? values : Array.Empty<string>();
+        Assert.DoesNotContain(cookies, cookie =>
+            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
+    }
     internal async Task<BrowserSession> SignedIn()
     {
         using var login = await Login("admin"); Assert.Equal(HttpStatusCode.Found, login.StatusCode);
         Assert.Equal("/questions", login.Headers.Location!.OriginalString);
-        var sessionSet = login.Headers.GetValues("Set-Cookie").Single();
+        var sessionSet = login.Headers.GetValues("Set-Cookie").Single(cookie =>
+            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
         Assert.Contains("httponly", sessionSet.ToLowerInvariant()); Assert.Contains("secure", sessionSet.ToLowerInvariant()); Assert.Contains("samesite=lax", sessionSet.ToLowerInvariant());
         var cookie = sessionSet.Split(';')[0];
         using var csrf = await Send(HttpMethod.Get, "/admin/auth/oidc/csrf", new BrowserSession(cookie, null));

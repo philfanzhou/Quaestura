@@ -352,13 +352,18 @@ Reverting this wiring removes the response header and the observability registra
 
 ## Hosted-login rollout
 
-The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.11-rc.5`. Follow
+The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.21`. Follow
 [Authentication §7](./Authentication.md#7-hosted-administrator-login) for Confidential/Code/PKCE
 registration, PerApplication audience, exact callback/PostLogout URIs, and every `AdminOidc` key.
 Nonblank Authority, ClientId, ClientSecret and RedirectUri always register the package; the old
 Enabled key has no effect. Inject `AdminOidc__ClientSecret` through environment or Consul, never
 image layers or committed settings. `start.sh` does not map hosted keys: use the existing Consul
 configuration source or explicit container environment injection. Remove obsolete password keys.
+
+The 0.1.21 client requires browsers to return its one-time login-binding cookie on the callback and
+keeps the strict token/logout response validation plus an explicit 30-second clock tolerance. Do
+not strip `Set-Cookie` headers or rewrite the callback path at the proxy. The package upgrade carries
+no database, configuration, or object-storage migration.
 
 Use one replica and HTTPS termination; the container still listens on **5007**. The real request
 boundary must provide HTTPS semantics for the secure session/antiforgery cookies; keep public

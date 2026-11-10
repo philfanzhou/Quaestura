@@ -31,7 +31,8 @@ public sealed class HostedLoginPresentationTests
             {
                 var expected = reason switch
                 {
-                    SignaCoreSignInReason.AccessDenied => "cancelled",
+                    SignaCoreSignInReason.AccessDenied or SignaCoreSignInReason.UserCanceled => "cancelled",
+                    SignaCoreSignInReason.PreSignInDenied => "denied",
                     SignaCoreSignInReason.AuthorityUnreachable => "provider_unavailable",
                     SignaCoreSignInReason.RequiresReauthentication => "requires_reauthentication",
                     _ => "signin_failed"
@@ -50,11 +51,13 @@ public sealed class HostedLoginPresentationTests
     public async Task Callback_HtmlFailureKeepsAdmissionAndSecurityHeaders(string mode, string reason)
     {
         using var harness = new HostedLoginHarness();
-        using var request = Navigation(await harness.Start(mode));
+        var started = await harness.Start(mode);
+        using var request = Navigation(started.CallbackPath);
+        request.Headers.Add("Cookie", started.BindingCookie);
         using var response = await harness.Client.SendAsync(request);
         Assert.Equal(HttpStatusCode.Found, response.StatusCode);
         Assert.Equal("/login?reason=" + reason, response.Headers.Location!.OriginalString);
-        Assert.False(response.Headers.Contains("Set-Cookie"));
+        HostedLoginHarness.AssertNoSessionCookie(response);
         Assert.Equal(0, harness.Store.Count);
         SecurityResponseHeaders.AssertBaseline(response);
     }

@@ -252,18 +252,23 @@ GitHub Actions (`.github/workflows/ci.yml`) runs the build, tests, and image bui
 | Trigger | Published image tags | GitHub Release |
 |------|---------------|----------------|
 | Merge to `main` | None (CI only) | None |
-| `MAJOR.MINOR.PATCH` tag | `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`, `latest` | Final release, marked as latest |
-| `MAJOR.MINOR.PATCH-rc.NUMBER` tag | Only `MAJOR.MINOR.PATCH-rc.NUMBER` | Pre-release; does not move `MAJOR.MINOR` or `latest` |
+| `vMAJOR.MINOR.PATCH` tag | `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`, `latest` | Final release, marked as latest |
+| `vMAJOR.MINOR.PATCH-rc.NUMBER` tag | Only `MAJOR.MINOR.PATCH-rc.NUMBER` | Pre-release; does not move `MAJOR.MINOR` or `latest` |
 
-Releases are driven entirely by pushing tags; do not create Releases or push images manually. Tags have no `v` prefix and are placed on commits already merged into `main`:
+Releases are driven entirely by pushing tags; do not create Releases or push images manually. Git
+tags carry the `v` prefix like the other repositories of this owner, while the published image tags
+drop it; tags are placed on commits already merged into `main`:
 
 ```bash
 git switch main && git pull
-git tag -a 0.1.0 -m "Quaestura 0.1.0"
-git push origin 0.1.0
+git tag -a v0.1.0 -m "Quaestura v0.1.0"
+git push origin v0.1.0
 ```
 
-Release candidates use the `-rc.NUMBER` suffix, for example `git tag -a 0.1.0-rc.1 -m "Quaestura 0.1.0-rc.1"`. Tags in any other format are rejected by CI.
+Release candidates use the `-rc.NUMBER` suffix, for example
+`git tag -a v0.1.0-rc.1 -m "Quaestura v0.1.0-rc.1"`. Tags in any other format are rejected by CI.
+The unprefixed `0.1.0-rc.1` pre-release was published before this convention and keeps its tag; use
+the `v` prefix for every later release.
 
 After a tag is pushed, the full `Build & Test` and the multi-platform image build run first; once they pass, the following run in order:
 

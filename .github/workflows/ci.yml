@@ -7,7 +7,7 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['*.*.*']
+    tags: ['v*']
   pull_request:
     branches: [main]
 
@@ -141,8 +141,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
-          if [[ ! "${GITHUB_REF_NAME}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
-            echo "Release tag must use MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-rc.NUMBER." >&2
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-rc.NUMBER." >&2
             exit 1
           fi
 
@@ -169,14 +169,16 @@ jobs:
           # flavour off leaves that gate as the only source of `latest`.
           flavor: latest=false
           tags: |
-            # The semver rules read the tag name. A pre-release gets only its exact immutable
-            # version. Stable releases additionally move the minor channel and latest;
-            # an RC must never replace either production tag.
+            # Release tags carry the `v` prefix and the semver rules read the tag name after
+            # docker/metadata-action strips that prefix, so the published image tags stay
+            # unprefixed. A pre-release gets only its exact immutable version. Stable releases
+            # additionally move the minor channel and latest; an RC must never replace either
+            # production tag.
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
-            # Release tags carry no `v` prefix here, so the gate must not require one. Without
-            # this gate the rule is unconditional and an RC would move `latest`.
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+            # The raw rule below is prefix-independent. Without this gate the rule is
+            # unconditional and an RC would move `latest`.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
 
       - name: Build and publish image
         id: push
@@ -243,11 +245,14 @@ jobs:
             exit 0
           fi
 
+          # Release tags carry the `v` prefix while published image tags do not, so drop it
+          # before quoting the image tag or deriving the minor channel.
+          image_version="${GITHUB_REF_NAME#v}"
           if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
             release_flags=(--prerelease)
             channel_note="Pre-release image; the stable minor channel and latest tag were not changed."
           else
-            minor="${GITHUB_REF_NAME%.*}"
+            minor="${image_version%.*}"
             release_flags=(--latest)
             channel_note="Also tagged ${minor} and latest."
           fi
@@ -255,7 +260,7 @@ jobs:
           # printf keeps the Markdown backticks literal; a heredoc would need them escaped.
           {
             printf '## Container image\n\n'
-            printf '```\n%s:%s\n```\n\n' "${REGISTRY_IMAGE}" "${GITHUB_REF_NAME}"
+            printf '```\n%s:%s\n```\n\n' "${REGISTRY_IMAGE}" "${image_version}"
             printf 'Digest: `%s`\n\n' "${IMAGE_DIGEST}"
             printf '%s\n' "${channel_note}"
           } > release-notes.md

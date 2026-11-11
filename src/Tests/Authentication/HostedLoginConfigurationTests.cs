@@ -33,10 +33,10 @@ public sealed class HostedLoginConfigurationTests
             var services = harness.Factory.Services;
             Assert.False(services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured);
             Assert.Null(services.GetService<ITicketStore>());
-            foreach (var name in new[] { "PendingSignInStore", "LogoutReturnStateStore", "SignaCoreHostedLoginEndpointService", "SignaCoreHostedLogoutService" })
+            foreach (var name in new[] { "PendingSignInStore", "LogoutReturnStateStore", "HostedLoginEndpointService", "HostedLogoutService" })
                 Assert.Null(services.GetService(typeof(ITicketStore).Assembly.GetType("SignaCore.Client.AspNetCore." + name)!));
             var schemes = await services.GetRequiredService<IAuthenticationSchemeProvider>().GetAllSchemesAsync();
-            Assert.DoesNotContain(schemes, scheme => scheme.Name == SignaCoreHostedLoginDefaults.AuthenticationScheme || scheme.Name == SignaCoreHostedLoginDefaults.SessionAuthenticationScheme);
+            Assert.DoesNotContain(schemes, scheme => scheme.Name == HostedLoginDefaults.AuthenticationScheme || scheme.Name == HostedLoginDefaults.SessionAuthenticationScheme);
             Assert.DoesNotContain(services.GetServices<IHostedService>(), service => service.GetType().Assembly.GetName().Name == "SignaCore.Client.AspNetCore");
             foreach (var path in new[] { "/", "/login", "/health", "/health/live", "/health/ready" })
             {

@@ -49,7 +49,7 @@ public sealed class BrowserHostFixture
             if (authority.Mode == "unreachable") { harness.Dispose(); harness = StartHost(); }
             return Results.Ok();
         });
-        provider.MapGet("/fixture/status", () => Results.Json(new { sessionCookieName = SignaCoreHostedLoginDefaults.SessionCookieName, tickets = harness.Store.Count, prepares = authority.Prepares, exchanges = authority.Exchanges }));
+        provider.MapGet("/fixture/status", () => Results.Json(new { sessionCookieName = HostedLoginDefaults.SessionCookieName, tickets = harness.Store.Count, prepares = authority.Prepares, exchanges = authority.Exchanges }));
         provider.MapGet("/fixture/expire", () => { harness.Clock.Advance(TimeSpan.FromMinutes(20)); return Results.Ok(); });
         provider.MapGet("/fixture/restart", () => { harness.Dispose(); harness = StartHost(); return Results.Ok(); });
         provider.MapGet("/fixture/stop", () => { stopped.TrySetResult(); return Results.Ok(); });

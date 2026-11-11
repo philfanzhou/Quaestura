@@ -78,7 +78,7 @@ public static class AdminOidcComposition
                 ? JwtBearerDefaults.AuthenticationScheme : null;
         });
         services.AddTransient<AdminOidcBackchannelMarker>();
-        services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName)
+        services.AddHttpClient(HostedLoginDefaults.HttpClientName)
             .AddHttpMessageHandler<AdminOidcBackchannelMarker>()
             .AddServiceMantleCorrelationIdPropagation();
 
@@ -90,19 +90,19 @@ public static class AdminOidcComposition
         services.AddSingleton<ITicketStore>(provider => new AdminSessionAdmission(
             (ITicketStore)factory(provider),
             provider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>(),
-            provider.GetRequiredService<IOptionsMonitor<SignaCoreHostedLoginOptions>>(),
+            provider.GetRequiredService<IOptionsMonitor<HostedLoginOptions>>(),
             provider.GetRequiredService<TimeProvider>()));
 
         services.Configure<AuthenticationOptions>(options =>
         {
-            options.DefaultScheme = SignaCoreHostedLoginDefaults.AuthenticationScheme;
-            options.DefaultAuthenticateScheme = SignaCoreHostedLoginDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = SignaCoreHostedLoginDefaults.AuthenticationScheme;
+            options.DefaultScheme = HostedLoginDefaults.AuthenticationScheme;
+            options.DefaultAuthenticateScheme = HostedLoginDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = HostedLoginDefaults.AuthenticationScheme;
         });
         services.Configure<AuthorizationOptions>(options =>
         {
             options.DefaultPolicy = new AuthorizationPolicyBuilder(
-                    SignaCoreHostedLoginDefaults.AuthenticationScheme).RequireAuthenticatedUser().Build();
+                    HostedLoginDefaults.AuthenticationScheme).RequireAuthenticatedUser().Build();
             options.FallbackPolicy = options.DefaultPolicy;
         });
         services.AddSingleton<IAuthorizationMiddlewareResultHandler, AdminApiAuthorizationResultHandler>();
@@ -155,14 +155,14 @@ internal sealed class AdminOidcBackchannelMarker : DelegatingHandler
     }
 }
 
-internal sealed class AdminAuthorizationDecision : ISignaCoreAuthorizationDecision
+internal sealed class AdminAuthorizationDecision : IAuthorizationDecision
 {
-    public ValueTask<SignaCoreAuthorizationDecisionResult> DecideAsync(
+    public ValueTask<AuthorizationDecisionResult> DecideAsync(
         System.Security.Claims.ClaimsPrincipal principal, System.Threading.CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(principal.IsInRole("admin")
-            ? SignaCoreAuthorizationDecisionResult.Allowed : SignaCoreAuthorizationDecisionResult.Denied);
+            ? AuthorizationDecisionResult.Allowed : AuthorizationDecisionResult.Denied);
     }
 }
 

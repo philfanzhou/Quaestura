@@ -16,9 +16,9 @@ using SignaCore.Client.AspNetCore;
 
 namespace Quaestura.Host.Authentication;
 
-internal sealed class AdminOidcResponseWriter : ISignaCoreHostedLoginResponseWriter
+internal sealed class AdminOidcResponseWriter : IHostedLoginResponseWriter
 {
-    public Task WriteSignInFailureAsync(HttpContext context, SignaCoreSignInReason reason,
+    public Task WriteSignInFailureAsync(HttpContext context, SignInReason reason,
         CancellationToken cancellationToken)
     {
         if (TryWriteNavigationFailure(context, reason switch
@@ -26,21 +26,21 @@ internal sealed class AdminOidcResponseWriter : ISignaCoreHostedLoginResponseWri
             // The current package reports a cancelled sign-in as UserCanceled; AccessDenied stays
             // a legacy value. Both keep the SPA's existing `cancelled` outcome. A denied
             // pre-sign-in authorization shares the admission-denied `denied` outcome.
-            SignaCoreSignInReason.AccessDenied or SignaCoreSignInReason.UserCanceled => "cancelled",
-            SignaCoreSignInReason.PreSignInDenied => "denied",
-            SignaCoreSignInReason.AuthorityUnreachable => "provider_unavailable",
-            SignaCoreSignInReason.RequiresReauthentication => "requires_reauthentication",
+            SignInReason.AccessDenied or SignInReason.UserCanceled => "cancelled",
+            SignInReason.PreSignInDenied => "denied",
+            SignInReason.AuthorityUnreachable => "provider_unavailable",
+            SignInReason.RequiresReauthentication => "requires_reauthentication",
             _ => "signin_failed"
         }, cancellationToken)) return Task.CompletedTask;
-        return WriteProblemAsync(context, reason == SignaCoreSignInReason.AuthorityUnreachable ? 503 : 400,
+        return WriteProblemAsync(context, reason == SignInReason.AuthorityUnreachable ? 503 : 400,
             "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED", "Hosted sign-in could not complete.", cancellationToken);
     }
 
-    public Task WriteFailurePageAsync(HttpContext context, SignaCoreSignInReason? reason,
+    public Task WriteFailurePageAsync(HttpContext context, SignInReason? reason,
         CancellationToken cancellationToken) => WriteSignInFailureAsync(
-            context, reason ?? SignaCoreSignInReason.InvalidResponse, cancellationToken);
+            context, reason ?? SignInReason.InvalidResponse, cancellationToken);
 
-    public Task WriteSessionStatusAsync(HttpContext context, SignaCoreSessionStatus status,
+    public Task WriteSessionStatusAsync(HttpContext context, SessionStatus status,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();

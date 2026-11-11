@@ -143,7 +143,7 @@ Production health snapshots use the shared receipt and PostgreSQL classifier: un
 
 ## Official hosted login
 
-`SignaCore.Client.AspNetCore 0.1.21` is consumed from NuGet. The administrator SPA uses only
+`SignaCore.Client.AspNetCore 0.1.22` is consumed from NuGet. The administrator SPA uses only
 hosted login. Nonblank `AdminOidc:Authority/ClientId/ClientSecret/RedirectUri` always register it;
 `AdminOidc:Enabled` is ignored. Missing required fields permit SPA/health/Bearer startup but make
 all hosted entries return safe 503, with one key-name-only startup Error and no package state.

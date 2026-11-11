@@ -198,7 +198,7 @@ HSTS, and CORS are deployment responsibilities. No state is persisted by this re
 
 ## 7. Hosted administrator login
 
-`SignaCore.Client.AspNetCore` **0.1.21** is the official NuGet client and hosted sign-in is
+`SignaCore.Client.AspNetCore` **0.1.22** is the official NuGet client and hosted sign-in is
 the sole administrator UI login. `AdminOidc:Enabled` is retired and completely ignored, including
 `false` and malformed strings. With nonblank `Authority`, `ClientId`, `ClientSecret`, and
 `RedirectUri`, the package is always registered. With any required field absent, empty, or
@@ -240,7 +240,7 @@ expiry. The cookie may remain in the browser after the server ticket expires; it
 
 Complete but invalid configuration (URI, capacity, scope, or malformed numbers) still fails startup
 through explicit parsing and official ValidateOnStart; diagnostics contain option names, never
-submitted values. Missing required fields follow the safe 503 policy above. The **0.1.21** client
+submitted values. Missing required fields follow the safe 503 policy above. The **0.1.22** client
 accepts structurally valid `http` and `https` Authority, callback, and post-logout URIs equally in
 every environment, mirroring SignaCore's transport decision (ADR 0008); a public deployment must
 still terminate TLS in front of the service and register HTTPS URIs. Keep the authority/JWKS
@@ -268,7 +268,7 @@ session revoked and returns `200 {"outcome":"local_only"}`. Missing/wrong logout
 a JSON response to a disconnected client. Logout return remains the package's one-time flow and
 always navigates to the fixed local landing path. Issued downstream tokens remain valid to expiry.
 
-The **0.1.21** client also binds every pending sign-in to the browser that started it: the start
+The **0.1.22** client also binds every pending sign-in to the browser that started it: the start
 endpoint sets a one-time, HttpOnly, SameSite=Lax `<session cookie>-login-binding.<state>` cookie
 scoped to the callback path with a five-minute lifetime, and the callback consumes it before
 redeeming the code. A missing, replayed, or mismatched binding fails closed with the bounded
@@ -335,3 +335,15 @@ client's strict token and logout response validation (this Host keeps a 30-secon
 explicitly), the user-cancel reason reported as `UserCanceled`, and `http`/`https` URIs accepted
 equally. Roll back by redeploying the previous whole image with its matching configuration; a
 restart loses the process-local sessions and requires sign-in again either way.
+
+#### Client package 0.1.22 source-level renames
+
+The client package moves from 0.1.21 to 0.1.22. SignaCore 0.1.22 renames the package's public
+types by dropping the redundant `SignaCore` prefix (`HostedLoginOptions`, `HostedLoginDefaults`,
+`IHostedLoginResponseWriter`, `SignInReason`, `SessionStatus`, `SessionTicket`,
+`IAuthorizationDecision`, `IPreSignInAuthorizationDecision`, `ProtocolValidationOptions`). The
+`AddSignaCoreHostedLogin`/`MapSignaCoreHostedLogin` extension methods, the authentication scheme
+and HttpClient names, the session Cookie and CSRF header names, and every wire behavior are
+unchanged, so the adaptation is compile-time only; `options.Validation.ClockSkew` keeps its
+property name under the renamed `ProtocolValidationOptions` type. Roll back by redeploying the
+previous whole image with the previous package version; no data or configuration rollback applies.

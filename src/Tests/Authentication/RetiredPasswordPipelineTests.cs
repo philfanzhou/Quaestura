@@ -161,7 +161,7 @@ public sealed class RetiredPasswordPipelineTests
     {
         using var harness = new HostedLoginHarness();
         using var response = await harness.Send(HttpMethod.Get, "/admin/tags",
-            new BrowserSession(SignaCoreHostedLoginDefaults.SessionCookieName + "=" + harness.Authority.Token(audience: "QuantumZhou.microservices"), null));
+            new BrowserSession(HostedLoginDefaults.SessionCookieName + "=" + harness.Authority.Token(audience: "QuantumZhou.microservices"), null));
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode); Assert.Equal(0, harness.Store.Count);
     }
 }

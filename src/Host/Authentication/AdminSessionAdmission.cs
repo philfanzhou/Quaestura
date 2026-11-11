@@ -15,12 +15,12 @@ namespace Quaestura.Host.Authentication;
 internal sealed class AdminSessionAdmission(
     ITicketStore inner,
     IOptionsMonitor<JwtBearerOptions> bearerOptions,
-    IOptionsMonitor<SignaCoreHostedLoginOptions> loginOptions,
+    IOptionsMonitor<HostedLoginOptions> loginOptions,
     TimeProvider clock) : ITicketStore
 {
     internal ITicketStore InnerStore => inner;
 
-    public async Task<string?> StoreAsync(SignaCoreSessionTicket ticket, CancellationToken cancellationToken)
+    public async Task<string?> StoreAsync(SessionTicket ticket, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         TokenValidationResult validation;
@@ -87,7 +87,7 @@ internal sealed class AdminSessionAdmission(
         return claims.Length == 1 && !string.IsNullOrWhiteSpace(claims[0].Value) ? claims[0].Value : null;
     }
 
-    public Task<SignaCoreSessionTicket?> RetrieveAsync(string key, CancellationToken cancellationToken) =>
+    public Task<SessionTicket?> RetrieveAsync(string key, CancellationToken cancellationToken) =>
         inner.RetrieveAsync(key, cancellationToken);
     public Task RemoveAsync(string key, CancellationToken cancellationToken) => inner.RemoveAsync(key, cancellationToken);
     public int RemoveExpired(CancellationToken cancellationToken) => inner.RemoveExpired(cancellationToken);

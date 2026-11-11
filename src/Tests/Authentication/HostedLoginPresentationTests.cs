@@ -22,19 +22,19 @@ public sealed class HostedLoginPresentationTests
     [InlineData("text/html", "", "", false)]
     public async Task Writer_OnlyProjectsRealHtmlNavigation(string accept, string mode, string destination, bool redirect)
     {
-        foreach (var reason in Enum.GetValues<SignaCoreSignInReason>())
+        foreach (var reason in Enum.GetValues<SignInReason>())
         {
             var context = Context("/admin/auth/oidc/callback", accept, mode, destination);
             await new AdminOidcResponseWriter().WriteSignInFailureAsync(context, reason, default);
-            Assert.Equal(redirect ? 302 : reason == SignaCoreSignInReason.AuthorityUnreachable ? 503 : 400, context.Response.StatusCode);
+            Assert.Equal(redirect ? 302 : reason == SignInReason.AuthorityUnreachable ? 503 : 400, context.Response.StatusCode);
             if (redirect)
             {
                 var expected = reason switch
                 {
-                    SignaCoreSignInReason.AccessDenied or SignaCoreSignInReason.UserCanceled => "cancelled",
-                    SignaCoreSignInReason.PreSignInDenied => "denied",
-                    SignaCoreSignInReason.AuthorityUnreachable => "provider_unavailable",
-                    SignaCoreSignInReason.RequiresReauthentication => "requires_reauthentication",
+                    SignInReason.AccessDenied or SignInReason.UserCanceled => "cancelled",
+                    SignInReason.PreSignInDenied => "denied",
+                    SignInReason.AuthorityUnreachable => "provider_unavailable",
+                    SignInReason.RequiresReauthentication => "requires_reauthentication",
                     _ => "signin_failed"
                 };
                 Assert.Equal("/login?reason=" + expected, context.Response.Headers.Location);
@@ -85,7 +85,7 @@ public sealed class HostedLoginPresentationTests
         using var harness = new HostedLoginHarness("PostLogoutReturnPath", "/login?reason=signed_out");
         var session = await harness.SignedIn();
         using var logout = await harness.Send(HttpMethod.Post, "/admin/auth/oidc/logout", session);
-        var correlation = logout.Headers.GetValues("Set-Cookie").Single(cookie => cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + SignaCoreHostedLoginDefaults.LogoutReturnCookieSuffix + "="));
+        var correlation = logout.Headers.GetValues("Set-Cookie").Single(cookie => cookie.StartsWith(HostedLoginDefaults.SessionCookieName + HostedLoginDefaults.LogoutReturnCookieSuffix + "="));
         var path = "/admin/auth/oidc/logout/return?state=" + Uri.EscapeDataString(harness.Authority.LogoutState);
         using var request = Navigation(path);
         request.Headers.Add("Cookie", correlation.Split(';')[0]);
@@ -132,10 +132,10 @@ public sealed class HostedLoginPresentationTests
     {
         var context = Context("/admin/auth/oidc/callback", "text/html", "navigate", "document");
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new AdminOidcResponseWriter().WriteSignInFailureAsync(context, SignaCoreSignInReason.AccessDenied, cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new AdminOidcResponseWriter().WriteSignInFailureAsync(context, SignInReason.AccessDenied, cancellation.Token));
         Assert.Equal(200, context.Response.StatusCode);
         context.Features.Set<IHttpResponseFeature>(new StartedFeature { StatusCode = 202 });
-        await new AdminOidcResponseWriter().WriteSignInFailureAsync(context, SignaCoreSignInReason.AccessDenied, default);
+        await new AdminOidcResponseWriter().WriteSignInFailureAsync(context, SignInReason.AccessDenied, default);
         Assert.Equal(202, context.Response.StatusCode);
         Assert.Equal(0, context.Response.Headers.Location.Count);
         var business = Context("/admin/tags", "text/html", "navigate", "document");

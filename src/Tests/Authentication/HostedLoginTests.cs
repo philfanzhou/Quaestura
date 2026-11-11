@@ -268,7 +268,7 @@ public sealed class HostedLoginTests
         using var harness = new HostedLoginHarness();
         var session = await harness.SignedIn();
         harness.Clock.Advance(TimeSpan.FromMinutes(20));
-        foreach (var candidate in new[] { session, new BrowserSession(SignaCoreHostedLoginDefaults.SessionCookieName + "=unknown", null) })
+        foreach (var candidate in new[] { session, new BrowserSession(HostedLoginDefaults.SessionCookieName + "=unknown", null) })
         {
             using var status = await harness.Send(HttpMethod.Get, "/admin/auth/oidc/session", candidate);
             using var body = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
@@ -313,8 +313,8 @@ public sealed class HostedLoginTests
             Assert.Equal(harness.Authority.Origin + "/oauth2/logout?logout_handle=" + new string('a', 43),
                 preparedBody.RootElement.GetProperty("logoutUrl").GetString());
             var cookies = responses[preparedIndex].Headers.GetValues("Set-Cookie").ToArray();
-            Assert.Contains(cookies, cookie => cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + "=;") && cookie.Contains("1970"));
-            var correlation = cookies.Single(cookie => cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + SignaCoreHostedLoginDefaults.LogoutReturnCookieSuffix + "="));
+            Assert.Contains(cookies, cookie => cookie.StartsWith(HostedLoginDefaults.SessionCookieName + "=;") && cookie.Contains("1970"));
+            var correlation = cookies.Single(cookie => cookie.StartsWith(HostedLoginDefaults.SessionCookieName + HostedLoginDefaults.LogoutReturnCookieSuffix + "="));
             var returnedSession = new BrowserSession(correlation.Split(';')[0], null);
             var returnUrl = "/admin/auth/oidc/logout/return?state=" + Uri.EscapeDataString(harness.Authority.LogoutState);
             using var returned = await harness.Send(HttpMethod.Get, returnUrl, returnedSession);
@@ -392,7 +392,7 @@ public sealed class HostedLoginTests
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
         var admission = harness.Factory.Services.GetRequiredService<ITicketStore>();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => admission.StoreAsync(
-            new SignaCoreSessionTicket(new ClaimsPrincipal(), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), "invalid", "invalid"), cancellation.Token));
+            new SessionTicket(new ClaimsPrincipal(), DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddMinutes(1), "invalid", "invalid"), cancellation.Token));
         Assert.Equal(0, harness.Store.Count);
     }
 
@@ -403,12 +403,12 @@ public sealed class HostedLoginTests
         context.Features.Set<IHttpResponseFeature>(new AlreadyStartedResponseFeature { StatusCode = 202 });
         using var body = new MemoryStream(); context.Response.Body = body;
         var writer = new AdminOidcResponseWriter();
-        await writer.WriteSessionStatusAsync(context, SignaCoreSessionStatus.Expired, default);
-        await writer.WriteSignInFailureAsync(context, SignaCoreSignInReason.InvalidToken, default);
+        await writer.WriteSessionStatusAsync(context, SessionStatus.Expired, default);
+        await writer.WriteSignInFailureAsync(context, SignInReason.InvalidToken, default);
         Assert.Equal(202, context.Response.StatusCode); Assert.Equal(0, body.Length);
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => writer.WriteSessionStatusAsync(
-            context, SignaCoreSessionStatus.Expired, cancellation.Token));
+            context, SessionStatus.Expired, cancellation.Token));
         Assert.Equal(0, body.Length);
     }
 
@@ -496,7 +496,7 @@ internal sealed class HostedLoginHarness : IDisposable
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(Clock);
-                services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => realHttp ? new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false } : Authority);
+                services.AddHttpClient(HostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => realHttp ? new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false } : Authority);
                 services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
                 {
                     options.MapInboundClaims = false;
@@ -526,8 +526,8 @@ internal sealed class HostedLoginHarness : IDisposable
         // The 0.1.21 package binds every pending sign-in to a per-state browser cookie that the
         // callback must present. A test client carries no cookies, so the harness passes it on.
         var binding = start.Headers.GetValues("Set-Cookie").Single(cookie =>
-            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName
-                + SignaCoreHostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
+            cookie.StartsWith(HostedLoginDefaults.SessionCookieName
+                + HostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
         return new StartedSignIn(
             "/admin/auth/oidc/callback?code=synthetic-code-canary&state="
                 + Uri.EscapeDataString(query["state"]!) + "&iss=" + Uri.EscapeDataString(Authority.Origin),
@@ -549,14 +549,14 @@ internal sealed class HostedLoginHarness : IDisposable
         var cookies = response.Headers.TryGetValues("Set-Cookie", out var values)
             ? values : Array.Empty<string>();
         Assert.DoesNotContain(cookies, cookie =>
-            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
+            cookie.StartsWith(HostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
     }
     internal async Task<BrowserSession> SignedIn()
     {
         using var login = await Login("admin"); Assert.Equal(HttpStatusCode.Found, login.StatusCode);
         Assert.Equal("/questions", login.Headers.Location!.OriginalString);
         var sessionSet = login.Headers.GetValues("Set-Cookie").Single(cookie =>
-            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
+            cookie.StartsWith(HostedLoginDefaults.SessionCookieName + "=", StringComparison.Ordinal));
         Assert.Contains("httponly", sessionSet.ToLowerInvariant()); Assert.Contains("secure", sessionSet.ToLowerInvariant()); Assert.Contains("samesite=lax", sessionSet.ToLowerInvariant());
         var cookie = sessionSet.Split(';')[0];
         using var csrf = await Send(HttpMethod.Get, "/admin/auth/oidc/csrf", new BrowserSession(cookie, null));
@@ -566,7 +566,7 @@ internal sealed class HostedLoginHarness : IDisposable
     internal async Task<HttpResponseMessage> Send(HttpMethod method, string path, BrowserSession session, object? body = null, CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(method, path); request.Headers.Add("Cookie", session.Cookie);
-        if (session.Csrf is not null) request.Headers.Add(SignaCoreHostedLoginDefaults.AntiforgeryHeaderName, session.Csrf);
+        if (session.Csrf is not null) request.Headers.Add(HostedLoginDefaults.AntiforgeryHeaderName, session.Csrf);
         if (body is not null) request.Content = JsonContent.Create(body);
         return await Client.SendAsync(request, cancellationToken);
     }

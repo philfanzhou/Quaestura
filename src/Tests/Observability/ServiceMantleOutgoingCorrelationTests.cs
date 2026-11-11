@@ -40,7 +40,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         var capture = new CaptureHandler();
         await using var factory = CreateFactory(configureTestServices: services =>
         {
-            services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
+            services.AddHttpClient(HostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddHttpClient("external").ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddSingleton<IAuthorizationMiddlewareResultHandler, OutgoingProbe>();
         });
@@ -71,7 +71,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Matches("^[0-9a-f]{32}$", resolved);
         Assert.Equal(new[] { resolved }, capture.Headers["invalid"]);
 
-        using var background = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(SignaCoreHostedLoginDefaults.HttpClientName);
+        using var background = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
         using var backgroundResponse = await background.GetAsync("https://authority.test/background");
         Assert.Empty(capture.Headers["background"]);
     }
@@ -83,7 +83,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         var capture = new CaptureHandler(cancellation);
         await using var factory = CreateFactory(configureTestServices: services =>
         {
-            services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
+            services.AddHttpClient(HostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddSingleton(cancellation);
             services.AddSingleton<IAuthorizationMiddlewareResultHandler, CancellationProbe>();
         });
@@ -95,7 +95,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Equal("cancelled", await response.Content.ReadAsStringAsync());
         Assert.True(capture.Content!.Disposed);
         Assert.Equal(new[] { "completion-cancel-probe" }, capture.Headers["cancel"]);
-        using var selected = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(SignaCoreHostedLoginDefaults.HttpClientName);
+        using var selected = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
         var before = capture.Headers.Count;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => selected.GetAsync("https://authority.test/entry", cancellation.Token));
         Assert.Equal(before, capture.Headers.Count);
@@ -109,7 +109,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         using var harness = new HostedLoginHarness();
         var capture = new ForwardingCapture(harness.Authority);
         using var factory = harness.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.AddHttpClient(SignaCoreHostedLoginDefaults.HttpClientName)
+            services.AddHttpClient(HostedLoginDefaults.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => capture)));
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         { BaseAddress = new Uri("https://consumer.test"), AllowAutoRedirect = false, HandleCookies = false });
@@ -121,8 +121,8 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         var query = QueryHelpers.ParseQuery(startResponse.Headers.Location!.Query);
         harness.Authority.Nonce = query["nonce"]!;
         var binding = startResponse.Headers.GetValues("Set-Cookie").Single(cookie =>
-            cookie.StartsWith(SignaCoreHostedLoginDefaults.SessionCookieName
-                + SignaCoreHostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
+            cookie.StartsWith(HostedLoginDefaults.SessionCookieName
+                + HostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
         using var callback = new HttpRequestMessage(HttpMethod.Get,
             "/admin/auth/oidc/callback?code=synthetic-code-canary&state=" + Uri.EscapeDataString(query["state"]!)
             + "&iss=" + Uri.EscapeDataString(harness.Authority.Origin));
@@ -153,7 +153,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
             // Mutating the inbound header after middleware resolution must not replace its private slot.
             context.Request.Headers[CorrelationHeaderName] = "downstream-mutated-inbound";
             var factory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
-            using var selected = factory.CreateClient(SignaCoreHostedLoginDefaults.HttpClientName);
+            using var selected = factory.CreateClient(HostedLoginDefaults.HttpClientName);
             using var outgoing = new HttpRequestMessage(HttpMethod.Get, "https://authority.test/" + probe);
             if (context.Request.Query.ContainsKey("explicit")) outgoing.Headers.Add(CorrelationHeaderName, "outgoing-explicit-value");
             using var response = await selected.SendAsync(outgoing, context.RequestAborted);
@@ -168,7 +168,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
         {
             var cancellation = context.RequestServices.GetRequiredService<CancellationTokenSource>();
-            using var selected = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(SignaCoreHostedLoginDefaults.HttpClientName);
+            using var selected = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => selected.GetAsync("https://authority.test/cancel", cancellation.Token));
             Assert.Equal(cancellation.Token, exception.CancellationToken);
             await context.Response.WriteAsync("cancelled");

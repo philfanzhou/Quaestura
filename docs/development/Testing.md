@@ -206,8 +206,7 @@ The only added dev dependency is `@playwright/test 1.63.0` (Node >=20). CI insta
 SPA artifacts; Chromium is not required for image builds or shipped at runtime.
 
 `hosted-login.spec.ts` drives Chromium through the actual Quaestura `Program`/Kestrel (production HTTP listener on 5007 plus a test-only self-signed
-HTTPS listener on 5009), the
-official SignaCore client, a synthetic HTTP authority on 5008, and the built SPA. It covers deep
+HTTPS listener on 5009), the framework OpenID Connect handler, a synthetic HTTP authority on 5008, and the built SPA. It covers deep
 links, callback admission, all management pages, tag CRUD, Cookie/CSRF, fixed failure presentation,
 expiry, prepared/local-only logout, and return failure. The authority uses generated test RSA keys
 and synthetic identities only. `BrowserHostFixture` is explicitly skipped in ordinary solution

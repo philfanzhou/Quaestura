@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using SignaCore.Client.AspNetCore;
+using Quaestura.Host.Authentication;
 
 namespace Quaestura.Tests.Authentication;
 
@@ -46,20 +46,40 @@ public sealed class BrowserHostFixture
             harness.Clock.Reset();
             authority.Mode = context.Request.Query["signin"].ToString() is { Length: > 0 } mode ? mode : "admin";
             authority.LogoutMode = context.Request.Query["logout"].ToString() is { Length: > 0 } logout ? logout : "success";
-            if (authority.Mode == "unreachable") { harness.Dispose(); harness = StartHost(); }
+            // The standard flow has no prepared-logout call; the historical logout-failure mode
+            // is emulated by an authority whose Discovery publishes no end-session endpoint. The
+            // handler caches Discovery, so the host restarts whenever this aspect flips.
+            var failedLogout = authority.LogoutMode == "failed";
+            if (failedLogout != authority.EndSessionUnavailable)
+            {
+                authority.EndSessionUnavailable = failedLogout;
+                harness.Dispose();
+                harness = StartHost();
+            }
+            else if (authority.Mode == "unreachable") { harness.Dispose(); harness = StartHost(); }
             return Results.Ok();
         });
-        provider.MapGet("/fixture/status", () => Results.Json(new { sessionCookieName = HostedLoginDefaults.SessionCookieName, tickets = harness.Store.Count, prepares = authority.Prepares, exchanges = authority.Exchanges }));
+        provider.MapGet("/fixture/status", () => Results.Json(new { sessionCookieName = AdminOidcConstants.SessionCookie, tickets = harness.Store.Count, exchanges = authority.Exchanges }));
         provider.MapGet("/fixture/expire", () => { harness.Clock.Advance(TimeSpan.FromMinutes(20)); return Results.Ok(); });
         provider.MapGet("/fixture/restart", () => { harness.Dispose(); harness = StartHost(); return Results.Ok(); });
         provider.MapGet("/fixture/stop", () => { stopped.TrySetResult(); return Results.Ok(); });
         provider.MapGet("/oauth2/authorize", (HttpContext context) =>
         {
             authority.Nonce = context.Request.Query["nonce"]!;
-            var fields = new Dictionary<string, string?> { [authority.Mode == "cancelled" ? "error" : "code"] = authority.Mode == "cancelled" ? "access_denied" : "synthetic-code-canary", ["state"] = context.Request.Query["state"], ["iss"] = authority.Origin };
+            authority.LastCodeChallenge = context.Request.Query["code_challenge"]!;
+            // A fresh single-use authorization code, minted exactly like a real authority's.
+            var fields = new Dictionary<string, string?> { [authority.Mode == "cancelled" ? "error" : "code"] = authority.Mode == "cancelled" ? "access_denied" : authority.IssueCode(), ["state"] = context.Request.Query["state"], ["iss"] = authority.Origin };
             return Results.Redirect(QueryHelpers.AddQueryString("https://127.0.0.1:5009/admin/auth/oidc/callback", fields));
         });
-        provider.MapGet("/oauth2/logout", () => Results.Redirect(QueryHelpers.AddQueryString("https://127.0.0.1:5009/admin/auth/oidc/logout/return", "state", authority.LogoutState)));
+        // The standard RP-initiated end-session page: the consumer's end-session redirect lands
+        // here (id_token_hint and post_logout_redirect_uri included), and the page hands the
+        // browser straight back to the registered post-logout URI with the protected state
+        // echoed unchanged.
+        provider.MapGet("/oauth2/logout", (HttpContext context) =>
+        {
+            authority.LogoutState = context.Request.Query["state"].ToString();
+            return Results.Redirect(QueryHelpers.AddQueryString("https://127.0.0.1:5009/admin/auth/oidc/logout/return", "state", authority.LogoutState));
+        });
         provider.MapFallback(async context =>
         {
             using var request = new HttpRequestMessage(new HttpMethod(context.Request.Method), authority.Origin + context.Request.Path + context.Request.QueryString);
@@ -84,6 +104,8 @@ internal sealed class BrowserFixtureFactAttribute : FactAttribute
     public BrowserFixtureFactAttribute()
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("QUAESTURA_BROWSER_WEBROOT")))
+        {
             Skip = "Process fixture is started by frontend npm test; browser assertions run there.";
+        }
     }
 }

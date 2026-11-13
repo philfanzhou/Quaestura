@@ -2,64 +2,136 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Net.Http;
+using System.Security.Claims;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using ServiceMantle.Web.Http;
-using SignaCore.Client.AspNetCore;
 
 namespace Quaestura.Host.Authentication;
 
-internal sealed class AdminOidcResponseWriter : IHostedLoginResponseWriter
+/// <summary>
+/// The fixed presentation layer of the admin hosted-login slice. The framework's OpenID Connect
+/// handler defines the protocol; this writer keeps the browser-facing contract of the replaced
+/// package integration: completed failures on real top-level HTML navigations redirect to the
+/// SPA's login route with one bounded <c>reason</c> value, every non-navigation failure answers a
+/// fixed Problem Details body, and no failure detail — never a code, state, nonce, or token —
+/// ever reaches the response.
+/// </summary>
+internal static class AdminOidcResponses
 {
-    public Task WriteSignInFailureAsync(HttpContext context, SignInReason reason,
-        CancellationToken cancellationToken)
+    internal const string SignInFailedLanding = "signin_failed";
+    internal const string DeniedLanding = "denied";
+    internal const string CancelledLanding = "cancelled";
+    internal const string ProviderUnavailableLanding = "provider_unavailable";
+    internal const string RequiresReauthenticationLanding = "requires_reauthentication";
+    internal const string LogoutFailedLanding = "logout_failed";
+
+    /// <summary>
+    /// The bounded landing vocabulary of one sign-in failure. The decision input is the closed
+    /// failure set of the framework handler: the admission gate's denial, the user's
+    /// cancellation (the upstream <c>access_denied</c> echo), transport failures of the
+    /// authority's Discovery, JWKS, or token endpoints — backchannel timeouts included, which
+    /// the timeout handler normalizes into transport failures — and everything else.
+    /// </summary>
+    internal static string LandingFor(Exception? failure)
     {
-        if (TryWriteNavigationFailure(context, reason switch
+        if (failure is null)
         {
-            // The current package reports a cancelled sign-in as UserCanceled; AccessDenied stays
-            // a legacy value. Both keep the SPA's existing `cancelled` outcome. A denied
-            // pre-sign-in authorization shares the admission-denied `denied` outcome.
-            SignInReason.AccessDenied or SignInReason.UserCanceled => "cancelled",
-            SignInReason.PreSignInDenied => "denied",
-            SignInReason.AuthorityUnreachable => "provider_unavailable",
-            SignInReason.RequiresReauthentication => "requires_reauthentication",
-            _ => "signin_failed"
-        }, cancellationToken)) return Task.CompletedTask;
-        return WriteProblemAsync(context, reason == SignInReason.AuthorityUnreachable ? 503 : 400,
-            "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED", "Hosted sign-in could not complete.", cancellationToken);
+            return SignInFailedLanding;
+        }
+
+        if (failure.Message == AdminOidcConstants.AdminDeniedFailure)
+        {
+            return DeniedLanding;
+        }
+
+        for (var exception = failure; exception is not null; exception = exception.InnerException)
+        {
+            if (exception is OpenIdConnectProtocolException protocol
+                && string.Equals(protocol.Data["error"] as string, "access_denied", StringComparison.Ordinal))
+            {
+                // The user's cancellation keeps the SPA's existing cancelled outcome.
+                return CancelledLanding;
+            }
+        }
+
+        return IsAuthorityUnavailable(failure) ? ProviderUnavailableLanding : SignInFailedLanding;
     }
 
-    public Task WriteFailurePageAsync(HttpContext context, SignInReason? reason,
-        CancellationToken cancellationToken) => WriteSignInFailureAsync(
-            context, reason ?? SignInReason.InvalidResponse, cancellationToken);
+    /// <summary>
+    /// Whether the failure chain is a transport failure of the authority's endpoints — the
+    /// provider-unavailable outcome. IdentityModel wraps discovery and document retrieval errors
+    /// (for example <c>IOException</c>/<c>InvalidOperationException</c> around IDX20803/IDX20807),
+    /// so every link of the chain is inspected.
+    /// </summary>
+    internal static bool IsAuthorityUnavailable(Exception failure)
+    {
+        for (var exception = failure; exception is not null; exception = exception.InnerException)
+        {
+            if (exception is HttpRequestException or TimeoutException or IOException)
+            {
+                return true;
+            }
+        }
 
-    public Task WriteSessionStatusAsync(HttpContext context, SessionStatus status,
-        CancellationToken cancellationToken)
+        return false;
+    }
+
+    /// <summary>
+    /// The landing of one wire reason presented to the fixed failure-page route. Every wire name
+    /// the replaced client could produce stays parseable so historical links keep rendering;
+    /// an unknown value renders the generic failure.
+    /// </summary>
+    internal static string LandingForWireReason(string? wireReason) => wireReason switch
+    {
+        "access_denied" or "user_canceled" => CancelledLanding,
+        "pre_sign_in_denied" => DeniedLanding,
+        "authority_unreachable" => ProviderUnavailableLanding,
+        "requires_reauthentication" => RequiresReauthenticationLanding,
+        _ => SignInFailedLanding
+    };
+
+    /// <summary>
+    /// Presents one completed sign-in failure: a real top-level HTML navigation to one of the
+    /// slice's routes is redirected to the SPA's login route with the bounded reason; every
+    /// other caller answers the fixed Problem Details body — 403 for the admission denial, 503
+    /// for an unreachable authority, 400 for every other protocol failure.
+    /// </summary>
+    internal static Task WriteSignInFailureAsync(HttpContext context, string landing, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (context.Response.HasStarted) return Task.CompletedTask;
-        context.Response.Headers.CacheControl = "no-store";
-        return context.Response.WriteAsJsonAsync(status, cancellationToken);
+        if (TryWriteNavigationFailure(context, landing, cancellationToken)) return Task.CompletedTask;
+        return landing switch
+        {
+            DeniedLanding => WriteProblemAsync(context, 403, "admin_denied", "QUAESTURA_ADMIN_DENIED",
+                "Administrator access denied.", cancellationToken),
+            ProviderUnavailableLanding => WriteProblemAsync(context, 503, "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED",
+                "Hosted sign-in could not complete.", cancellationToken),
+            _ => WriteProblemAsync(context, 400, "signin_failed", "QUAESTURA_OIDC_SIGNIN_FAILED",
+                "Hosted sign-in could not complete.", cancellationToken)
+        };
     }
 
-    // Only completed package outcomes on real top-level HTML navigations are projected.
+    // Only completed outcomes on real top-level HTML navigations are projected.
     internal static bool IsHtmlNavigation(HttpContext context)
     {
         if (!HttpMethods.IsGet(context.Request.Method)
             || context.Request.Headers["Sec-Fetch-Mode"] != "navigate"
             || context.Request.Headers["Sec-Fetch-Dest"] != "document") return false;
         var path = context.Request.Path.Value?.TrimEnd('/');
-        if (path is null || !(path.Equals(AdminOidcComposition.Prefix + "/start", StringComparison.OrdinalIgnoreCase)
-            || path.Equals(AdminOidcComposition.Prefix + "/callback", StringComparison.OrdinalIgnoreCase)
-            || path.Equals(AdminOidcComposition.Prefix + "/signin-failed", StringComparison.OrdinalIgnoreCase)
-            || path.Equals(AdminOidcComposition.Prefix + "/logout/return", StringComparison.OrdinalIgnoreCase))) return false;
+        if (path is null || !(path.Equals(AdminOidcConstants.Prefix + "/start", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcConstants.CallbackPath, StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcConstants.Prefix + "/signin-failed", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(AdminOidcConstants.LogoutReturnPath, StringComparison.OrdinalIgnoreCase))) return false;
         try { return context.Request.GetTypedHeaders().Accept?.Any(value =>
             string.Equals(value.MediaType.Value, "text/html", StringComparison.OrdinalIgnoreCase) && (value.Quality ?? 1) > 0) == true; }
         catch (FormatException) { return false; }
@@ -90,8 +162,60 @@ internal sealed class AdminOidcResponseWriter : IHostedLoginResponseWriter
             ["correlationId"] = correlationId
         }).ExecuteAsync(context);
     }
+
+    /// <summary>
+    /// The security response-header baseline the endpoint-marked routes receive from the
+    /// ServiceMantle middleware. The protocol handler answers the callback and the sign-out
+    /// callback before routing — those responses carry the same six headers here.
+    /// </summary>
+    internal static void ApplyCallbackSafetyHeaders(HttpResponse response)
+    {
+        response.Headers.CacheControl = "no-store";
+        response.Headers.Pragma = "no-cache";
+        response.Headers["X-Content-Type-Options"] = "nosniff";
+        response.Headers["X-Frame-Options"] = "DENY";
+        response.Headers["Referrer-Policy"] = "no-referrer";
+        response.Headers.ContentSecurityPolicy =
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+    }
+
+    /// <summary>
+    /// The session-status endpoint's two fixed shapes: an anonymous, unknown, or expired session
+    /// answers the fixed re-authentication status; a live session reports its display name and
+    /// the admin-role decision (the numeric vocabulary the SPA reads). Never a token.
+    /// </summary>
+    internal static Task WriteSessionStatusAsync(
+        HttpContext context, AuthenticateResult session, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (context.Response.HasStarted) return Task.CompletedTask;
+        context.Response.Headers.CacheControl = "no-store";
+        if (!session.Succeeded || session.Principal is null)
+        {
+            return context.Response.WriteAsJsonAsync(new
+            {
+                authenticated = false,
+                requiresReauthentication = true,
+                displayName = (string?)null,
+                authorization = (int?)null
+            }, cancellationToken);
+        }
+
+        return context.Response.WriteAsJsonAsync(new
+        {
+            authenticated = true,
+            requiresReauthentication = false,
+            displayName = session.Principal.FindFirst("name")?.Value,
+            authorization = session.Principal.IsInRole("admin") ? 0 : 1
+        }, cancellationToken);
+    }
 }
 
+/// <summary>
+/// Keeps the replaced slice's session-boundary challenge contract: a missing or expired browser
+/// session on a JSON API answers a bare 401 (never a redirect into the hosted-auth flow), while
+/// the CSRF 403 the session boundary writes passes through untouched.
+/// </summary>
 internal sealed class AdminApiAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
 {
     private readonly AuthorizationMiddlewareResultHandler _default = new();
@@ -100,126 +224,12 @@ internal sealed class AdminApiAuthorizationResultHandler : IAuthorizationMiddlew
         PolicyAuthorizationResult result)
     {
         await _default.HandleAsync(next, context, policy, result);
-        // Keep the package's CSRF 403; a missing/expired browser session on a JSON API is 401.
         if (result.Challenged && !context.Response.HasStarted && context.Response.StatusCode == 302
             && context.Request.Path.StartsWithSegments("/admin")
-            && !context.Request.Path.StartsWithSegments(AdminOidcComposition.Prefix))
+            && !context.Request.Path.StartsWithSegments(AdminOidcConstants.Prefix))
         {
             context.Response.StatusCode = 401;
             context.Response.Headers.Remove("Location");
         }
-    }
-}
-
-internal static class AdminOidcResponseMiddleware
-{
-    internal static void UseQuaesturaHostedLoginResponses(this WebApplication app)
-    {
-        if (!app.Services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured) return;
-        app.Use(async (context, next) =>
-        {
-            var isOidc = context.Request.Path.StartsWithSegments(AdminOidcComposition.Prefix);
-            var path = context.Request.Path.Value?.TrimEnd('/');
-            if (!isOidc || context.Response.HasStarted) { await next(context); return; }
-
-            // Product route adaptation: never return straight into the hosted-auth routes.
-            if (string.Equals(path, AdminOidcComposition.Prefix + "/start", StringComparison.OrdinalIgnoreCase)
-                && context.Request.Query.TryGetValue("returnUrl", out var values)
-                && values.Count == 1 && Uri.TryCreate(new Uri("https://local.invalid"), values[0], out var target)
-                && target.AbsolutePath.StartsWith(AdminOidcComposition.Prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                if (!AdminOidcResponseWriter.TryWriteNavigationFailure(context, "signin_failed", context.RequestAborted))
-                    await AdminOidcResponseWriter.WriteProblemAsync(context, 400, "invalid_return_url",
-                        "QUAESTURA_OIDC_INVALID_RETURN_URL", "The return address is not allowed.", context.RequestAborted);
-                return;
-            }
-
-            var logoutPost = string.Equals(path, AdminOidcComposition.Prefix + "/logout", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(context.Request.Method);
-            var logoutReturnNavigation = string.Equals(path, AdminOidcComposition.Prefix + "/logout/return", StringComparison.OrdinalIgnoreCase)
-                && AdminOidcResponseWriter.IsHtmlNavigation(context);
-            if (!logoutPost && !logoutReturnNavigation)
-            {
-                try { await next(context); }
-                catch (AdminAdmissionDeniedException)
-                {
-                    if (!AdminOidcResponseWriter.TryWriteNavigationFailure(context, "denied", context.RequestAborted))
-                        await AdminOidcResponseWriter.WriteProblemAsync(context, 403, "admin_denied",
-                            "QUAESTURA_ADMIN_DENIED", "Administrator access denied.", context.RequestAborted);
-                }
-                return;
-            }
-
-            // Only presentation is buffered, with a fixed limit. Official protocol, cookies, state,
-            // revocation, URI checks, and the logout gate have completed before this projection.
-            var original = context.Features.Get<IHttpResponseBodyFeature>()!;
-            await using var buffer = new BoundedResponseBuffer();
-            context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(buffer));
-            try { await next(context); }
-            finally { context.Features.Set(original); }
-            context.RequestAborted.ThrowIfCancellationRequested();
-            if (context.Response.HasStarted) return;
-
-            if (logoutReturnNavigation)
-            {
-                if (context.Response.StatusCode == 400
-                    && AdminOidcResponseWriter.TryWriteNavigationFailure(context, "logout_failed", context.RequestAborted)) return;
-                buffer.Position = 0;
-                await buffer.CopyToAsync(context.Response.Body, context.RequestAborted);
-            }
-            else if (context.Response.StatusCode == 302 && !string.IsNullOrEmpty(context.Response.Headers.Location))
-            {
-                var location = context.Response.Headers.Location.ToString();
-                context.Response.StatusCode = 200;
-                context.Response.Headers.Remove("Location");
-                context.Response.ContentLength = null;
-                context.Response.Headers.CacheControl = "no-store";
-                await context.Response.WriteAsJsonAsync(new { outcome = "prepared", logoutUrl = location }, context.RequestAborted);
-            }
-            else if (context.Response.StatusCode == 400 && IsCsrfRejected(buffer))
-            {
-                context.Response.ContentLength = null;
-                await AdminOidcResponseWriter.WriteProblemAsync(context, 403, "csrf_rejected",
-                    "QUAESTURA_CSRF_REJECTED", "The request failed antiforgery validation.", context.RequestAborted);
-            }
-            else
-            {
-                buffer.Position = 0;
-                await buffer.CopyToAsync(context.Response.Body, context.RequestAborted);
-            }
-        });
-    }
-
-    private static bool IsCsrfRejected(MemoryStream buffer)
-    {
-        try
-        {
-            using var document = JsonDocument.Parse(buffer.ToArray());
-            return document.RootElement.TryGetProperty("outcome", out var outcome)
-                && outcome.ValueKind == JsonValueKind.String && outcome.GetString() == "csrf_rejected";
-        }
-        catch (JsonException) { return false; }
-    }
-
-    private sealed class BoundedResponseBuffer : MemoryStream
-    {
-        private const int Limit = 16 * 1024;
-        private void EnsureBound(int count)
-        {
-            if (Position + count > Limit) throw new InvalidOperationException("Hosted logout response exceeded its limit.");
-        }
-        public override void SetLength(long value)
-        {
-            if (value > Limit) throw new InvalidOperationException("Hosted logout response exceeded its limit.");
-            base.SetLength(value);
-        }
-        public override void WriteByte(byte value) { EnsureBound(1); base.WriteByte(value); }
-        public override void Write(byte[] buffer, int offset, int count)
-        { EnsureBound(count); base.Write(buffer, offset, count); }
-        public override void Write(ReadOnlySpan<byte> buffer)
-        { EnsureBound(buffer.Length); base.Write(buffer); }
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        { EnsureBound(count); return base.WriteAsync(buffer, offset, count, cancellationToken); }
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
-        { EnsureBound(buffer.Length); return base.WriteAsync(buffer, cancellationToken); }
     }
 }

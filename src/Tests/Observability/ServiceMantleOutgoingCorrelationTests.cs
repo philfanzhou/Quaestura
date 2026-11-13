@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.WebUtilities;
 using Quaestura.Host.Authentication;
 using Quaestura.Tests.Authentication;
-using SignaCore.Client.AspNetCore;
 using Xunit;
 
 namespace Quaestura.Tests.Observability;
@@ -40,7 +39,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         var capture = new CaptureHandler();
         await using var factory = CreateFactory(configureTestServices: services =>
         {
-            services.AddHttpClient(HostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
+            services.AddHttpClient(AdminOidcConstants.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddHttpClient("external").ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddSingleton<IAuthorizationMiddlewareResultHandler, OutgoingProbe>();
         });
@@ -71,7 +70,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Matches("^[0-9a-f]{32}$", resolved);
         Assert.Equal(new[] { resolved }, capture.Headers["invalid"]);
 
-        using var background = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
+        using var background = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(AdminOidcConstants.HttpClientName);
         using var backgroundResponse = await background.GetAsync("https://authority.test/background");
         Assert.Empty(capture.Headers["background"]);
     }
@@ -83,7 +82,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         var capture = new CaptureHandler(cancellation);
         await using var factory = CreateFactory(configureTestServices: services =>
         {
-            services.AddHttpClient(HostedLoginDefaults.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
+            services.AddHttpClient(AdminOidcConstants.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => capture);
             services.AddSingleton(cancellation);
             services.AddSingleton<IAuthorizationMiddlewareResultHandler, CancellationProbe>();
         });
@@ -95,7 +94,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Equal("cancelled", await response.Content.ReadAsStringAsync());
         Assert.True(capture.Content!.Disposed);
         Assert.Equal(new[] { "completion-cancel-probe" }, capture.Headers["cancel"]);
-        using var selected = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
+        using var selected = factory.Services.GetRequiredService<IHttpClientFactory>().CreateClient(AdminOidcConstants.HttpClientName);
         var before = capture.Headers.Count;
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => selected.GetAsync("https://authority.test/entry", cancellation.Token));
         Assert.Equal(before, capture.Headers.Count);
@@ -109,7 +108,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         using var harness = new HostedLoginHarness();
         var capture = new ForwardingCapture(harness.Authority);
         using var factory = harness.Factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
-            services.AddHttpClient(HostedLoginDefaults.HttpClientName)
+            services.AddHttpClient(AdminOidcConstants.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => capture)));
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
         { BaseAddress = new Uri("https://consumer.test"), AllowAutoRedirect = false, HandleCookies = false });
@@ -120,13 +119,17 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         Assert.Equal(new[] { "actual-signacore-start" }, capture.Headers["/.well-known/openid-configuration"]);
         var query = QueryHelpers.ParseQuery(startResponse.Headers.Location!.Query);
         harness.Authority.Nonce = query["nonce"]!;
-        var binding = startResponse.Headers.GetValues("Set-Cookie").Single(cookie =>
-            cookie.StartsWith(HostedLoginDefaults.SessionCookieName
-                + HostedLoginDefaults.LoginBindingCookieSuffix + ".", StringComparison.Ordinal));
+        harness.Authority.LastCodeChallenge = query["code_challenge"]!;
+        // The framework's carrier cookies: the correlation and nonce pair.
+        var cookiePairs = startResponse.Headers.GetValues("Set-Cookie")
+            .Select(cookie => cookie.Split(';')[0]).ToArray();
+        Assert.Contains(cookiePairs, cookie => cookie.StartsWith(".AspNetCore.Correlation."));
+        Assert.Contains(cookiePairs, cookie => cookie.StartsWith(".AspNetCore.OpenIdConnect.Nonce."));
+        var code = harness.Authority.IssueCode();
         using var callback = new HttpRequestMessage(HttpMethod.Get,
-            "/admin/auth/oidc/callback?code=synthetic-code-canary&state=" + Uri.EscapeDataString(query["state"]!)
+            "/admin/auth/oidc/callback?code=" + Uri.EscapeDataString(code) + "&state=" + Uri.EscapeDataString(query["state"]!)
             + "&iss=" + Uri.EscapeDataString(harness.Authority.Origin));
-        callback.Headers.Add("Cookie", binding.Split(';')[0]);
+        callback.Headers.Add("Cookie", string.Join("; ", cookiePairs));
         callback.Headers.Add(CorrelationHeaderName, "actual-signacore-callback");
         using var callbackResponse = await client.SendAsync(callback);
         Assert.Equal(HttpStatusCode.Found, callbackResponse.StatusCode);
@@ -153,7 +156,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
             // Mutating the inbound header after middleware resolution must not replace its private slot.
             context.Request.Headers[CorrelationHeaderName] = "downstream-mutated-inbound";
             var factory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
-            using var selected = factory.CreateClient(HostedLoginDefaults.HttpClientName);
+            using var selected = factory.CreateClient(AdminOidcConstants.HttpClientName);
             using var outgoing = new HttpRequestMessage(HttpMethod.Get, "https://authority.test/" + probe);
             if (context.Request.Query.ContainsKey("explicit")) outgoing.Headers.Add(CorrelationHeaderName, "outgoing-explicit-value");
             using var response = await selected.SendAsync(outgoing, context.RequestAborted);
@@ -168,7 +171,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         public async Task HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)
         {
             var cancellation = context.RequestServices.GetRequiredService<CancellationTokenSource>();
-            using var selected = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(HostedLoginDefaults.HttpClientName);
+            using var selected = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient(AdminOidcConstants.HttpClientName);
             var exception = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => selected.GetAsync("https://authority.test/cancel", cancellation.Token));
             Assert.Equal(cancellation.Token, exception.CancellationToken);
             await context.Response.WriteAsync("cancelled");

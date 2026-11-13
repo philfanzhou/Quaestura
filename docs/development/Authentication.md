@@ -198,15 +198,18 @@ HSTS, and CORS are deployment responsibilities. No state is persisted by this re
 
 ## 7. Hosted administrator login
 
-`SignaCore.Client.AspNetCore` **0.1.22** is the official NuGet client and hosted sign-in is
-the sole administrator UI login. `AdminOidc:Enabled` is retired and completely ignored, including
+The admin hosted sign-in runs on the framework's own **OpenID Connect handler**
+(`Microsoft.AspNetCore.Authentication.OpenIdConnect`, referenced as a package in .NET 10 like
+JwtBearer). The former `SignaCore.Client.AspNetCore` client package is removed entirely
+(SignaCore ADR 0010 opened its deprecation window); every browser-facing contract of the package
+integration is unchanged. `AdminOidc:Enabled` is retired and completely ignored, including
 `false` and malformed strings. With nonblank `Authority`, `ClientId`, `ClientSecret`, and
-`RedirectUri`, the package is always registered. With any required field absent, empty, or
+`RedirectUri`, the slice is always registered. With any required field absent, empty, or
 whitespace, the service still starts with anonymous SPA/health and independently configured
 Bearer APIs; every `/admin/auth/oidc/*` entry returns fixed 503 Problem Details with title
 `Hosted sign-in is not configured.`, `errorCode=quaestura.oidc.not_configured`,
-`quaesturaErrorCode=QUAESTURA_OIDC_NOT_CONFIGURED`, and correlation id. No official protocol,
-session/pending/logout-return state, schemes, or cleanup services are registered. Startup emits
+`quaesturaErrorCode=QUAESTURA_OIDC_NOT_CONFIGURED`, and correlation id. No protocol, session,
+logout-return state, schemes, or cleanup services are registered. Startup emits
 one Error with missing key names only. Missing-field classification precedes optional validation.
 The SPA shows a fixed unavailable message and an explicit recheck button.
 
@@ -219,12 +222,13 @@ exact URIs (replace the origin with your public HTTPS origin):
 
 The role issuance callback remains **POST `/admin/auth/callback`** with the existing whitelist.
 It is separate from the **GET OIDC callback**. Every hosted sign-in requires an access token with
-`admin`: before delegating to the official ticket store, Quaestura validates its RS256 signature
+`admin`: in the handler's token-validated event, Quaestura re-verifies its RS256 signature
 using the existing Bearer Discovery/JWKS manager, issuer, `aud = ClientId`, lifetime, and unique
-nonempty `iss`/`sub` matching the ID-token identity that the package verified. Rejected admission
-answers fixed 403 without storing a ticket or setting a session cookie. The session retains only
-verified ID-token identity and access-token roles, and expires at the earlier package/access-token
-expiry. The cookie may remain in the browser after the server ticket expires; it cannot authenticate.
+nonempty `iss`/`sub` matching the verified ID-token identity. Rejected admission
+fails the sign-in before any ticket or cookie exists and answers fixed 403 without storing a
+ticket. The session retains only verified ID-token identity and access-token roles, and expires at
+the earlier token-response/access-token expiry. The cookie may remain in the browser after the
+server ticket expires; it cannot authenticate.
 
 | Key (environment variables replace `:` with `__`) | Requirement |
 | --- | --- |
@@ -233,46 +237,49 @@ expiry. The cookie may remain in the browser after the server ticket expires; it
 | `AdminOidc:ClientSecret` | Required; inject through environment or Consul only |
 | `AdminOidc:RedirectUri` | Required; exact public callback URI above |
 | `AdminOidc:PostLogoutRedirectUri` | Exact registered PostLogout URI; optional if no return is wanted |
-| `AdminOidc:PostLogoutReturnPath` | Package default `/`; this SPA deployment must set `/login?reason=signed_out` |
+| `AdminOidc:PostLogoutReturnPath` | Default `/`; this SPA deployment must set `/login?reason=signed_out` |
 | `AdminOidc:Scope` | Defaults to `openid profile`; must include `openid` |
+| `AdminOidc:SessionCookieName` | Keep default `signacore-hosted-login-session`; do not customize |
 | `AdminOidc:AntiforgeryHeaderName` | Keep default `X-SignaCore-CSRF` for the SPA; do not customize |
-| `AdminOidc:TicketCapacity` | Official in-memory store capacity; defaults to 10000 |
+| `AdminOidc:TicketCapacity` | In-memory store capacity; defaults to 10000; evicts least-recently-used when full |
 
 Complete but invalid configuration (URI, capacity, scope, or malformed numbers) still fails startup
-through explicit parsing and official ValidateOnStart; diagnostics contain option names, never
-submitted values. Missing required fields follow the safe 503 policy above. The **0.1.22** client
-accepts structurally valid `http` and `https` Authority, callback, and post-logout URIs equally in
-every environment, mirroring SignaCore's transport decision (ADR 0008); a public deployment must
-still terminate TLS in front of the service and register HTTPS URIs. Keep the authority/JWKS
-consistent with `IdentityService:Authority`.
+through explicit parsing; diagnostics contain option names, never
+submitted values. Missing required fields follow the safe 503 policy above. Structurally valid
+`http` and `https` Authority, callback, and post-logout URIs are accepted equally in
+every environment (transport is a deployment decision made in front of the service); a public
+deployment must still terminate TLS in front of the service and register HTTPS URIs. Keep the
+authority/JWKS consistent with `IdentityService:Authority`.
 `IdentityService:Audience` remains the existing Bearer contract: do not silently change it to the
 hosted client's audience. Coordinate any downstream migration from Shared to PerApplication
 with its callers before updating that resource-server setting.
 
 An explicit `Authorization` header always selects the original Bearer handler, including malformed
 or empty headers, even when a valid session cookie is present. Bearer keeps the original role and
-ownership rules and needs no CSRF header. Without that header, the official session handler owns
+ownership rules and needs no CSRF header. Without that header, the host's session boundary owns
 authentication and validates **all unsafe methods** against its browser-bound antiforgery token.
 Missing/wrong CSRF answers 403 with no business effect. Fetch the pair from
 `GET /admin/auth/oidc/csrf`, retain its cookie, and send the JSON `token` in `X-SignaCore-CSRF` on
-writes. Unauthenticated or expired browser business API requests answer 401 without redirecting.
+writes. The pair is user-neutral: one fetch stays valid across the login. Unauthenticated or
+expired browser business API requests answer 401 without redirecting.
 
-The official package owns all OIDC requests, state/nonce/PKCE, ID-token checks, ticket keys,
-capacity/expiry cleanup, logout locks, prepared-logout URI validation, and return correlation.
-`POST /admin/auth/oidc/logout` first revokes the local ticket, then makes at most one preparation
-attempt. Quaestura projects only the package's already validated 302 Location into
-`200 {"outcome":"prepared","logoutUrl":"..."}` while preserving its cookie changes; the
-browser may navigate once at top level. Upstream failure, timeout, or forged URI leaves the local
-session revoked and returns `200 {"outcome":"local_only"}`. Missing/wrong logout CSRF answers
-403 without revoking or preparing. Cancellation does not restore a revoked ticket, retry, or promise
-a JSON response to a disconnected client. Logout return remains the package's one-time flow and
-always navigates to the fixed local landing path. Issued downstream tokens remain valid to expiry.
+The framework handler owns the authorization-code flow, PKCE, state/correlation, nonce, ID-token
+validation, and the standard RP-initiated logout; the host keeps its strict boundaries on top: the
+single-valued authorization-response shape with the RFC 9207 issuer check, the pre-sign-in
+admission gate, the fixed response shapes, and the session boundary. `POST /admin/auth/oidc/logout`
+revokes the local ticket and hands the browser the authority's `end_session_endpoint` URL carrying
+the server-held ID token as `id_token_hint`, the registered post-logout URI, and a protected
+`state`; the endpoint answers `200 {"outcome":"prepared","logoutUrl":"..."}` for the browser to
+navigate once at top level. An authority without an `end_session_endpoint` (or an upstream
+redirect that cannot be constructed) leaves the local session revoked and returns
+`200 {"outcome":"local_only"}`. Missing/wrong logout CSRF answers 403 without revoking. A
+completed logout return is single-use: its state is consumed once and a replay answers the fixed
+`logout_failed` landing. Issued downstream tokens remain valid to expiry.
 
-The **0.1.22** client also binds every pending sign-in to the browser that started it: the start
-endpoint sets a one-time, HttpOnly, SameSite=Lax `<session cookie>-login-binding.<state>` cookie
-scoped to the callback path with a five-minute lifetime, and the callback consumes it before
-redeeming the code. A missing, replayed, or mismatched binding fails closed with the bounded
-`signin_failed` outcome; browsers and reverse proxies must pass that cookie through unchanged.
+Sign-in carrier cookies are the framework's correlation/nonce cookies (HttpOnly, SameSite=Lax,
+scoped to the callback path, single-use, five-minute window): `.AspNetCore.Correlation.*` and
+`.AspNetCore.OpenIdConnect.Nonce.*`. Browsers and reverse proxies must pass them through
+unchanged.
 
 The SPA observes session status with same-origin fetch and shared axios Cookie requests. Only
 `authenticated=true && authorization=0` admits management pages. CSRF stays in memory; the shared
@@ -284,20 +291,20 @@ requests until explicit recheck. Generations prevent stale responses restoring o
 
 Only exact GET `start`, `callback`, `signin-failed`, and `logout/return` routes, with `Accept:
 text/html` at positive quality plus `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
-project completed failures to `/login?reason=<fixed value>`. No input query is copied. AccessDenied
-(legacy) and UserCanceled map to `cancelled`, PreSignInDenied to `denied`, AuthorityUnreachable to
-`provider_unavailable`, RequiresReauthentication to `requires_reauthentication`, admission rejection
-to `denied`, other sign-in failures to `signin_failed`, and failed one-time logout return to
+project completed failures to `/login?reason=<fixed value>`. No input query is copied. The user's
+cancellation maps to `cancelled`, the admission rejection to `denied`, an unreachable
+authority to `provider_unavailable`, `requires_reauthentication` keeps its value, other sign-in
+failures map to `signin_failed`, and a failed one-time logout return to
 `logout_failed`. Non-HTML/API failures keep
-400/403/503 Problem Details and correlation codes; logout POST keeps its JSON contract. The return
-adapter runs after package correlation handling, retaining Cookie deletions. Security headers and
-no-store remain. The SPA also recognizes `signed_out` and `logout_local_only`; arbitrary/repeated
+400/403/503 Problem Details and correlation codes; logout POST keeps its JSON contract. Security
+headers and no-store remain, on the handler-intercepted surfaces through the same fixed baseline.
+The SPA also recognizes `signed_out` and `logout_local_only`; arbitrary/repeated
 reasons select only a generic fixed message and never authenticate.
 
 Tokens, ID tokens, and client secrets stay server-side; no new JavaScript token storage is added.
 OAuth-required code/state/nonce appear only on top-level authorization/callback navigation, never
 in SPA data, error bodies, logs, or spans. Incoming hosted-auth traces are filtered from the
-existing instrumentation; the official backchannel disables logging and tracing. Do not enable
+existing instrumentation; the backchannel disables logging and tracing. Do not enable
 unsanitized reverse-proxy access logs on these URLs. Every hosted-auth endpoint receives the
 ServiceMantle single-value security-header baseline and fixed safe Problem Details for consumer
 failures. Return URLs must be local absolute paths and cannot loop into hosted-auth routes.
@@ -347,3 +354,48 @@ and HttpClient names, the session Cookie and CSRF header names, and every wire b
 unchanged, so the adaptation is compile-time only; `options.Validation.ClockSkew` keeps its
 property name under the renamed `ProtocolValidationOptions` type. Roll back by redeploying the
 previous whole image with the previous package version; no data or configuration rollback applies.
+
+#### Generic OIDC handler migration (package removal)
+
+The `SignaCore.Client.AspNetCore` package reference is removed entirely (SignaCore ADR 0010
+opened its deprecation window), and the admin sign-in runs on the framework's own
+`Microsoft.AspNetCore.Authentication.OpenIdConnect` handler — referenced as a package in .NET 10,
+like JwtBearer. Every browser-facing contract is unchanged: the `/admin/auth/oidc` routes and
+their fixed bodies and statuses, the `signacore-hosted-login-session` session Cookie with the
+`X-SignaCore-CSRF` header, the `/login?reason=...` landings and their vocabulary, the session
+endpoint's `{authenticated, requiresReauthentication, displayName, authorization}` envelope with
+numeric `authorization`, the `{token}` CSRF body, the `{outcome,logoutUrl}` logout envelopes, the
+fixed 401/403/503 shapes of the session boundary and the unconfigured mode, and the Bearer
+header-first scheme split.
+
+SignaCore-side registration does not change in value: the same
+`<origin>/admin/auth/oidc/logout/return` URI registered as `PostLogout` is what the standard
+RP-initiated logout now presents as `post_logout_redirect_uri` at Discovery's
+`end_session_endpoint`, together with the server-held ID token as `id_token_hint` and a protected
+`state`. The former prepared-logout server call (`POST /oauth2/logout/requests`) is no longer
+made. **The SignaCore server must run version 0.1.23 or later**, which publishes
+`end_session_endpoint` (ADR 0010 stage 1); an older authority keeps every logout local-only.
+Because the session Cookie now carries a data-protected reference to the server-side ticket,
+**multiple replicas must share one ASP.NET Core Data Protection key ring**. After the swap,
+browsers sign in once more (existing tickets are not compatible across the change).
+
+Declared behavioral differences of the generic path:
+
+- The client authenticates the token request with `client_secret_post` (form body) instead of
+  HTTP Basic; the secret still never reaches the browser. SignaCore accepts both.
+- The framework's protocol validator requires a present `iat` claim in the ID token; a response
+  without it fails closed.
+- A cancelled authorization response whose state does not unprotect (for example a replayed or
+  hand-edited callback) lands on the generic `signin_failed` outcome instead of `cancelled`,
+  because correlation is validated before the error is classified. A real cancellation carries a
+  valid state and keeps the `cancelled` landing.
+- The in-process ticket store evicts the least-recently-used session at its configured capacity
+  instead of refusing new sign-ins; the oldest idle session answers the fixed re-authentication
+  result.
+- The ID-token-only checks the package applied (scope echoes, duplicate JSON members, response
+  size bounds) are no longer client-policed; the admission gate on the re-verified access token
+  is unchanged.
+
+Rollback restores the previous complete API/SPA image; in-process sessions require sign-in again
+in either direction. No SQL or configuration migration applies; the required configuration keys
+are unchanged.

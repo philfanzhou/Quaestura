@@ -56,7 +56,9 @@ public sealed class BrowserHostFixture
         provider.MapGet("/oauth2/authorize", (HttpContext context) =>
         {
             authority.Nonce = context.Request.Query["nonce"]!;
-            var fields = new Dictionary<string, string?> { [authority.Mode == "cancelled" ? "error" : "code"] = authority.Mode == "cancelled" ? "access_denied" : "synthetic-code-canary", ["state"] = context.Request.Query["state"], ["iss"] = authority.Origin };
+            authority.LastCodeChallenge = context.Request.Query["code_challenge"]!;
+            // A fresh single-use authorization code, minted exactly like a real authority's.
+            var fields = new Dictionary<string, string?> { [authority.Mode == "cancelled" ? "error" : "code"] = authority.Mode == "cancelled" ? "access_denied" : authority.IssueCode(), ["state"] = context.Request.Query["state"], ["iss"] = authority.Origin };
             return Results.Redirect(QueryHelpers.AddQueryString("https://127.0.0.1:5009/admin/auth/oidc/callback", fields));
         });
         // The standard RP-initiated end-session page: the consumer's end-session redirect lands

@@ -46,7 +46,17 @@ public sealed class BrowserHostFixture
             harness.Clock.Reset();
             authority.Mode = context.Request.Query["signin"].ToString() is { Length: > 0 } mode ? mode : "admin";
             authority.LogoutMode = context.Request.Query["logout"].ToString() is { Length: > 0 } logout ? logout : "success";
-            if (authority.Mode == "unreachable") { harness.Dispose(); harness = StartHost(); }
+            // The standard flow has no prepared-logout call; the historical logout-failure mode
+            // is emulated by an authority whose Discovery publishes no end-session endpoint. The
+            // handler caches Discovery, so the host restarts whenever this aspect flips.
+            var failedLogout = authority.LogoutMode == "failed";
+            if (failedLogout != authority.EndSessionUnavailable)
+            {
+                authority.EndSessionUnavailable = failedLogout;
+                harness.Dispose();
+                harness = StartHost();
+            }
+            else if (authority.Mode == "unreachable") { harness.Dispose(); harness = StartHost(); }
             return Results.Ok();
         });
         provider.MapGet("/fixture/status", () => Results.Json(new { sessionCookieName = AdminOidcConstants.SessionCookie, tickets = harness.Store.Count, exchanges = authority.Exchanges }));

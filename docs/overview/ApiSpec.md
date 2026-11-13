@@ -880,12 +880,13 @@ curl -X POST http://localhost:5007/admin/question-knowledges/batch-tag \
 
 ## Hosted-auth endpoints
 
-The official `SignaCore.Client.AspNetCore 0.1.22` routes are anonymous protocol entry points
-under `/admin/auth/oidc`. They are always registered when Authority, ClientId, ClientSecret, and
+The hosted-auth routes under `/admin/auth/oidc` run on the framework's own OpenID Connect
+handler (the `SignaCore.Client.AspNetCore` client package is removed). They are anonymous protocol
+entry points, always registered when Authority, ClientId, ClientSecret, and
 RedirectUri are nonblank; `AdminOidc:Enabled` is ignored. With any missing/empty/whitespace field,
 every hosted entry returns 503 safe Problem Details (`Hosted sign-in is not configured.`,
 `quaestura.oidc.not_configured`, `QUAESTURA_OIDC_NOT_CONFIGURED`, correlation id) and no Cookie.
-The Host still starts with SPA/health/Bearer and no official package state. Missing fields take
+The Host still starts with SPA/health/Bearer and no hosted protocol state. Missing fields take
 precedence over invalid optional fields; complete invalid configuration keeps fail-fast validation.
 See [registered client/configuration](../development/Authentication.md#7-hosted-administrator-login).
 The role callback is preserved; password POST is retired as specified above.
@@ -893,12 +894,12 @@ The role callback is preserved; password POST is retired as specified above.
 | Method / path | Result when configured |
 | --- | --- |
 | GET `/admin/auth/oidc/start?returnUrl=/questions` | 302 to hosted authorization; target must be local and cannot loop into hosted-auth routes |
-| GET `/admin/auth/oidc/callback` | Official state/issuer/code/ID-token processing, then strict admin access-token admission; success sets opaque session cookie and returns locally; failed admission 403 |
+| GET `/admin/auth/oidc/callback` | Framework state/issuer/code/ID-token processing, then strict admin access-token admission; success sets opaque session cookie and returns locally; failed admission 403 |
 | GET `/admin/auth/oidc/session` | `{authenticated,requiresReauthentication,displayName,authorization}`; absent/unknown/expired session needs reauthentication |
 | GET `/admin/auth/oidc/csrf` | `{token}` plus antiforgery cookie; send `X-SignaCore-CSRF` on session writes |
 | GET `/admin/auth/oidc/signin-failed` | Fixed safe 400 Problem Details |
 | POST `/admin/auth/oidc/logout` | Valid CSRF: 200 `{outcome:"prepared",logoutUrl:"..."}` or `{outcome:"local_only"}`; missing/wrong CSRF 403 with no side effect |
-| GET `/admin/auth/oidc/logout/return` | Official one-time state/correlation handling; success 302 to fixed landing path, failure fixed 400 |
+| GET `/admin/auth/oidc/logout/return` | One-time protected-state handling; success 302 to fixed landing path, failure fixed 400 |
 
 Consumer failures use ServiceMantle-style Problem Details with `errorCode`, `quaesturaErrorCode`,
 and `correlationId`; no raw query, upstream error, or token is returned. Every new entry has the

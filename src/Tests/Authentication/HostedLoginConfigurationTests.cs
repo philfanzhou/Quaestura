@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Quaestura.Host.Authentication;
-using SignaCore.Client.AspNetCore;
 using Xunit;
 
 namespace Quaestura.Tests.Authentication;
@@ -17,7 +16,7 @@ public sealed class HostedLoginConfigurationTests
     [InlineData("ClientId", null)] [InlineData("ClientId", "")] [InlineData("ClientId", "  ")]
     [InlineData("ClientSecret", null)] [InlineData("ClientSecret", "")] [InlineData("ClientSecret", "  ")]
     [InlineData("RedirectUri", null)] [InlineData("RedirectUri", "")] [InlineData("RedirectUri", "  ")]
-    public async Task AnyMissingRequiredField_StartsSafely_WithoutAnyOfficialState(string key, string? value)
+    public async Task AnyMissingRequiredField_StartsSafely_WithoutAnyProtocolState(string key, string? value)
     {
         var webRoot = Path.Combine(Path.GetTempPath(), "quaestura-58-spa-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(webRoot);
@@ -32,12 +31,13 @@ public sealed class HostedLoginConfigurationTests
             using var client = harness.CreateClient();
             var services = harness.Factory.Services;
             Assert.False(services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured);
-            Assert.Null(services.GetService<ITicketStore>());
-            foreach (var name in new[] { "PendingSignInStore", "LogoutReturnStateStore", "HostedLoginEndpointService", "HostedLogoutService" })
-                Assert.Null(services.GetService(typeof(ITicketStore).Assembly.GetType("SignaCore.Client.AspNetCore." + name)!));
+            Assert.Null(services.GetService<AdminOidcTicketStore>());
+            Assert.Null(services.GetService<AdminLogoutReturnStates>());
+            Assert.DoesNotContain(services.GetServices<IHostedService>(), service => service is AdminOidcTicketStoreCleanupService);
             var schemes = await services.GetRequiredService<IAuthenticationSchemeProvider>().GetAllSchemesAsync();
-            Assert.DoesNotContain(schemes, scheme => scheme.Name == HostedLoginDefaults.AuthenticationScheme || scheme.Name == HostedLoginDefaults.SessionAuthenticationScheme);
-            Assert.DoesNotContain(services.GetServices<IHostedService>(), service => service.GetType().Assembly.GetName().Name == "SignaCore.Client.AspNetCore");
+            Assert.DoesNotContain(schemes, scheme => scheme.Name == AdminOidcConstants.AuthenticationScheme
+                || scheme.Name == AdminOidcConstants.SessionScheme
+                || scheme.Name == AdminOidcConstants.OidcScheme);
             foreach (var path in new[] { "/", "/login", "/health", "/health/live", "/health/ready" })
             {
                 using var healthy = await client.GetAsync(path);
@@ -70,7 +70,7 @@ public sealed class HostedLoginConfigurationTests
 
     [Theory]
     [InlineData("false")] [InlineData("true")] [InlineData("synthetic-invalid-enabled")]
-    public async Task RetiredToggle_IsIgnored_AndValidConfigurationAlwaysEnablesOfficialLogin(string value)
+    public async Task RetiredToggle_IsIgnored_AndValidConfigurationAlwaysEnablesHostedLogin(string value)
     {
         using var harness = new HostedLoginHarness("Enabled", value);
         var session = await harness.SignedIn();

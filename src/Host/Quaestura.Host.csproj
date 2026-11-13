@@ -11,12 +11,12 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.13" />
     <PackageReference Include="ServiceMantle.Database.PostgreSql" Version="0.3.1" />
     <PackageReference Include="ServiceMantle.Diagnostics" Version="0.3.1" />
     <PackageReference Include="ServiceMantle.Logging" Version="0.3.1" />
     <PackageReference Include="ServiceMantle.Persistence.Relational" Version="0.3.1" />
     <PackageReference Include="ServiceMantle.Web" Version="0.3.1" />
-    <PackageReference Include="SignaCore.Client.AspNetCore" Version="0.1.22" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
   </ItemGroup>
 

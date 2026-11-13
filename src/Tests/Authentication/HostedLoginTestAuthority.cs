@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -9,21 +10,38 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Quaestura.Tests.Authentication;
 
-// Synthetic HTTP authority used by the real Quaestura Host; no production identity data.
+// Synthetic HTTP authority used by the real Quaestura Host; no production identity data. It
+// emulates a standard OIDC provider — discovery, JWKS, the token endpoint, and the standard
+// RP-initiated end-session endpoint — so the framework's own OpenID Connect handler runs its
+// full protocol path against it.
 internal sealed class HostedLoginTestAuthority : HttpMessageHandler
 {
     internal const string Issuer = "https://authority.test";
     internal const string ClientId = "quaestura-hosted-test";
     internal const string Secret = "synthetic-hosted-client-secret-canary";
     internal const string Subject = "synthetic-hosted-admin";
+    internal const string EndSessionPath = "/oauth2/logout";
     private readonly RSA _rsa = RSA.Create(2048);
     private readonly RSA _wrong = RSA.Create(2048);
     internal SecurityKey Key => new RsaSecurityKey(_rsa) { KeyId = "test-key" };
     internal string Origin = Issuer;
-    internal string Mode = "admin", Nonce = "", LogoutMode = "success", LastAccessToken = "", LastIdToken = "", LogoutState = "";
-    internal int Prepares, Exchanges, DiscoveryRequests;
-    internal TaskCompletionSource PrepareStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal string Mode = "admin", Nonce = "", LogoutMode = "success", LastAccessToken = "", LastIdToken = "", LogoutState = "", LastCodeChallenge = "";
+    internal bool EndSessionUnavailable;
+    internal int Exchanges, DiscoveryRequests;
+    internal readonly ConcurrentQueue<Dictionary<string, string>> TokenForms = new();
     internal TaskCompletionSource ExchangeStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ConcurrentDictionary<string, byte> _issuedCodes = new();
+
+    /// <summary>
+    /// Mints one fresh single-use authorization code, exactly like a real authority: the token
+    /// endpoint redeems each code exactly once, so a replayed callback cannot exchange it again.
+    /// </summary>
+    internal string IssueCode()
+    {
+        var code = "synthetic-code-canary." + Guid.NewGuid().ToString("N");
+        _issuedCodes[code] = 1;
+        return code;
+    }
 
     internal string Token(string role = "admin", string subject = Subject, string? audience = null)
         => CreateToken(false, "admin", role, subject, audience);
@@ -70,7 +88,24 @@ internal sealed class HostedLoginTestAuthority : HttpMessageHandler
         {
             Interlocked.Increment(ref DiscoveryRequests);
             if (Mode == "unreachable") throw new HttpRequestException("synthetic-provider-error-canary");
-            return Json(new { issuer = Origin, authorization_endpoint = Origin + "/oauth2/authorize", token_endpoint = Origin + "/oauth2/token", jwks_uri = Origin + "/jwks" });
+            return Json(new
+            {
+                issuer = Origin,
+                authorization_endpoint = Origin + "/oauth2/authorize",
+                token_endpoint = Origin + "/oauth2/token",
+                jwks_uri = Origin + "/jwks",
+                // The standard RP-initiated logout target; suppressing it emulates an authority
+                // that cannot accept an upstream sign-out.
+                end_session_endpoint = EndSessionUnavailable ? null : Origin + EndSessionPath,
+                response_types_supported = new[] { "code" },
+                subject_types_supported = new[] { "public" },
+                id_token_signing_alg_values_supported = new[] { "RS256" },
+                scopes_supported = new[] { "openid", "profile" },
+                code_challenge_methods_supported = new[] { "S256" },
+                token_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
+                pushed_authorization_request_endpoint = Origin + "/must-not-use-par",
+                claims_parameter_supported = false
+            });
         }
         if (path == "/jwks")
         {
@@ -81,22 +116,37 @@ internal sealed class HostedLoginTestAuthority : HttpMessageHandler
         {
             Interlocked.Increment(ref Exchanges);
             ExchangeStarted.TrySetResult();
+            var raw = await request.Content!.ReadAsStringAsync(cancellationToken);
+            var form = QueryHelpers.ParseQuery(raw).ToDictionary(pair => pair.Key, pair => pair.Value.ToString());
+            TokenForms.Enqueue(form);
             if (Mode == "cancel-exchange") await Task.Delay(Timeout.Infinite, cancellationToken);
             if (Mode == "exchange-failed") return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            if (!_issuedCodes.TryRemove(form.GetValueOrDefault("code", string.Empty), out _))
+            {
+                // A replayed or unknown code is refused: no token is ever minted twice for it.
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            }
+            if (form.TryGetValue("code_verifier", out var verifier)
+                && !string.IsNullOrEmpty(LastCodeChallenge)
+                && WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.ASCII.GetBytes(verifier))) != LastCodeChallenge)
+            {
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
+            }
+
             LastAccessToken = CreateToken(false, Mode); LastIdToken = CreateToken(true, Mode);
             return Json(new { access_token = LastAccessToken, id_token = LastIdToken, token_type = "Bearer", expires_in = 3600 });
         }
-        if (path == "/oauth2/logout/requests")
+        if (path == EndSessionPath)
         {
-            Interlocked.Increment(ref Prepares);
-            var body = await request.Content!.ReadAsStringAsync(cancellationToken);
-            var form = QueryHelpers.ParseQuery(body);
-            LogoutState = form["state"].ToString();
-            PrepareStarted.TrySetResult();
-            if (LogoutMode == "cancel") await Task.Delay(Timeout.Infinite, cancellationToken);
-            if (LogoutMode == "timeout") throw new TaskCanceledException("synthetic-timeout-canary");
-            if (LogoutMode == "failed") return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
-            return Json(new { logout_uri = LogoutMode == "forged" ? "https://evil.test/logout?logout_handle=" + new string('a', 43) : "/oauth2/logout?logout_handle=" + new string('a', 43) });
+            // The end-session endpoint the browser is redirected to; it hands the browser back
+            // to the registered post-logout URI with the protected state echoed unchanged.
+            var query = QueryHelpers.ParseQuery(request.RequestUri!.Query);
+            LogoutState = query["state"].ToString();
+            return new HttpResponseMessage(HttpStatusCode.Redirect)
+            {
+                Headers = { Location = new Uri(QueryHelpers.AddQueryString(
+                    "https://consumer.test/admin/auth/oidc/logout/return", "state", LogoutState)) }
+            };
         }
         return new HttpResponseMessage(HttpStatusCode.NotFound);
     }

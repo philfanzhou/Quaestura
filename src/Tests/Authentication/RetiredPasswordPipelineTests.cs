@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
-using SignaCore.Client.AspNetCore;
+using Quaestura.Host.Authentication;
 using Xunit;
 
 namespace Quaestura.Tests.Authentication;
@@ -41,19 +41,24 @@ public sealed class RetiredPasswordPipelineTests
             });
             Assert.Equal(410, context.Response.StatusCode); Assert.Equal(0, body.ReadCount);
             Assert.Equal(1, harness.Store.Count); Assert.Equal(exchanges, harness.Authority.Exchanges);
-            Assert.Equal(discoveries, harness.Authority.DiscoveryRequests); Assert.Equal(0, harness.Authority.Prepares);
+            Assert.Equal(discoveries, harness.Authority.DiscoveryRequests);
             Assert.Equal("no-store", context.Response.Headers.CacheControl);
             using var status = await harness.Send(HttpMethod.Get, "/admin/auth/oidc/session", session);
             using var json = JsonDocument.Parse(await status.Content.ReadAsStringAsync());
             Assert.True(json.RootElement.GetProperty("authenticated").GetBoolean());
             Assert.False(output.ToString().Contains("synthetic-retired-canary"), "Retired body reached a log sink.");
             // Exact route metadata cannot spread to protected business/logout or a nearby unmatched path.
-            foreach (var unsafePath in new[] { "/admin/tags", "/admin/auth/oidc/logout", "/admin/auth/login/extra" })
+            // (The replaced package authenticated every request inside its session handler, so even an
+            // unmatched unsafe path under /admin/auth answered its CSRF 403; the host-owned boundary
+            // covers the matched business routes and leaves unmatched paths to the plain 404.)
+            foreach (var unsafePath in new[] { "/admin/tags", "/admin/auth/oidc/logout" })
             {
                 using var response = await harness.Send(HttpMethod.Post, unsafePath, session with { Csrf = null }, new { name = "must-not-create", user_id = "synthetic-user" });
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
             }
-            Assert.Equal(1, harness.Store.Count); Assert.Equal(0, harness.Authority.Prepares);
+            using var unmatched = await harness.Send(HttpMethod.Post, "/admin/auth/login/extra", session with { Csrf = null }, new { name = "must-not-create" });
+            Assert.Equal(HttpStatusCode.NotFound, unmatched.StatusCode);
+            Assert.Equal(1, harness.Store.Count);
         }
         finally { Console.SetOut(original); }
     }
@@ -76,7 +81,7 @@ public sealed class RetiredPasswordPipelineTests
         }
         catch (OperationCanceledException) { /* A disconnected caller need not receive 410. */ }
         Assert.Equal(0, body.ReadCount); Assert.Equal(1, harness.Store.Count);
-        Assert.Equal(1, harness.Authority.Exchanges); Assert.Equal(0, harness.Authority.Prepares);
+        Assert.Equal(1, harness.Authority.Exchanges);
     }
 
     [Fact]
@@ -161,7 +166,7 @@ public sealed class RetiredPasswordPipelineTests
     {
         using var harness = new HostedLoginHarness();
         using var response = await harness.Send(HttpMethod.Get, "/admin/tags",
-            new BrowserSession(HostedLoginDefaults.SessionCookieName + "=" + harness.Authority.Token(audience: "QuantumZhou.microservices"), null));
+            new BrowserSession(AdminOidcConstants.SessionCookie + "=" + harness.Authority.Token(audience: "QuantumZhou.microservices"), null));
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode); Assert.Equal(0, harness.Store.Count);
     }
 }

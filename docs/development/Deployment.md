@@ -335,7 +335,11 @@ Every HTTP response — API success and error envelopes (400/401/403/500 include
 - The same resolved id is published to the response header and to the request log scope (`CorrelationId` field), so log lines emitted while handling the request can be joined with the caller's value.
 - The id is a log-correlation value only: it is not unique, unguessable, or authenticated, and must never be used for authorization, idempotency, or replay protection.
 
-The existing `HostedLoginDefaults.HttpClientName` builder explicitly opts into `AddServiceMantleCorrelationIdPropagation` for the configured internal SignaCore authority. It preserves the official client transport, sensitive-request marker, HTTP logger removal and span filtering. Request-bound sends carry the middleware-resolved ID; an explicit outgoing header is preserved once, concurrent pooled sends read their own context, and background sends without HttpContext do not invent an ID. Consul, S3 and the independent JWT discovery backchannel do not opt in. This is not a global header policy; destination and redirect trust remain the caller’s responsibility. All direct ServiceMantle packages use official `0.3.1`, with no configuration/data migration; rollback deploys the previous code with its matching package set.
+The hosted-login slice's `QuaesturaAdminOidc` named client (the OpenID Connect backchannel)
+explicitly opts into `AddServiceMantleCorrelationIdPropagation` for the configured internal SignaCore
+authority. It preserves the hardened transport: no redirects, no cookies, a 30-second timeout with
+timeout normalization, the sensitive-request marker, HTTP logger removal and span filtering.
+Request-bound sends carry the middleware-resolved ID; an explicit outgoing header is preserved once, concurrent pooled sends read their own context, and background sends without HttpContext do not invent an ID. Consul, S3 and the independent JWT discovery backchannel do not opt in. This is not a global header policy; destination and redirect trust remain the caller’s responsibility. All direct ServiceMantle packages use official `0.3.1`, with no configuration/data migration; rollback deploys the previous code with its matching package set.
 
 ### 6.2 Service identity and log scope
 
@@ -357,23 +361,30 @@ Reverting this wiring removes the response header and the observability registra
 
 ## Hosted-login rollout
 
-The host consumes official NuGet `SignaCore.Client.AspNetCore 0.1.22`. Follow
+The admin sign-in runs on the framework's own OpenID Connect handler
+(`Microsoft.AspNetCore.Authentication.OpenIdConnect`); the former
+`SignaCore.Client.AspNetCore` client package is removed. Follow
 [Authentication §7](./Authentication.md#7-hosted-administrator-login) for Confidential/Code/PKCE
 registration, PerApplication audience, exact callback/PostLogout URIs, and every `AdminOidc` key.
-Nonblank Authority, ClientId, ClientSecret and RedirectUri always register the package; the old
+Nonblank Authority, ClientId, ClientSecret and RedirectUri always register the slice; the old
 Enabled key has no effect. Inject `AdminOidc__ClientSecret` through environment or Consul, never
 image layers or committed settings. `start.sh` does not map hosted keys: use the existing Consul
 configuration source or explicit container environment injection. Remove obsolete password keys.
 
-The 0.1.22 client requires browsers to return its one-time login-binding cookie on the callback and
-keeps the strict token/logout response validation plus an explicit 30-second clock tolerance. Do
-not strip `Set-Cookie` headers or rewrite the callback path at the proxy. The package upgrade carries
-no database, configuration, or object-storage migration.
+Upstream sign-out is the standard RP-initiated logout: the SignaCore server must run **0.1.23 or
+later** so its Discovery document publishes `end_session_endpoint` (older authorities leave every
+logout local-only). Browsers must return the framework's one-time correlation/nonce cookies on the
+callback; do not strip `Set-Cookie` headers or rewrite the callback path at the proxy. The handler
+keeps an explicit 30-second clock tolerance. The swap carries no database, configuration, or
+object-storage migration; browsers sign in once more after it (existing tickets are not
+compatible across the change).
 
-Use one replica and HTTPS termination; the container still listens on **5007**. The real request
+Use one replica (or share one ASP.NET Core Data Protection key ring across replicas: the session
+cookie carries a data-protected ticket reference) and HTTPS termination; the container still
+listens on **5007**. The real request
 boundary must provide HTTPS semantics for the secure session/antiforgery cookies; keep public
 URIs and trusted forwarding consistent with the registered origin. Do not log raw OIDC query URLs
-at reverse proxies. Session/pending/logout-return storage is process-local and is lost on restart.
+at reverse proxies. Session/logout-return storage is process-local and is lost on restart.
 Keep the default `X-SignaCore-CSRF` header and set
 `AdminOidc__PostLogoutReturnPath=/login?reason=signed_out`. Validate both public URIs and the role
 callback before deployment. Missing configuration displays fixed UI unavailability; it cannot

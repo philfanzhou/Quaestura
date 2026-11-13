@@ -330,10 +330,12 @@ app.MapWhen(
         });
     });
 
-app.UseQuaesturaHostedLoginResponses();
-
-// Authentication & authorization (Bearer, or the configured hosted session)
+// Authentication & authorization (Bearer, or the configured hosted session). The session
+// boundary of the hosted login sits after authentication and before authorization: it owns
+// the cookie-session CSRF checks and the fixed re-authentication answers of the protected
+// admin API, and is inert when hosted login is unconfigured.
 app.UseAuthentication();
+app.UseQuaesturaHostedLoginSession();
 app.UseAuthorization();
 
 // Map endpoints

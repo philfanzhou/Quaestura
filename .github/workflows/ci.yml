@@ -130,6 +130,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # attest signs a Sigstore provenance statement with the workflow's OIDC identity and
+      # stores it with GitHub's attestation API.
+      attestations: write
+      id-token: write
     env:
       REGISTRY_IMAGE: ghcr.io/philfanzhou/quaestura
     outputs:
@@ -196,6 +200,17 @@ jobs:
           cache-to: type=gha,mode=max,scope=quaestura-release
           provenance: mode=max
           sbom: true
+
+      # The BuildKit provenance above is unsigned; this adds a signed statement tying the
+      # published digest to this repository, workflow and tag, verifiable with
+      # `gh attestation verify`. The registry copy is an OCI referrer tagged
+      # `sha256-<digest>`, which registry-cleanup.yml keeps for as long as the image survives.
+      - name: Attest image provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ${{ env.REGISTRY_IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
       - name: Record published image
         env:

@@ -1,0 +1,30 @@
+name: Dependency Review
+
+# Fails a pull request that adds or upgrades to a NuGet, npm or GitHub Actions dependency
+# carrying a known high or critical advisory. It reads GitHub's dependency graph and advisory
+# database, independently of whether Dependabot alerts are enabled for the repository.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Reject vulnerable dependency changes
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: high

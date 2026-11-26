@@ -247,7 +247,8 @@ public static class ServiceMantleComposition
     /// zero remote requests); it is never re-enabled from any legacy <c>Serilog:WriteTo</c>
     /// configuration. <c>Loki:AllowInsecureHttp</c> defaults to <c>true</c> as the explicit
     /// continuation of the existing trusted-network HTTP deployment contract and can be set to
-    /// <c>false</c> to require HTTPS; network trust is never inferred from the host name.
+    /// <c>false</c> to require HTTPS (enforced by this host, not by the package); network trust
+    /// is never inferred from the host name.
     /// </para>
     /// <para>
     /// Levels keep the previous contract: Information by default, with Warning overrides for
@@ -286,14 +287,21 @@ public static class ServiceMantleComposition
             Uri.TryCreate(address, UriKind.Absolute, out endpoint);
         }
 
+        // Since ServiceMantle 0.3.2 the package accepts both http:// and https:// and no longer
+        // offers a transport switch, so the HTTPS requirement is a host policy enforced here.
+        // A plain HTTP endpoint that is not allowed takes the same null-Endpoint path as an
+        // unparsable value, keeping the stable loki.invalid_endpoint startup failure.
         var allowInsecureHttp = builder.Configuration.GetValue("Loki:AllowInsecureHttp", true);
+        if (!allowInsecureHttp && endpoint is not null
+            && string.Equals(endpoint.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        {
+            endpoint = null;
+        }
 
         builder.AddServiceMantleGrafanaLoki(options =>
         {
             options.Enabled = !string.IsNullOrWhiteSpace(address);
             options.Endpoint = endpoint;
-            // Explicit acceptance of the existing trusted-network HTTP deployment contract.
-            options.AllowInsecureHttp = allowInsecureHttp;
             options.Labels = new Dictionary<string, string>
             {
                 ["service"] = LokiServiceLabelValue,

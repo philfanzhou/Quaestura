@@ -1,0 +1,56 @@
+name: Registry cleanup
+
+# Prunes ghcr.io/philfanzhou/quaestura versions that no tag can reach. Every release tag, the
+# platform manifests and attestations under it, and the `sha256-<digest>` referrer tags of
+# surviving images are always kept; see .github/scripts/prune_registry_versions.py.
+
+on:
+  schedule:
+    # Weekly, deliberately off the hour: scheduled runs queue behind the peak
+    # that forms on every exact hour, and this job has no reason to compete.
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: List what would be deleted without deleting it
+        type: boolean
+        default: false
+      retention-days:
+        description: Keep unreferenced versions younger than this many days
+        type: string
+        default: "7"
+      retired-tags:
+        description: Comma-separated former moving tags that no longer keep an image alive
+        type: string
+        # `edge` tracked main until #108 limited publishing to version tags.
+        default: "edge"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two runs deleting from one package would race over the same version ids.
+  group: registry-cleanup
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Prune unreferenced image versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Delete versions no tag reaches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_OWNER: ${{ github.repository_owner }}
+          PACKAGE_NAME: ${{ github.event.repository.name }}
+          RETENTION_DAYS: ${{ inputs.retention-days || '7' }}
+          RETIRED_TAGS: ${{ inputs.retired-tags || 'edge' }}
+          DRY_RUN: ${{ inputs.dry-run || 'false' }}
+        run: python3 .github/scripts/prune_registry_versions.py

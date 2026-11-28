@@ -126,15 +126,17 @@ public class QuestionService : IQuestionService
         }).ToList();
     }
 
-    public async Task<bool> DeleteAsync(Guid id)
-    {
-        var question = await _dbContext.Questions.FindAsync(id);
-        if (question == null) return false;
+    public Task<bool> DeleteAsync(Guid id) =>
+        KnowledgeReferences.ChangeAsync(_dbContext, id, null, async () =>
+        {
+            var question = await _dbContext.Questions.SingleOrDefaultAsync(q => q.Id == id);
+            if (question == null) return false;
 
-        _dbContext.Questions.Remove(question);
-        await _dbContext.SaveChangesAsync();
-        return true;
-    }
+            await KnowledgeReferences.RemoveBindingsAsync(_dbContext, id);
+            _dbContext.Questions.Remove(question);
+            await _dbContext.SaveChangesAsync();
+            return true;
+        });
 }
 
 public class QuestionWithContent

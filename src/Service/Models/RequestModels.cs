@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -25,6 +26,8 @@ public class QuestionContentPayload
     public string? CorrectAnswer { get; set; }
     public string? Analysis { get; set; }
 }
+
+public sealed record BatchGetQuestionsRequest(List<Guid> Ids);
 
 public class CreateKnowledgeRequest
 {

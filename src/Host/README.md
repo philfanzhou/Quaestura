@@ -57,6 +57,7 @@ See [`docs/overview/ApiSpec.md`](../../docs/overview/ApiSpec.md) for the complet
 |------|------|------|
 | GET | `/admin/questions` | Search/paginate |
 | GET | `/admin/questions/{id}` | Details |
+| POST | `/admin/questions/batch-get` | Read questions in the requested ID order, including missing entries |
 | POST | `/admin/questions` | Upload a question (multipart/form-data) |
 | DELETE | `/admin/questions/{id}` | Delete |
 

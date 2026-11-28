@@ -160,6 +160,24 @@ Get question details.
 - 400 `QUAESTURA_VALIDATION_INVALID_ID` — invalid ID format
 - 404 `QUAESTURA_QUESTION_NOT_FOUND` — question does not exist
 
+#### POST `/admin/questions/batch-get`
+
+Read question details in the supplied order. Send a JSON object with an `ids` array containing 1 to 100 UUIDs. Each occurrence counts toward the limit. The endpoint accepts the same authenticated users as question details. Cookie-authenticated clients follow the existing [CSRF rules for POST requests](../development/Authentication.md).
+
+```json
+{
+  "ids": ["10000000-0000-0000-0000-000000000003", "10000000-0000-0000-0000-000000000001"]
+}
+```
+
+A successful request returns HTTP 200 with `{ "success": true, "data": [...] }`. The array contains one entry per input position, including repeated IDs. Each entry has the requested `id` and a `question` with the same fields and picture URL handling as the single-question detail endpoint. A missing question has an explicit null value, for example:
+
+```json
+{ "id": "10000000-0000-0000-0000-000000000001", "question": null }
+```
+
+The response is also HTTP 200 when all requested questions are missing. An absent, empty or oversized ID list or a malformed UUID returns HTTP 400.
+
 #### POST `/admin/questions`
 
 Upload/update a question (multipart/form-data).

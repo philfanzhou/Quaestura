@@ -53,7 +53,6 @@ export interface Question {
   analysis: string
   userId: string | null
   studentId: string | null
-  mistakeId: string | null
   subject: number
   grade: number
   createdAt: string

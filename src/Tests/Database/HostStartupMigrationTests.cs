@@ -29,7 +29,7 @@ public sealed class HostStartupMigrationTests : IAsyncLifetime
     public async Task DisposeAsync() => await _fixture.DropDatabaseAsync(_database);
 
     [Fact]
-    public async Task Host_Startup_AgainstEmptyDatabase_AppliesSixTablesAndBothHistoryRows()
+    public async Task Host_Startup_AgainstEmptyDatabase_AppliesSixTablesAndCurrentHistory()
     {
         var (host, port, username) = _fixture.Server;
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -63,6 +63,6 @@ public sealed class HostStartupMigrationTests : IAsyncLifetime
         }
 
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
     }
 }

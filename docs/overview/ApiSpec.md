@@ -105,7 +105,6 @@ Search/paginate questions.
       "analysis": "Explanation",
       "userId": "uuid",
       "studentId": "uuid",
-      "mistakeId": "uuid",
       "subject": 1,
       "grade": 7,
       "createdAt": "2026-07-02T10:00:00.000Z",
@@ -149,7 +148,6 @@ Get question details.
     "analysis": "Explanation",
     "userId": "uuid",
     "studentId": "uuid",
-    "mistakeId": "uuid",
     "subject": 1,
     "grade": 7,
     "createdAt": "2026-07-02T10:00:00.000Z",
@@ -187,8 +185,7 @@ Upload/update a question (multipart/form-data).
   "type": 1,
   "width": 800,
   "height": 600,
-  "studentId": "uuid (optional)",
-  "mistakeId": "uuid (optional)"
+  "studentId": "uuid (optional)"
 }
 ```
 

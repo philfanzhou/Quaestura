@@ -17,7 +17,7 @@ namespace Quaestura.Database.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.11")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -108,11 +108,6 @@ namespace Quaestura.Database.Migrations
                     b.Property<int>("Level")
                         .HasColumnType("integer")
                         .HasColumnName("level");
-
-                    b.Property<string>("MistakeId")
-                        .HasMaxLength(36)
-                        .HasColumnType("character varying(36)")
-                        .HasColumnName("mistake_id");
 
                     b.Property<string>("PicturePaths")
                         .HasColumnType("text")

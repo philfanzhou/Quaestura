@@ -47,7 +47,6 @@ On startup the shared ServiceMantle migration orchestrator applies the EF Core m
 | `picture_paths` | TEXT | NULL | Image path list (JSON array) |
 | `user_id` | VARCHAR(36) | NULL | Uploader ID |
 | `student_id` | VARCHAR(36) | NULL | Associated student ID |
-| `mistake_id` | VARCHAR(36) | NULL | Associated mistake ID |
 | `subject` | INT | NOT NULL | Subject |
 | `grade` | INT | NOT NULL | Grade |
 

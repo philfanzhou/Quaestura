@@ -79,7 +79,6 @@ public class QuestionService : IQuestionService
         existing.Grade = entity.Grade;
         existing.Subject = entity.Subject;
         existing.StudentId = entity.StudentId;
-        existing.MistakeId = entity.MistakeId;
         existing.UpdatedAt = DateTimeOffset.UtcNow;
         if (picturePaths != null)
         {

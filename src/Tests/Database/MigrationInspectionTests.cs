@@ -7,7 +7,7 @@ using Xunit;
 namespace Quaestura.Tests.Database;
 
 /// <summary>
-/// Strict read-only classification of real PostgreSQL states against the two known migration
+/// Strict read-only classification of real PostgreSQL states against the known migration
 /// versions, including the historical question(id)-only corruption reproduction that must never
 /// be stamped again. Every rejection is proven to perform zero writes.
 /// </summary>

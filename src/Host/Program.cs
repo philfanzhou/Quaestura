@@ -62,6 +62,7 @@ builder.Services.AddSingleton<IOssService>(new S3OssService(ossOptions));
 
 // Register domain services
 builder.Services.AddScoped<IQuestionService, QuestionService>();
+builder.Services.AddScoped<QuestionSearch>();
 builder.Services.AddScoped<IKnowledgeService, KnowledgeService>();
 builder.Services.AddScoped<IQuestionKnowledgeService, QuestionKnowledgeService>();
 builder.Services.AddScoped<ITagService, TagService>();

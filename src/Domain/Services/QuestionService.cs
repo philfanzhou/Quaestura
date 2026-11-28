@@ -106,72 +106,9 @@ public class QuestionService : IQuestionService
         return true;
     }
 
-    public async Task<(List<QuestionWithContent> items, int totalPages, int totalCount)> SearchAsync(
-        string? keyword, int? level, int? type,
-        int subject, int grade, int page, int size)
-    {
-        if (page < 1) page = 1;
-        if (size < 1) size = 10;
-        if (size > 100) size = 100;
-
-        var query = _dbContext.Questions
-            .Include(q => q.QuestionKnowledges)
-            .AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(keyword))
-        {
-            var contentQuery = _dbContext.QuestionContents.AsQueryable();
-            var keywordLower = keyword.ToLower();
-            var matchedContentQuestionIds = contentQuery
-                .Where(c => c.Content != null && c.Content.ToLower().Contains(keywordLower))
-                .Select(c => c.QuestionId);
-
-            query = query.Where(q => matchedContentQuestionIds.Contains(q.Id));
-        }
-
-        if (level.HasValue && level.Value > 0)
-        {
-            query = query.Where(q => q.Level == level.Value);
-        }
-
-        if (type.HasValue && type.Value > 0)
-        {
-            query = query.Where(q => q.Type == type.Value);
-        }
-
-        query = query.Where(q => q.Subject == subject && q.Grade == grade);
-
-        var totalCount = await query.CountAsync();
-        var totalPages = (int)Math.Ceiling(totalCount / (double)size);
-
-        var allQuestions = await query.Select(q => new { q.Id, q.CreatedAt }).ToListAsync();
-        var sortedQuestionIds = allQuestions
-            .OrderByDescending(q => q.CreatedAt)
-            .Skip((page - 1) * size)
-            .Take(size)
-            .Select(q => q.Id)
-            .ToList();
-
-        var questions = await _dbContext.Questions
-            .Where(q => sortedQuestionIds.Contains(q.Id))
-            .ToListAsync();
-
-        var orderedQuestions = sortedQuestionIds
-            .Select(id => questions.First(q => q.Id == id))
-            .ToList();
-
-        var contents = await _dbContext.QuestionContents
-            .Where(c => sortedQuestionIds.Contains(c.QuestionId))
-            .ToListAsync();
-
-        var items = orderedQuestions.Select(q => new QuestionWithContent
-        {
-            Question = q,
-            Content = contents.FirstOrDefault(c => c.QuestionId == q.Id)
-        }).ToList();
-
-        return (items, totalPages, totalCount);
-    }
+    public Task<(List<QuestionWithContent> items, int totalPages, int totalCount)> SearchAsync(
+        string? keyword, int? level, int? type, int subject, int grade, int page, int size) =>
+        new QuestionSearch(_dbContext).SearchAsync(keyword, level, type, subject, grade, page, size);
 
     public async Task<List<QuestionWithContent>> GetByIdsAsync(List<Guid> ids)
     {

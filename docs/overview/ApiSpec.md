@@ -196,6 +196,8 @@ Upload/update a question (multipart/form-data).
 
 **QuestionPayload**:
 
+An omitted, null, empty or whitespace-only `id` creates a question. Any other value must be a UUID string identifying the question to update.
+
 ```json
 {
   "id": "uuid (optional, present = update, absent = create)",
@@ -227,8 +229,9 @@ Upload/update a question (multipart/form-data).
 ```
 
 **Errors**:
-- 400 `QUAESTURA_VALIDATION_FAILED` — field validation failed
+- 400 `QUAESTURA_VALIDATION_FAILED` — field validation failed, including a malformed question ID. A malformed ID leaves the catalog unchanged.
 - 400 `QUAESTURA_VALIDATION_INVALID_IMAGE` — invalid image format/size
+- 404 `QUAESTURA_QUESTION_NOT_FOUND` — the update ID is valid but the question does not exist
 
 #### DELETE `/admin/questions/{id}`
 

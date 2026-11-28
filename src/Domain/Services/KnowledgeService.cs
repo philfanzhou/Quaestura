@@ -29,23 +29,8 @@ public class KnowledgeService : IKnowledgeService
         _dbContext = dbContext;
     }
 
-    public async Task<(List<Knowledge> items, int totalPages, int totalCount)> GetAllAsync(int page, int size)
-    {
-        if (page < 1) page = 1;
-        if (size < 1) size = 10;
-
-        var query = _dbContext.Knowledges.AsQueryable();
-        var totalCount = await query.CountAsync();
-        var totalPages = (int)Math.Ceiling(totalCount / (double)size);
-
-        var items = await query
-            .OrderBy(k => k.Name)
-            .Skip((page - 1) * size)
-            .Take(size)
-            .ToListAsync();
-
-        return (items, totalPages, totalCount);
-    }
+    public async Task<(List<Knowledge> items, int totalPages, int totalCount)> GetAllAsync(int page, int size) =>
+        await ReadPageAsync(_dbContext.Knowledges, page, size);
 
     public async Task<List<Knowledge>> GetChildrenAsync(string? parentId)
     {
@@ -87,12 +72,9 @@ public class KnowledgeService : IKnowledgeService
         if (knowledge.ParentId.HasValue)
         {
             var parent = await _dbContext.Knowledges.FindAsync(knowledge.ParentId.Value);
-            if (parent != null)
+            if (parent != null && WouldCreateCycle(knowledge.Id, knowledge.ParentId.Value, parent))
             {
-                if (WouldCreateCycle(knowledge.Id, knowledge.ParentId.Value, parent))
-                {
-                    return (false, false, true);
-                }
+                return (false, false, true);
             }
         }
 
@@ -132,13 +114,14 @@ public class KnowledgeService : IKnowledgeService
         return await _dbContext.Knowledges.FindAsync(Guid.Parse(id));
     }
 
-    public async Task<(List<Knowledge> items, int totalPages, int totalCount)> GetByGradeAndSubjectAsync(int grade, int subject, int page, int size)
+    public async Task<(List<Knowledge> items, int totalPages, int totalCount)> GetByGradeAndSubjectAsync(int grade, int subject, int page, int size) =>
+        await ReadPageAsync(_dbContext.Knowledges.Where(k => k.Grade == grade && k.Subject == subject), page, size);
+
+    private static async Task<(List<Knowledge> items, int totalPages, int totalCount)> ReadPageAsync(
+        IQueryable<Knowledge> query, int page, int size)
     {
         if (page < 1) page = 1;
         if (size < 1) size = 10;
-
-        var query = _dbContext.Knowledges
-            .Where(k => k.Grade == grade && k.Subject == subject);
 
         var totalCount = await query.CountAsync();
         var totalPages = (int)Math.Ceiling(totalCount / (double)size);

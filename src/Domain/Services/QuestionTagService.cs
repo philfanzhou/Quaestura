@@ -85,7 +85,7 @@ public class QuestionTagService : IQuestionTagService
         await _dbContext.QuestionTags.AddRangeAsync(toInsert);
 
         // Increment usage_count for each newly tagged tag
-        foreach (var tag in existingTags.Where(t => newTagIds.Contains(t.Id)))
+        foreach (var tag in existingTags)
         {
             tag.UsageCount += 1;
         }
@@ -98,33 +98,16 @@ public class QuestionTagService : IQuestionTagService
     {
         if (tagIds == null || tagIds.Count == 0) return 0;
 
-        var relations = await _dbContext.QuestionTags
-            .Where(qt => qt.QuestionId == questionId && tagIds.Contains(qt.TagId))
-            .ToListAsync();
-
-        if (relations.Count == 0) return 0;
-
-        var affectedTagIds = relations.Select(r => r.TagId).Distinct().ToList();
-        _dbContext.QuestionTags.RemoveRange(relations);
-
-        var affectedTags = await _dbContext.Tags
-            .Where(t => affectedTagIds.Contains(t.Id))
-            .ToListAsync();
-        foreach (var tag in affectedTags)
-        {
-            if (tag.UsageCount > 0) tag.UsageCount -= 1;
-        }
-
-        await _dbContext.SaveChangesAsync();
-        return relations.Count;
+        return await RemoveRelationsAsync(_dbContext.QuestionTags
+            .Where(qt => qt.QuestionId == questionId && tagIds.Contains(qt.TagId)));
     }
 
-    public async Task<int> RemoveAllAsync(Guid questionId)
-    {
-        var relations = await _dbContext.QuestionTags
-            .Where(qt => qt.QuestionId == questionId)
-            .ToListAsync();
+    public async Task<int> RemoveAllAsync(Guid questionId) =>
+        await RemoveRelationsAsync(_dbContext.QuestionTags.Where(qt => qt.QuestionId == questionId));
 
+    private async Task<int> RemoveRelationsAsync(IQueryable<QuestionTag> query)
+    {
+        var relations = await query.ToListAsync();
         if (relations.Count == 0) return 0;
 
         var affectedTagIds = relations.Select(r => r.TagId).Distinct().ToList();

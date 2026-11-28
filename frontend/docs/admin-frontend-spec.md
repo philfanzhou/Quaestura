@@ -65,8 +65,8 @@ frontend/     # Next to the backend service
 `style.css` reuses doclibrary's CSS variables and shared component classes, including:
 
 - CSS variables: `--primary-color`, `--text-primary`, `--card-bg`, `--border-color`, `--radius-md`, `--shadow-sm`, etc.
-- Shared classes: `.btn`/`.btn-primary`/`.btn-secondary`/`.btn-danger`/`.btn-small`, `.card`/`.card-header`/`.card-body`, `.data-table`, `.pagination-bar`, `.tag`, `.form-group`/`.input-wrap`/`.select-wrap`, `.empty-state`, `.spinner`, `.status-badge`
-- Layout classes: `.admin-layout`/`.sidebar`/`.main-content`/`.top-header`/`.content-area`/`.page-header`
+- Shared classes: `.btn`/`.btn-primary`/`.btn-secondary`/`.btn-danger`/`.btn-small`, `.card`/`.card-header`/`.card-body`, `.data-table`, `.pagination-bar`, `.tag`, `.form-group`/`.input-wrap`/`.select-wrap`, `.empty-state`, `.spinner`
+- Layout classes: `.admin-layout`/`.sidebar`/`.main-content`/`.top-header`/`.content-area`
 
 ### 4.2 No inline styles
 

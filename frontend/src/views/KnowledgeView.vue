@@ -10,7 +10,7 @@
           <div class="form-group">
             <label>名称</label>
             <div class="input-wrap input-wide">
-              <input v-model="searchForm.name" placeholder="模糊搜索" @keyup.enter="onSearch" />
+              <input v-model="searchForm.name" placeholder="模糊搜索" @keyup.enter="firstPage" />
             </div>
           </div>
           <div class="form-group">
@@ -26,7 +26,7 @@
             </div>
           </div>
           <div class="form-group">
-            <button class="btn btn-primary" @click="onSearch">搜索</button>
+            <button class="btn btn-primary" @click="firstPage">搜索</button>
             <button class="btn btn-secondary btn-gap" @click="resetSearch">重置</button>
           </div>
         </div>
@@ -87,7 +87,7 @@
 
         <div v-if="!isNameSearch" class="pagination-bar">
           <span class="pagination-info">共 {{ total }} 条</span>
-          <select v-model.number="searchForm.size" class="page-size-select" @change="onSizeChange">
+          <select v-model.number="searchForm.size" class="page-size-select" @change="firstPage">
             <option :value="10">10 条/页</option>
             <option :value="20">20 条/页</option>
             <option :value="50">50 条/页</option>
@@ -173,8 +173,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { getKnowledgeAdminApiClient } from '../services/knowledgeApi'
+import { knowledgeApi } from '../services/knowledgeApi'
 import { getApiErrorMessage } from '../components/ApiErrorHandler'
+import { usePagination } from '../utils/pagination'
 import { showToast } from '../utils/toast'
 import type { Knowledge, CreateKnowledgeRequest } from '../types'
 
@@ -215,25 +216,7 @@ const dialogTitle = computed(() => {
   return '新增知识点'
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / searchForm.size)))
-
-const displayPages = computed<number[]>(() => {
-  const pages: number[] = []
-  const totalP = totalPages.value
-  const current = searchForm.page
-  if (totalP <= 7) {
-    for (let i = 1; i <= totalP; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  const start = Math.max(2, current - 2)
-  const end = Math.min(totalP - 1, current + 2)
-  if (start > 2) pages.push(-1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (end < totalP - 1) pages.push(-2)
-  pages.push(totalP)
-  return pages
-})
+const { totalPages, displayPages, firstPage, goPage } = usePagination(searchForm, total, loadList)
 
 const nodeMap = computed<Map<string, Knowledge>>(() => {
   const m = new Map<string, Knowledge>()
@@ -259,7 +242,7 @@ function depthOf(row: Knowledge): number {
 async function loadList() {
   loading.value = true
   try {
-    const result = await getKnowledgeAdminApiClient().list({
+    const result = await knowledgeApi.list({
       name: searchForm.name || undefined,
       subject: searchForm.subject,
       grade: searchForm.grade,
@@ -275,28 +258,11 @@ async function loadList() {
   }
 }
 
-function onSearch() {
-  searchForm.page = 1
-  loadList()
-}
-
-function onSizeChange() {
-  searchForm.page = 1
-  loadList()
-}
-
-function goPage(p: number) {
-  if (p < 1 || p > totalPages.value || p === searchForm.page) return
-  searchForm.page = p
-  loadList()
-}
-
 function resetSearch() {
   searchForm.name = ''
   searchForm.subject = undefined
   searchForm.grade = undefined
-  searchForm.page = 1
-  loadList()
+  firstPage()
 }
 
 function openCreate() {
@@ -348,7 +314,7 @@ async function submit() {
   }
   submitting.value = true
   try {
-    await getKnowledgeAdminApiClient().upsert({ ...form, name: form.name.trim() })
+    await knowledgeApi.upsert({ ...form, name: form.name.trim() })
     showToast(editingId.value ? '更新成功' : '创建成功', 'success')
     dialogVisible.value = false
     loadList()
@@ -367,7 +333,7 @@ async function confirmDelete() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await getKnowledgeAdminApiClient().delete(deleteTarget.value.id)
+    await knowledgeApi.delete(deleteTarget.value.id)
     showToast('删除成功', 'success')
     deleteTarget.value = null
     loadList()

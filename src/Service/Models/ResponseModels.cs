@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Text.Json;
+using Quaestura.Database.Entity;
 
 namespace Quaestura.Service.Models;
 
@@ -25,6 +27,36 @@ public class QuestionResponse
     public int Grade { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
     public string UpdatedAt { get; set; } = string.Empty;
+
+    internal static QuestionResponse From(Question entity, QuestionContent? content)
+    {
+        var dto = new QuestionResponse
+        {
+            Id = entity.Id.ToString(),
+            Level = entity.Level,
+            Type = entity.Type,
+            Width = entity.Width,
+            Height = entity.Height,
+            UserId = entity.UserId,
+            StudentId = entity.StudentId,
+            MistakeId = entity.MistakeId,
+            Subject = entity.Subject,
+            Grade = entity.Grade,
+            CreatedAt = entity.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            UpdatedAt = entity.UpdatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            Content = content?.Content ?? string.Empty,
+            CorrectAnswer = content?.CorrectAnswer ?? string.Empty,
+            Analysis = content?.Analysis ?? string.Empty,
+        };
+
+        if (!string.IsNullOrEmpty(entity.PicturePaths))
+        {
+            var paths = JsonSerializer.Deserialize<List<string>>(entity.PicturePaths) ?? new List<string>();
+            dto.PicturePaths.AddRange(paths);
+        }
+
+        return dto;
+    }
 }
 
 public class KnowledgeResponse

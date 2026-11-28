@@ -142,7 +142,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
         internal ConcurrentDictionary<string, string[]> Headers { get; } = new();
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Assert.True(request.Options.TryGetValue(AdminOidcBackchannelMarker.SensitiveRequest, out var sensitive) && sensitive);
+            Assert.True(request.Options.TryGetValue(OidcBackchannelHandler.SensitiveRequest, out var sensitive) && sensitive);
             Headers[request.RequestUri!.AbsolutePath] = request.Headers.GetValues(CorrelationHeaderName).ToArray();
             return authority.Forward(request, cancellationToken);
         }
@@ -187,7 +187,7 @@ public sealed class ServiceMantleOutgoingCorrelationTests
             await Task.Yield();
             if (request.RequestUri!.AbsolutePath == "/failure") throw new InvalidOperationException("synthetic inner failure");
             if (request.RequestUri.Host == "authority.test")
-                Assert.True(request.Options.TryGetValue(AdminOidcBackchannelMarker.SensitiveRequest, out var sensitive) && sensitive);
+                Assert.True(request.Options.TryGetValue(OidcBackchannelHandler.SensitiveRequest, out var sensitive) && sensitive);
             Headers[request.RequestUri!.AbsolutePath.TrimStart('/')] = request.Headers.TryGetValues(CorrelationHeaderName, out var values) ? values.ToArray() : [];
             var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = Content = new TrackedContent() };
             cancellation?.Cancel();

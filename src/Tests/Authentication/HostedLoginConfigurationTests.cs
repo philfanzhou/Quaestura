@@ -30,7 +30,7 @@ public sealed class HostedLoginConfigurationTests
                 overrides: new Dictionary<string, string?> { ["TicketCapacity"] = "synthetic-invalid-config-canary", ["Scope"] = "profile synthetic-invalid-config-canary", ["Enabled"] = "false" });
             using var client = harness.CreateClient();
             var services = harness.Factory.Services;
-            Assert.False(services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured);
+            Assert.False(services.GetRequiredService<OidcRegistration>().IsConfigured);
             Assert.Null(services.GetService<AdminOidcTicketStore>());
             Assert.Null(services.GetService<AdminLogoutReturnStates>());
             Assert.DoesNotContain(services.GetServices<IHostedService>(), service => service is AdminOidcTicketStoreCleanupService);
@@ -74,7 +74,7 @@ public sealed class HostedLoginConfigurationTests
     {
         using var harness = new HostedLoginHarness("Enabled", value);
         var session = await harness.SignedIn();
-        Assert.True(harness.Factory.Services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured);
+        Assert.True(harness.Factory.Services.GetRequiredService<OidcRegistration>().IsConfigured);
         using var business = await harness.Send(HttpMethod.Get, "/admin/tags", session);
         Assert.Equal(HttpStatusCode.OK, business.StatusCode);
     }

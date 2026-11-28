@@ -88,7 +88,7 @@ public class S3OssService : IOssService
 
     public async Task<string> UploadAsync(Stream stream, string fileName, string contentType, OssBucket bucket = OssBucket.Uploads, string? folder = null)
     {
-        var objectPath = GenerateObjectPath(fileName, bucket, folder);
+        var objectPath = ObjectPath.Create(fileName, bucket, folder);
         _prefixValidator?.ValidateWritePath(objectPath);
 
         await EnsureBucketExistsAsync();
@@ -120,7 +120,7 @@ public class S3OssService : IOssService
 
         foreach (var (stream, fileName, contentType) in files)
         {
-            var objectPath = GenerateObjectPath($"{index}_{fileName}", bucket, folder);
+            var objectPath = ObjectPath.Create($"{index}_{fileName}", bucket, folder);
             _prefixValidator?.ValidateWritePath(objectPath);
 
             var putObjectArgs = new PutObjectArgs()
@@ -324,20 +324,7 @@ public class S3OssService : IOssService
 
     public async Task<List<OssObjectInfo>> ListObjectsWithBucketAsync(OssBucket bucket, string? prefix = null)
     {
-        var bucketPrefix = bucket switch
-        {
-            OssBucket.Uploads => "uploads",
-            OssBucket.Mistakes => "mistakes",
-            OssBucket.Questions => "questions",
-            OssBucket.Documents => "documents",
-            _ => "others"
-        };
-
-        var fullPrefix = string.IsNullOrWhiteSpace(prefix)
-            ? bucketPrefix
-            : $"{bucketPrefix}/{prefix}";
-
-        return await ListObjectsAsync(fullPrefix);
+        return await ListObjectsAsync(ObjectPath.Prefix(bucket, prefix));
     }
 
     private async Task EnsureBucketExistsAsync()
@@ -369,26 +356,6 @@ public class S3OssService : IOssService
         }
 
         return publicBaseUri;
-    }
-
-    private static string GenerateObjectPath(string fileName, OssBucket bucket, string? folder = null)
-    {
-        var prefix = bucket switch
-        {
-            OssBucket.Uploads => "uploads",
-            OssBucket.Mistakes => "mistakes",
-            OssBucket.Questions => "questions",
-            OssBucket.Documents => "documents",
-            _ => "others"
-        };
-
-        if (!string.IsNullOrWhiteSpace(folder))
-        {
-            return $"{prefix}/{folder}/{fileName}";
-        }
-
-        var now = DateTime.UtcNow;
-        return $"{prefix}/{now.Year}/{now.Month:D2}/{now.Day:D2}/{Guid.NewGuid():N}/{fileName}";
     }
 }
 

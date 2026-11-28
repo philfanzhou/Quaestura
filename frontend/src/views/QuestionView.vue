@@ -53,7 +53,7 @@
             </div>
           </div>
           <div class="form-group">
-            <button class="btn btn-primary" @click="onSearch">搜索</button>
+            <button class="btn btn-primary" @click="firstPage">搜索</button>
             <button class="btn btn-secondary btn-gap" @click="resetSearch">重置</button>
           </div>
         </div>
@@ -107,7 +107,7 @@
 
         <div class="pagination-bar">
           <span class="pagination-info">共 {{ total }} 条</span>
-          <select v-model.number="searchForm.size" class="page-size-select" @change="onSizeChange">
+          <select v-model.number="searchForm.size" class="page-size-select" @change="firstPage">
             <option :value="10">10 条/页</option>
             <option :value="20">20 条/页</option>
             <option :value="50">50 条/页</option>
@@ -206,9 +206,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
-import { getQuestionAdminApiClient } from '../services/questionApi'
+import { ref, reactive, onMounted } from 'vue'
+import { questionApi } from '../services/questionApi'
 import { getApiErrorMessage } from '../components/ApiErrorHandler'
+import { usePagination } from '../utils/pagination'
 import { showToast } from '../utils/toast'
 import type { Question } from '../types'
 
@@ -261,25 +262,7 @@ const searchForm = reactive({
   size: 10,
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(total.value / searchForm.size)))
-
-const displayPages = computed<number[]>(() => {
-  const pages: number[] = []
-  const totalP = totalPages.value
-  const current = searchForm.page
-  if (totalP <= 7) {
-    for (let i = 1; i <= totalP; i++) pages.push(i)
-    return pages
-  }
-  pages.push(1)
-  let start = Math.max(2, current - 2)
-  let end = Math.min(totalP - 1, current + 2)
-  if (start > 2) pages.push(-1)
-  for (let i = start; i <= end; i++) pages.push(i)
-  if (end < totalP - 1) pages.push(-2)
-  pages.push(totalP)
-  return pages
-})
+const { totalPages, displayPages, firstPage, goPage } = usePagination(searchForm, total, loadList)
 
 async function loadList() {
   if (!searchForm.subject || !searchForm.grade) {
@@ -288,7 +271,7 @@ async function loadList() {
   }
   loading.value = true
   try {
-    const result = await getQuestionAdminApiClient().search({
+    const result = await questionApi.search({
       subject: searchForm.subject,
       grade: searchForm.grade,
       level: searchForm.level,
@@ -307,36 +290,19 @@ async function loadList() {
   }
 }
 
-function onSearch() {
-  searchForm.page = 1
-  loadList()
-}
-
-function onSizeChange() {
-  searchForm.page = 1
-  loadList()
-}
-
-function goPage(p: number) {
-  if (p < 1 || p > totalPages.value || p === searchForm.page) return
-  searchForm.page = p
-  loadList()
-}
-
 function resetSearch() {
   searchForm.level = undefined
   searchForm.type = undefined
   searchForm.keyword = ''
   searchForm.tagId = ''
-  searchForm.page = 1
-  loadList()
+  firstPage()
 }
 
 async function viewDetail(row: Question) {
   detail.value = null
   detailVisible.value = true
   try {
-    detail.value = await getQuestionAdminApiClient().getById(row.id)
+    detail.value = await questionApi.getById(row.id)
   } catch (e) {
     showToast(getApiErrorMessage(e), 'error')
     detailVisible.value = false
@@ -355,7 +321,7 @@ async function confirmDelete() {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await getQuestionAdminApiClient().delete(deleteTarget.value.id)
+    await questionApi.delete(deleteTarget.value.id)
     showToast('删除成功', 'success')
     deleteTarget.value = null
     loadList()

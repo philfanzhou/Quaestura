@@ -149,7 +149,7 @@ var logContext = app.Services.GetRequiredService<ServiceLogContext>();
 using (logContext.BeginScope(app.Logger))
 {
     app.Logger.LogInformation("Quaestura Service starting");
-    var hostedConfiguration = app.Services.GetRequiredService<AdminOidcConfigurationStatus>();
+    var hostedConfiguration = app.Services.GetRequiredService<OidcRegistration>();
     if (!hostedConfiguration.IsConfigured)
         app.Logger.LogError("Hosted sign-in is not configured. Missing keys: {MissingKeys}",
             string.Join(", ", hostedConfiguration.MissingKeys));

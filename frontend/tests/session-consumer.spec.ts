@@ -85,9 +85,9 @@ test('consumer: all service unsafe methods share one CSRF and never send Authori
     await route.fulfill({ json: { success: true } })
   })
   await page.evaluate(async () => {
-    const tags = (await import('/src/services/tagApi.ts')).getTagAdminApiClient()
-    const knowledge = (await import('/src/services/knowledgeApi.ts')).getKnowledgeAdminApiClient()
-    const questions = (await import('/src/services/questionApi.ts')).getQuestionAdminApiClient()
+    const tags = (await import('/src/services/tagApi.ts')).tagApi
+    const knowledge = (await import('/src/services/knowledgeApi.ts')).knowledgeApi
+    const questions = (await import('/src/services/questionApi.ts')).questionApi
     await Promise.all([tags.upsert({ name: 'synthetic' }), tags.delete('synthetic'), knowledge.upsert({ name: 'synthetic' }), knowledge.delete('synthetic'), questions.delete('synthetic')])
   })
   expect(csrf).toBe(1)

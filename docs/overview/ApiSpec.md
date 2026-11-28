@@ -83,7 +83,7 @@ Search/paginate questions.
 | `type` | int | No | Question type (applied when > 0) |
 | `subject` | int | **Yes** | Subject |
 | `grade` | int | **Yes** | Grade |
-| `tagId` | UUID | No | Only return questions with this tag |
+| `tagId` | UUID | No | Filter by this tag before counting and paging |
 | `page` | int | No | Default 1 |
 | `size` | int | No | Default 10, maximum 100 |
 

@@ -35,9 +35,8 @@ public static class QuestionEndpoints
     }
 
     private static async Task<IResult> SearchQuestions(
-        IQuestionService service,
+        QuestionSearch search,
         IOssQuestionService ossService,
-        IQuestionTagService questionTagService,
         [FromQuery] string? keyword,
         [FromQuery] int? level,
         [FromQuery] int? type,
@@ -55,32 +54,16 @@ public static class QuestionEndpoints
         if (!grade.HasValue || grade.Value <= 0)
             throw new ValidationException("Grade is required and must be greater than 0");
 
-        HashSet<Guid>? tagQuestionSet = null;
+        Guid? filterTagId = null;
         if (!string.IsNullOrWhiteSpace(tagId))
         {
-            if (!Guid.TryParse(tagId, out var tId))
+            if (!Guid.TryParse(tagId, out var parsedTagId))
                 throw new ValidationException("tagId is not a valid UUID");
-            // Fetch all (no paging) question IDs for the tag to filter in-memory.
-            // For small data volumes this is acceptable; revisit if tag usage grows.
-            const int largeSize = 10000;
-            var (taggedIds, _) = await questionTagService.GetQuestionIdsByTagAsync(tId, 1, largeSize);
-            tagQuestionSet = new HashSet<Guid>(taggedIds);
+            filterTagId = parsedTagId;
         }
 
-        var (items, totalPages, totalCount) = await service.SearchAsync(
-            string.IsNullOrWhiteSpace(keyword) ? null : keyword,
-            level.HasValue && level.Value > 0 ? level : null,
-            type.HasValue && type.Value > 0 ? type : null,
-            subject.Value, grade.Value, page, size);
-
-        if (tagQuestionSet != null)
-        {
-            items = items.Where(i => tagQuestionSet.Contains(i.Question.Id)).ToList();
-            totalCount = items.Count;
-            totalPages = (int)Math.Ceiling(totalCount / (double)size);
-            // Re-apply paging since the filtered set may be smaller than the original page
-            items = items.Skip((page - 1) * size).Take(size).ToList();
-        }
+        var (items, totalPages, totalCount) = await search.SearchAsync(
+            keyword, level, type, subject.Value, grade.Value, page, size, filterTagId);
 
         var dtos = items.Select(item => QuestionResponse.From(item.Question, item.Content)).ToList();
         foreach (var dto in dtos)

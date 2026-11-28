@@ -235,7 +235,7 @@ An omitted, null, empty or whitespace-only `id` creates a question. Any other va
 
 #### DELETE `/admin/questions/{id}`
 
-Delete a question.
+Delete a question and its knowledge point associations. A knowledge point remains protected from edits and deletion while another question references it. Deleting its last referencing question clears the reference flag in the same transaction.
 
 **Path parameters**:
 

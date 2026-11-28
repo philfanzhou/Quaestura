@@ -26,16 +26,23 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
         _dbContext = dbContext;
     }
 
-    public async Task<int> TagAsync(Guid questionId, IList<(Guid knowledgeId, double weight)> tags, int subject, int grade)
+    public Task<int> TagAsync(Guid questionId, IList<(Guid knowledgeId, double weight)> tags, int subject, int grade)
     {
         if (tags == null || tags.Count == 0)
-            return 0;
+            return Task.FromResult(0);
 
+        var ids = tags.Select(t => t.knowledgeId).Distinct().ToArray();
+        return KnowledgeReferences.ChangeAsync(_dbContext, questionId, ids,
+            () => AddBindingsAsync(questionId, tags, ids, subject, grade));
+    }
+
+    private async Task<int> AddBindingsAsync(Guid questionId, IList<(Guid knowledgeId, double weight)> tags,
+        Guid[] ids, int subject, int grade)
+    {
         var questionMatches = await _dbContext.Questions.AnyAsync(q =>
             q.Id == questionId && q.Subject == subject && q.Grade == grade);
         if (!questionMatches) return 0;
 
-        var ids = tags.Select(t => t.knowledgeId).Distinct().ToList();
         var tagEntities = await _dbContext.Knowledges
             .Where(k => ids.Contains(k.Id))
             .ToListAsync();
@@ -73,7 +80,7 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
         {
             if (tagDict.TryGetValue(tag.KnowledgeId, out var knowledge))
             {
-                knowledge.IsReferenced = true;
+                KnowledgeReferences.SetReferenced(_dbContext, knowledge, true);
             }
         }
 
@@ -82,40 +89,13 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
         return toInsert.Count;
     }
 
-    public async Task<bool> RemoveAllTagsAsync(Guid questionId)
-    {
-        var relations = await _dbContext.QuestionKnowledges
-            .Where(qk => qk.QuestionId == questionId)
-            .ToListAsync();
-
-        if (relations.Count == 0) return true;
-
-        var affectedKnowledgeIds = relations.Select(r => r.KnowledgeId).Distinct().ToList();
-
-        _dbContext.QuestionKnowledges.RemoveRange(relations);
-        await _dbContext.SaveChangesAsync();
-
-        var orphanedIds = await _dbContext.Knowledges
-            .Where(k => affectedKnowledgeIds.Contains(k.Id))
-            .Where(k => !_dbContext.QuestionKnowledges.Any(qk => qk.KnowledgeId == k.Id))
-            .Select(k => k.Id)
-            .ToListAsync();
-
-        if (orphanedIds.Count > 0)
+    public Task<bool> RemoveAllTagsAsync(Guid questionId) =>
+        KnowledgeReferences.ChangeAsync(_dbContext, questionId, null, async () =>
         {
-            var orphanedKnowledge = await _dbContext.Knowledges
-                .Where(k => orphanedIds.Contains(k.Id))
-                .ToListAsync();
-            foreach (var knowledge in orphanedKnowledge)
-            {
-                knowledge.IsReferenced = false;
-            }
-
+            await KnowledgeReferences.RemoveBindingsAsync(_dbContext, questionId);
             await _dbContext.SaveChangesAsync();
-        }
-
-        return true;
-    }
+            return true;
+        });
 
     public async Task<List<QuestionKnowledge>> GetByQuestionAsync(Guid questionId)
     {

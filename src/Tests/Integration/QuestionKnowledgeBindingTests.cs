@@ -12,6 +12,44 @@ namespace Quaestura.Tests.Integration;
 public sealed class QuestionKnowledgeBindingTests(QuaesturaApiFactory factory) : IClassFixture<QuaesturaApiFactory>
 {
     [Fact]
+    public async Task DeletingQuestions_ReleasesKnowledgeOnlyAfterItsLastReference()
+    {
+        var first = new Question { Subject = 2, Grade = 7 };
+        var second = new Question { Subject = 2, Grade = 7 };
+        var knowledge = new Knowledge { Name = "Triangles", Subject = 2, Grade = 7 };
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
+            db.AddRange(first, second, knowledge);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = CreateClient();
+        var knowledgeUrl = $"/admin/knowledges/{knowledge.Id}";
+        var edit = new { id = knowledge.Id, name = "Triangle geometry", subject = 2, grade = 7 };
+        using var bound = await client.PostAsJsonAsync("/admin/question-knowledges/batch-tag",
+            new { questionIds = new[] { first.Id, second.Id }, knowledgeId = knowledge.Id, subject = 2, grade = 7 });
+        bound.EnsureSuccessStatusCode();
+        using var firstDeleted = await client.DeleteAsync($"/admin/questions/{first.Id}");
+        firstDeleted.EnsureSuccessStatusCode();
+        var shared = await client.GetFromJsonAsync<JsonElement>(knowledgeUrl);
+        Assert.True(shared.GetProperty("data").GetProperty("isReferenced").GetBoolean());
+        using var blockedEdit = await client.PostAsJsonAsync("/admin/knowledges", edit);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, blockedEdit.StatusCode);
+        using var blockedDelete = await client.DeleteAsync(knowledgeUrl);
+        Assert.Equal(System.Net.HttpStatusCode.UnprocessableEntity, blockedDelete.StatusCode);
+
+        using var secondDeleted = await client.DeleteAsync($"/admin/questions/{second.Id}");
+        secondDeleted.EnsureSuccessStatusCode();
+        var unused = await client.GetFromJsonAsync<JsonElement>(knowledgeUrl);
+        Assert.False(unused.GetProperty("data").GetProperty("isReferenced").GetBoolean());
+        using var edited = await client.PostAsJsonAsync("/admin/knowledges", edit);
+        edited.EnsureSuccessStatusCode();
+        using var deleted = await client.DeleteAsync(knowledgeUrl);
+        deleted.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task MixedBatch_OnlyBindsMatchingQuestionsOnce()
     {
         var knowledge = new Knowledge { Name = "Equations", Subject = 2, Grade = 7 };

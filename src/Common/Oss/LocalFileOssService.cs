@@ -16,14 +16,14 @@ public class LocalFileOssService : IOssService
         Directory.CreateDirectory(_rootPath);
         foreach (OssBucket bucket in Enum.GetValues(typeof(OssBucket)))
         {
-            var prefix = BucketToPrefix(bucket);
+            var prefix = ObjectPath.Prefix(bucket);
             Directory.CreateDirectory(Path.Combine(_rootPath, prefix));
         }
     }
 
     public Task<string> UploadAsync(Stream stream, string fileName, string contentType, OssBucket bucket = OssBucket.Uploads, string? folder = null)
     {
-        var objectPath = GenerateObjectPath(fileName, bucket, folder);
+        var objectPath = ObjectPath.Create(fileName, bucket, folder);
         var fullPath = GetFullPath(objectPath);
         Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
         using var fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write);
@@ -43,7 +43,7 @@ public class LocalFileOssService : IOssService
         var index = 0;
         foreach (var (stream, fileName, contentType) in files)
         {
-            var objectPath = GenerateObjectPath($"{index}_{fileName}", bucket, folder);
+            var objectPath = ObjectPath.Create($"{index}_{fileName}", bucket, folder);
             var fullPath = GetFullPath(objectPath);
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
             using var fs = new FileStream(fullPath, FileMode.Create, FileAccess.Write);
@@ -172,34 +172,12 @@ public class LocalFileOssService : IOssService
 
     public Task<List<OssObjectInfo>> ListObjectsWithBucketAsync(OssBucket bucket, string? prefix = null)
     {
-        var bucketPrefix = BucketToPrefix(bucket);
-        var fullPrefix = string.IsNullOrWhiteSpace(prefix)
-            ? bucketPrefix
-            : $"{bucketPrefix}/{prefix}";
-        return ListObjectsAsync(fullPrefix);
+        return ListObjectsAsync(ObjectPath.Prefix(bucket, prefix));
     }
 
     private string GetFullPath(string objectPath)
     {
         var normalized = objectPath.Replace('\\', '/').TrimStart('/');
         return Path.GetFullPath(Path.Combine(_rootPath, normalized));
-    }
-
-    private static string BucketToPrefix(OssBucket bucket) => bucket switch
-    {
-        OssBucket.Uploads => "uploads",
-        OssBucket.Mistakes => "mistakes",
-        OssBucket.Questions => "questions",
-        OssBucket.Documents => "documents",
-        _ => "others"
-    };
-
-    private static string GenerateObjectPath(string fileName, OssBucket bucket, string? folder = null)
-    {
-        var prefix = BucketToPrefix(bucket);
-        if (!string.IsNullOrWhiteSpace(folder))
-            return $"{prefix}/{folder}/{fileName}";
-        var now = DateTime.UtcNow;
-        return $"{prefix}/{now.Year}/{now.Month:D2}/{now.Day:D2}/{Guid.NewGuid():N}/{fileName}";
     }
 }

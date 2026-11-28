@@ -62,7 +62,7 @@ public static class AdminOidcComposition
         // key, never the value; a missing required key starts the degraded 503 mode instead.
         var settings = AdminOidcSettings.Read(configuration);
         services.AddSingleton(settings);
-        services.AddSingleton(new AdminOidcConfigurationStatus(settings.MissingKeys.ToArray()));
+        services.AddSingleton(new OidcRegistration(settings.MissingKeys.ToArray()));
         if (!settings.Available) return services;
 
         // Hosting diagnostics log raw query strings before the application middleware runs,
@@ -117,7 +117,7 @@ public static class AdminOidcComposition
         // no request/response log line, is excluded from HttpClient instrumentation, and
         // normalizes client-side timeouts into transport failures so a timeout keeps answering
         // the fixed provider-unavailable outcome instead of a 5xx.
-        services.AddTransient<AdminOidcBackchannelMarker>();
+        services.AddTransient<OidcBackchannelHandler>();
         services.AddHttpClient(AdminOidcConstants.HttpClientName)
             .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(30))
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
@@ -125,7 +125,7 @@ public static class AdminOidcComposition
                 AllowAutoRedirect = false,
                 UseCookies = false
             })
-            .AddHttpMessageHandler<AdminOidcBackchannelMarker>()
+            .AddHttpMessageHandler<OidcBackchannelHandler>()
             .AddServiceMantleCorrelationIdPropagation()
             .RemoveAllLoggers();
 
@@ -474,7 +474,7 @@ public static class AdminOidcComposition
     /// </summary>
     public static void UseQuaesturaHostedLoginSession(this WebApplication app)
     {
-        if (!app.Services.GetRequiredService<AdminOidcConfigurationStatus>().IsConfigured) return;
+        if (!app.Services.GetRequiredService<OidcRegistration>().IsConfigured) return;
         app.UseMiddleware<AdminOidcSessionMiddleware>();
     }
 
@@ -491,7 +491,7 @@ public static class AdminOidcComposition
         {
             var previous = options.FilterHttpRequestMessage;
             options.FilterHttpRequestMessage = request =>
-                !(request.Options.TryGetValue(AdminOidcBackchannelMarker.SensitiveRequest, out var sensitive) && sensitive)
+                !(request.Options.TryGetValue(OidcBackchannelHandler.SensitiveRequest, out var sensitive) && sensitive)
                 && (previous?.Invoke(request) ?? true);
         });
     }
@@ -504,7 +504,7 @@ public static class AdminOidcComposition
 /// caller — is normalized into a transport failure so the protocol outcomes keep answering the
 /// fixed provider-unavailable result instead of an unhandled exception.
 /// </summary>
-internal sealed class AdminOidcBackchannelMarker : DelegatingHandler
+internal sealed class OidcBackchannelHandler : DelegatingHandler
 {
     internal static readonly HttpRequestOptionsKey<bool> SensitiveRequest = new("Quaestura.OidcBackchannel");
 
@@ -525,11 +525,7 @@ internal sealed class AdminOidcBackchannelMarker : DelegatingHandler
 }
 
 // Capture one registration decision: all mappings/middleware use this immutable result.
-internal sealed record AdminOidcConfigurationStatus(string[] MissingKeys)
+internal sealed record OidcRegistration(string[] MissingKeys)
 {
     internal bool IsConfigured => MissingKeys.Length == 0;
-    internal static AdminOidcConfigurationStatus Create(IConfiguration configuration) => new(
-        new[] { "Authority", "ClientId", "ClientSecret", "RedirectUri" }
-            .Where(key => string.IsNullOrWhiteSpace(configuration[AdminOidcComposition.SectionName + ":" + key]))
-            .Select(key => AdminOidcComposition.SectionName + ":" + key).ToArray());
 }

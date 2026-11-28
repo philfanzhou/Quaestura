@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
@@ -93,48 +92,8 @@ public static class QuestionKnowledgeEndpoints
             throw new ValidationException("knowledgeId is not a valid UUID");
 
         var (questionIds, totalCount) = await service.GetQuestionsByTagAsync(kId, page, size);
-        if (totalCount == 0)
-        {
-            return Results.Ok(new
-            {
-                success = true,
-                data = new List<object>(),
-                total = 0,
-                page,
-                size,
-                totalPages = 0,
-            });
-        }
-
-        var totalPages = (int)Math.Ceiling(totalCount / (double)size);
-        var questions = await questionService.GetByIdsAsync(questionIds);
-        var dtos2 = questions.Select(item => MapQuestionToResponse(item.Question, item.Content)).ToList();
-
-        var logger = loggerFactory?.CreateLogger("QuestionKnowledgeEndpoints");
-        foreach (var dto in dtos2)
-        {
-            if (dto.PicturePaths.Count == 0) continue;
-            try
-            {
-                var urls = await ossService.GetPictureUrls(dto.PicturePaths.ToList());
-                dto.PicturePaths.Clear();
-                dto.PicturePaths.AddRange(urls);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "Failed to convert picture paths to URLs");
-            }
-        }
-
-        return Results.Ok(new
-        {
-            success = true,
-            data = dtos2,
-            total = totalCount,
-            page,
-            size,
-            totalPages,
-        });
+        return await RelatedQuestionPage.CreateAsync(questionIds, totalCount, page, size,
+            questionService, ossService, loggerFactory, nameof(QuestionKnowledgeEndpoints));
     }
 
     private static async Task<IResult> RemoveAll(
@@ -154,33 +113,5 @@ public static class QuestionKnowledgeEndpoints
                 System.Net.HttpStatusCode.InternalServerError);
 
         return Results.Ok(new { success = true, data = new { questionId, removed = true } });
-    }
-
-    private static QuestionResponse MapQuestionToResponse(Database.Entity.Question entity, Database.Entity.QuestionContent? content)
-    {
-        var dto = new QuestionResponse
-        {
-            Id = entity.Id.ToString(),
-            Level = entity.Level,
-            Type = entity.Type,
-            Width = entity.Width,
-            Height = entity.Height,
-            UserId = entity.UserId,
-            StudentId = entity.StudentId,
-            MistakeId = entity.MistakeId,
-            Subject = entity.Subject,
-            Grade = entity.Grade,
-            CreatedAt = entity.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            UpdatedAt = entity.UpdatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            Content = content?.Content ?? string.Empty,
-            CorrectAnswer = content?.CorrectAnswer ?? string.Empty,
-            Analysis = content?.Analysis ?? string.Empty,
-        };
-        if (!string.IsNullOrEmpty(entity.PicturePaths))
-        {
-            var paths = JsonSerializer.Deserialize<List<string>>(entity.PicturePaths) ?? new List<string>();
-            dto.PicturePaths.AddRange(paths);
-        }
-        return dto;
     }
 }

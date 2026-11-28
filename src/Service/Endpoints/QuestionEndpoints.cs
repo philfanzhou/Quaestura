@@ -82,8 +82,11 @@ public static class QuestionEndpoints
             items = items.Skip((page - 1) * size).Take(size).ToList();
         }
 
-        var dtos = items.Select(item => MapToResponse(item.Question, item.Content)).ToList();
-        await ConvertPicturePathsToUrlsAsync(ossService, dtos, logger);
+        var dtos = items.Select(item => QuestionResponse.From(item.Question, item.Content)).ToList();
+        foreach (var dto in dtos)
+        {
+            await ResolvePictureUrlsAsync(ossService, dto, logger);
+        }
 
         return Results.Ok(new
         {
@@ -105,8 +108,8 @@ public static class QuestionEndpoints
         if (result == null)
             throw new EntityNotFoundException("Question", id.ToString());
 
-        var dto = MapToResponse(result.Value.question, result.Value.content);
-        await ConvertPicturePathsToUrlsAsync(ossService, dto);
+        var dto = QuestionResponse.From(result.Value.question, result.Value.content);
+        await ResolvePictureUrlsAsync(ossService, dto);
 
         return Results.Ok(new { success = true, data = dto });
     }
@@ -156,14 +159,12 @@ public static class QuestionEndpoints
         // Validate and read uploaded pictures
         var pictureFiles = form.Files.GetFiles("pictures");
         var pictureStreams = new List<(Stream stream, string fileName, string contentType)>();
-        var pictureBytesList = new List<byte[]>();
 
         try
         {
             foreach (var file in pictureFiles)
             {
                 var bytes = ImageValidationHelper.ReadAndValidate(file);
-                pictureBytesList.Add(bytes);
 
                 var stream = new MemoryStream(bytes);
                 var ext = Path.GetExtension(file.FileName);
@@ -177,8 +178,16 @@ public static class QuestionEndpoints
                 ? await ossService.UploadPicturesAsync(pictureStreams)
                 : new List<string>();
 
-            // Update or create
-            string? resultId;
+            var content = contentPayload == null
+                ? null
+                : new QuestionContent
+                {
+                    Content = contentPayload.Content,
+                    CorrectAnswer = contentPayload.CorrectAnswer,
+                    Analysis = contentPayload.Analysis,
+                };
+
+            string resultId;
             if (!string.IsNullOrWhiteSpace(questionPayload.Id)
                 && Guid.TryParse(questionPayload.Id, out var existingId))
             {
@@ -196,15 +205,6 @@ public static class QuestionEndpoints
                 entity.StudentId = questionPayload.StudentId;
                 entity.MistakeId = questionPayload.MistakeId;
                 entity.UpdatedAt = DateTimeOffset.UtcNow;
-
-                var content = contentPayload == null
-                    ? null
-                    : new QuestionContent
-                    {
-                        Content = contentPayload.Content,
-                        CorrectAnswer = contentPayload.CorrectAnswer,
-                        Analysis = contentPayload.Analysis,
-                    };
 
                 await service.UpdateAsync(entity, content,
                     uploadedPaths.Count > 0 ? uploadedPaths : null);
@@ -227,15 +227,6 @@ public static class QuestionEndpoints
                     Subject = subject,
                     Grade = grade,
                 };
-
-                var content = contentPayload == null
-                    ? null
-                    : new QuestionContent
-                    {
-                        Content = contentPayload.Content,
-                        CorrectAnswer = contentPayload.CorrectAnswer,
-                        Analysis = contentPayload.Analysis,
-                    };
 
                 var (created, _) = await service.AddAsync(
                     userId, entity, content, uploadedPaths, subject, grade);
@@ -293,37 +284,7 @@ public static class QuestionEndpoints
         return Results.Ok(new { success = true, data = new { id = id.ToString(), deleted = true } });
     }
 
-    private static QuestionResponse MapToResponse(Question entity, QuestionContent? content)
-    {
-        var dto = new QuestionResponse
-        {
-            Id = entity.Id.ToString(),
-            Level = entity.Level,
-            Type = entity.Type,
-            Width = entity.Width,
-            Height = entity.Height,
-            UserId = entity.UserId,
-            StudentId = entity.StudentId,
-            MistakeId = entity.MistakeId,
-            Subject = entity.Subject,
-            Grade = entity.Grade,
-            CreatedAt = entity.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            UpdatedAt = entity.UpdatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
-            Content = content?.Content ?? string.Empty,
-            CorrectAnswer = content?.CorrectAnswer ?? string.Empty,
-            Analysis = content?.Analysis ?? string.Empty,
-        };
-
-        if (!string.IsNullOrEmpty(entity.PicturePaths))
-        {
-            var paths = JsonSerializer.Deserialize<List<string>>(entity.PicturePaths) ?? new List<string>();
-            dto.PicturePaths.AddRange(paths);
-        }
-
-        return dto;
-    }
-
-    private static async Task ConvertPicturePathsToUrlsAsync(
+    private static async Task ResolvePictureUrlsAsync(
         IOssQuestionService ossService,
         QuestionResponse dto,
         ILogger? logger = null)
@@ -339,17 +300,6 @@ public static class QuestionEndpoints
         catch (Exception ex)
         {
             logger?.LogWarning(ex, "Failed to generate presigned URLs for question {QuestionId}", dto.Id);
-        }
-    }
-
-    private static async Task ConvertPicturePathsToUrlsAsync(
-        IOssQuestionService ossService,
-        List<QuestionResponse> dtos,
-        ILogger? logger = null)
-    {
-        foreach (var dto in dtos)
-        {
-            await ConvertPicturePathsToUrlsAsync(ossService, dto, logger);
         }
     }
 }

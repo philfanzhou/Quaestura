@@ -360,7 +360,7 @@ Delete a knowledge point.
 
 #### POST `/admin/question-knowledges/batch-tag`
 
-Tag multiple questions with the same knowledge point in one batch.
+Tag multiple questions with the same knowledge point in one batch. Each question and the knowledge point must both match the requested subject and grade. Missing records, mismatches, and existing bindings are skipped. `taggedCount` counts newly created bindings.
 
 **Request body**:
 
@@ -384,7 +384,6 @@ Tag multiple questions with the same knowledge point in one batch.
 
 **Errors**:
 - 400 `QUAESTURA_VALIDATION_FAILED`
-- 404 `QUAESTURA_KNOWLEDGE_NOT_FOUND` — knowledge point does not exist or subject/grade does not match
 
 #### GET `/admin/question-knowledges`
 
@@ -399,7 +398,7 @@ Query associations (one of two modes).
 | `page` | int | No | Default 1 (`knowledgeId` mode only) |
 | `size` | int | No | Default 10 (`knowledgeId` mode only) |
 
-**Response 200 (questionId mode)**:
+**Response 200 (questionId mode)**: Each association reports the question's stored subject and grade.
 
 ```json
 {

@@ -80,8 +80,8 @@ public static class QuestionKnowledgeEndpoints
                 QuestionId = r.QuestionId.ToString(),
                 KnowledgeId = r.KnowledgeId.ToString(),
                 Weight = r.Weight,
-                Subject = 0,
-                Grade = 0,
+                Subject = r.Question.Subject,
+                Grade = r.Question.Grade,
             }).ToList();
 
             return Results.Ok(new { success = true, data = dtos });

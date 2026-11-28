@@ -28,6 +28,7 @@ public static class QuestionEndpoints
 
         group.MapGet("/", SearchQuestions);
         group.MapGet("/{id:guid}", GetQuestion);
+        group.MapPost("/batch-get", BatchGetQuestions);
         group.MapPost("/", UploadQuestion).DisableAntiforgery();
         group.MapDelete("/{id:guid}", DeleteQuestion);
 
@@ -95,6 +96,24 @@ public static class QuestionEndpoints
         await ResolvePictureUrlsAsync(ossService, dto);
 
         return Results.Ok(new { success = true, data = dto });
+    }
+
+    private static async Task<IResult> BatchGetQuestions(
+        BatchGetQuestionsRequest request,
+        IQuestionService service,
+        IOssQuestionService ossService)
+    {
+        if (request.Ids is not { Count: >= 1 and <= 100 })
+            throw new ValidationException("Provide between 1 and 100 question IDs");
+
+        var items = await service.GetByIdsAsync(request.Ids.Distinct().ToList());
+        var questions = items.ToDictionary(item => item.Question.Id,
+            item => QuestionResponse.From(item.Question, item.Content));
+        foreach (var question in questions.Values)
+            await ResolvePictureUrlsAsync(ossService, question);
+
+        var data = request.Ids.Select(id => new { id, question = questions.GetValueOrDefault(id) });
+        return Results.Ok(new { success = true, data });
     }
 
     private static async Task<IResult> UploadQuestion(

@@ -16,6 +16,62 @@ namespace Quaestura.Tests.Integration;
 public sealed class QuestionResponseTests(QuaesturaApiFactory factory) : IClassFixture<QuaesturaApiFactory>
 {
     [Fact]
+    public async Task BatchGet_PreservesRequestedOrderIncludingMissingAndRepeatedIds()
+    {
+        var first = new Question();
+        var second = new Question();
+        var third = new Question();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<QuaesturaDbContext>();
+            db.AddRange(first, second, third);
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            QuaesturaApiFactory.CreateToken("https://identity.test.ruoyu.study"));
+        var missing = Guid.NewGuid();
+        var ids = new[] { third.Id, missing, first.Id, third.Id, second.Id, missing };
+        using var response = await client.PostAsJsonAsync("/admin/questions/batch-get", new { ids });
+        response.EnsureSuccessStatusCode();
+        var batch = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(batch.GetProperty("success").GetBoolean());
+        var entries = batch.GetProperty("data").EnumerateArray().ToArray();
+        Assert.Equal(ids, entries.Select(entry => entry.GetProperty("id").GetGuid()));
+        foreach (var (entry, id) in entries.Zip(ids))
+        {
+            var question = entry.GetProperty("question");
+            if (id == missing)
+                Assert.Equal(JsonValueKind.Null, question.ValueKind);
+            else
+                Assert.Equal(id, question.GetProperty("id").GetGuid());
+        }
+    }
+
+    [Fact]
+    public async Task BatchGet_AcceptsOneHundredMissingEntriesAndRejectsInvalidLists()
+    {
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            QuaesturaApiFactory.CreateToken("https://identity.test.ruoyu.study"));
+        var ids = Enumerable.Range(0, 100).Select(_ => Guid.NewGuid()).ToArray();
+        using var response = await client.PostAsJsonAsync("/admin/questions/batch-get", new { ids });
+        response.EnsureSuccessStatusCode();
+        var batch = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var entries = batch.GetProperty("data").EnumerateArray().ToArray();
+        Assert.Equal(ids, entries.Select(entry => entry.GetProperty("id").GetGuid()));
+        Assert.All(entries, entry => Assert.Equal(JsonValueKind.Null, entry.GetProperty("question").ValueKind));
+
+        foreach (var body in new object[] { new { }, new { ids = Array.Empty<Guid>() },
+                     new { ids = ids.Append(ids[0]) }, new { ids = new[] { "invalid" } } })
+        {
+            using var invalid = await client.PostAsJsonAsync("/admin/questions/batch-get", body);
+            Assert.Equal(System.Net.HttpStatusCode.BadRequest, invalid.StatusCode);
+        }
+    }
+
+    [Fact]
     public async Task Upload_IgnoresLegacyMistakeId()
     {
         using var client = factory.CreateClient();
@@ -78,6 +134,11 @@ public sealed class QuestionResponseTests(QuaesturaApiFactory factory) : IClassF
         };
         var detail = await client.GetFromJsonAsync<JsonObject>($"/admin/questions/{question.Id}");
         Assert.True(JsonNode.DeepEquals(JsonSerializer.SerializeToNode(new { success = true, data = expected }), detail));
+
+        using var batchResponse = await client.PostAsJsonAsync("/admin/questions/batch-get", new { ids = new[] { question.Id } });
+        batchResponse.EnsureSuccessStatusCode();
+        var batch = await batchResponse.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(JsonNode.DeepEquals(detail!["data"], batch!["data"]![0]!["question"]));
 
         var expectedPage = JsonSerializer.SerializeToNode(new
         {

@@ -141,14 +141,30 @@ public static class QuestionEndpoints
         if (!form.TryGetValue("grade", out var gradeValues) || !int.TryParse(gradeValues, out var grade) || grade <= 0)
             throw new ValidationException("grade is required and must be greater than 0");
 
-        var questionPayload = JsonSerializer.Deserialize<CreateQuestionRequest>(
-            questionJson.ToString(),
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-            ?? throw new ValidationException("Invalid question JSON");
+        CreateQuestionRequest questionPayload;
+        try
+        {
+            questionPayload = JsonSerializer.Deserialize<CreateQuestionRequest>(
+                questionJson.ToString(),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                ?? throw new ValidationException("Invalid question JSON");
+        }
+        catch (JsonException ex) when (string.Equals(ex.Path, "$.id", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ValidationException("Question ID must be a UUID string");
+        }
 
         var validation = await validator.ValidateAsync(questionPayload);
         if (!validation.IsValid)
             throw new ValidationException(validation.Errors);
+
+        Guid? questionId = null;
+        if (!string.IsNullOrWhiteSpace(questionPayload.Id))
+        {
+            if (!Guid.TryParse(questionPayload.Id, out var parsedId))
+                throw new ValidationException("Question ID must be a UUID string");
+            questionId = parsedId;
+        }
 
         QuestionContentPayload? contentPayload = null;
         if (form.TryGetValue("content", out var contentJson) && !string.IsNullOrWhiteSpace(contentJson))
@@ -190,12 +206,11 @@ public static class QuestionEndpoints
                 };
 
             string resultId;
-            if (!string.IsNullOrWhiteSpace(questionPayload.Id)
-                && Guid.TryParse(questionPayload.Id, out var existingId))
+            if (questionId is Guid existingId)
             {
                 var existing = await service.GetAsync(existingId);
                 if (existing == null)
-                    throw new EntityNotFoundException("Question", questionPayload.Id);
+                    throw new EntityNotFoundException("Question", questionPayload.Id!);
 
                 var entity = existing.Value.question;
                 entity.Level = questionPayload.Level;

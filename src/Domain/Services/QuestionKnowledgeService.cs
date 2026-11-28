@@ -31,8 +31,9 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
         if (tags == null || tags.Count == 0)
             return 0;
 
-        var questionExists = await _dbContext.Questions.AnyAsync(q => q.Id == questionId);
-        if (!questionExists) return 0;
+        var questionMatches = await _dbContext.Questions.AnyAsync(q =>
+            q.Id == questionId && q.Subject == subject && q.Grade == grade);
+        if (!questionMatches) return 0;
 
         var ids = tags.Select(t => t.knowledgeId).Distinct().ToList();
         var tagEntities = await _dbContext.Knowledges
@@ -120,6 +121,7 @@ public class QuestionKnowledgeService : IQuestionKnowledgeService
     {
         return await _dbContext.QuestionKnowledges
             .Where(qk => qk.QuestionId == questionId)
+            .Include(qk => qk.Question)
             .ToListAsync();
     }
 

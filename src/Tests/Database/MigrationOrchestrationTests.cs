@@ -74,7 +74,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
         runs.Count(result => result.ExecutorWasCalled).Should().Be(1);
         runs.Count(result => !result.ExecutorWasCalled).Should().Be(1);
 
-        // The full schema and exactly the two known history rows exist once.
+        // The full schema and exactly the known history rows exist once.
         using var verify = _fixture.CreateContext(_database);
         foreach (var table in QuaesturaMigrationExecutor.KnownTableNames)
         {
@@ -83,7 +83,7 @@ public sealed class MigrationOrchestrationTests : IAsyncLifetime
         }
 
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(verify)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
     }
 
     // ---------- lock acquisition boundaries ----------

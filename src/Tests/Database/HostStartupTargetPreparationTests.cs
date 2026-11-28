@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
+using Quaestura.Database;
 using Xunit;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,7 @@ namespace Quaestura.Tests.Database;
 /// <summary>
 /// End-to-end startup behavior of the target-preparation stage in the real Program.cs host: a
 /// missing database is created when allowed and the existing initializer then produces the six
-/// tables and both original history rows; Database:AllowCreate=false refuses startup with zero
+/// tables and the current migration history; Database:AllowCreate=false refuses startup with zero
 /// creation; an invalid boolean fails startup fast. The existing InMemory-based
 /// QuaesturaApiFactory and all non-relational Testing paths remain untouched.
 /// </summary>
@@ -29,7 +30,7 @@ public sealed class HostStartupTargetPreparationTests
     }
 
     [Fact]
-    public async Task Host_Startup_CreatesMissingDatabase_AndAppliesSixTablesAndBothHistoryRows()
+    public async Task Host_Startup_CreatesMissingDatabase_AndAppliesSixTablesAndCurrentHistory()
     {
         var database = _fixture.NewDatabaseName();
         try
@@ -53,7 +54,7 @@ public sealed class HostStartupTargetPreparationTests
             }
 
             (await ReadHistoryAsync(database)).Should().Equal(
-                "20260504115924_InitialCreate", "20260926094240_AddTags");
+                QuaesturaMigrationExecutor.KnownMigrationIds);
         }
         finally
         {

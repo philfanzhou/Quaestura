@@ -162,8 +162,12 @@ internal static class MigrationGoldenStates
         await migrator.MigrateAsync(InitialId);
     }
 
-    internal static Task EnsureCreatedLegacyAsync(QuaesturaDbContext context) =>
-        context.Database.EnsureCreatedAsync();
+    internal static async Task EnsureCreatedLegacyAsync(QuaesturaDbContext context)
+    {
+        await context.Database.EnsureCreatedAsync();
+        // Historical EnsureCreated databases had this column and no migration history.
+        await ExecuteRawAsync(context, "ALTER TABLE question ADD COLUMN mistake_id character varying(36)");
+    }
 
     internal static Task DropHistoryAsync(QuaesturaDbContext context) =>
         context.Database.ExecuteSqlRawAsync($"DROP TABLE IF EXISTS \"{HistoryTable}\"");
@@ -181,7 +185,7 @@ internal static class MigrationGoldenStates
             INSERT INTO question (id, created_at, updated_at, level, type, width, height,
                                   picture_paths, user_id, student_id, mistake_id, subject, grade)
             VALUES ('{QuestionId}', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 1, 2, 640, 480,
-                    NULL, 'legacy-user', NULL, NULL, 2, 3);
+                    NULL, 'legacy-user', 'legacy-student', 'legacy-mistake', 2, 3);
             INSERT INTO question_content (question_id, content, correct_answer, analysis)
             VALUES ('{QuestionId}', 'legacy question content', 'legacy answer', NULL);
             INSERT INTO knowledge (id, parent_id, name, description, created_by, created_at,

@@ -22,7 +22,6 @@ public class QuestionResponse
     public string Analysis { get; set; } = string.Empty;
     public string? UserId { get; set; }
     public string? StudentId { get; set; }
-    public string? MistakeId { get; set; }
     public int Subject { get; set; }
     public int Grade { get; set; }
     public string CreatedAt { get; set; } = string.Empty;
@@ -39,7 +38,6 @@ public class QuestionResponse
             Height = entity.Height,
             UserId = entity.UserId,
             StudentId = entity.StudentId,
-            MistakeId = entity.MistakeId,
             Subject = entity.Subject,
             Grade = entity.Grade,
             CreatedAt = entity.CreatedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),

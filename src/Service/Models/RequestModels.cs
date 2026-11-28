@@ -17,7 +17,6 @@ public class CreateQuestionRequest
     public int Width { get; set; } = 800;
     public int Height { get; set; } = 600;
     public string? StudentId { get; set; }
-    public string? MistakeId { get; set; }
 }
 
 public class QuestionContentPayload

@@ -186,7 +186,6 @@ public static class QuestionEndpoints
                 entity.Grade = grade;
                 entity.Subject = subject;
                 entity.StudentId = questionPayload.StudentId;
-                entity.MistakeId = questionPayload.MistakeId;
                 entity.UpdatedAt = DateTimeOffset.UtcNow;
 
                 await service.UpdateAsync(entity, content,
@@ -206,7 +205,6 @@ public static class QuestionEndpoints
                     Height = questionPayload.Height,
                     UserId = userId,
                     StudentId = questionPayload.StudentId,
-                    MistakeId = questionPayload.MistakeId,
                     Subject = subject,
                     Grade = grade,
                 };

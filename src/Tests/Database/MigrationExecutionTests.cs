@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Quaestura.Database;
@@ -8,8 +9,8 @@ namespace Quaestura.Tests.Database;
 
 /// <summary>
 /// Execution and takeover behavior against real PostgreSQL under the shared migration
-/// orchestrator (real advisory lock): the empty state migrates to the six tables with both
-/// original history rows; verified legacy databases are taken over by registering only the
+/// orchestrator (real advisory lock): the empty state migrates to the six tables with the current
+/// migration history; verified legacy databases are taken over by registering only the
 /// verified InitialCreate baseline and really executing AddTags while business data (including
 /// tag usage counts) is preserved; cancellation between phases keeps only the real committed
 /// baseline and recovers on the next orchestration; the second orchestration over a current
@@ -32,7 +33,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
     public async Task DisposeAsync() => await _fixture.DropDatabaseAsync(_database);
 
     [Fact]
-    public async Task EmptyDatabase_InitializesToSixTablesAndBothHistoryRows()
+    public async Task EmptyDatabase_InitializesToSixTablesAndCurrentHistory()
     {
         using var context = _fixture.CreateContext(_database);
 
@@ -42,6 +43,32 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         result.Succeeded.Should().BeTrue();
         result.ExecutorWasCalled.Should().BeTrue();
         await AssertCurrentContractAsync(context);
+    }
+
+    [Fact]
+    public async Task AddTagsDatabase_UpgradeDropsOnlyMistakeIdAndDowngradeRestoresAnEmptyColumn()
+    {
+        using var context = _fixture.CreateContext(_database);
+        await context.Database.MigrateAsync(MigrationGoldenStates.AddTagsId);
+        await MigrationGoldenStates.SeedInitialEraRowsAsync(context);
+        await MigrationGoldenStates.SeedTagEraRowsAsync(context);
+
+        var result = await MigrationOrchestration.OrchestrateAsync(context, _fixture.GetConnectionString(_database));
+
+        result.Succeeded.Should().BeTrue();
+        await AssertCurrentContractAsync(context);
+        await AssertInitialEraRowsPreservedAsync(context);
+        (await MigrationGoldenStates.ScalarAsync<string>(context, "SELECT student_id FROM question"))
+            .Should().Be("legacy-student");
+        (await MigrationGoldenStates.CountRowsAsync(context, "question_tag")).Should().Be(1);
+        (await MigrationGoldenStates.ScalarAsync<int>(context, """
+            SELECT count(*)::int FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'question' AND column_name = 'mistake_id'
+            """)).Should().Be(0);
+
+        await context.Database.MigrateAsync(MigrationGoldenStates.AddTagsId);
+        (await MigrationGoldenStates.ScalarAsync<int>(context, "SELECT count(*)::int FROM question WHERE mistake_id IS NULL"))
+            .Should().Be(1);
     }
 
     [Fact]
@@ -86,7 +113,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         // Only the verified InitialCreate baseline is registered by the executor; AddTags really
         // executed (it created the tag tables) and EF recorded it.
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
         await AssertCurrentContractAsync(context);
         await AssertInitialEraRowsPreservedAsync(context);
     }
@@ -105,7 +132,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         result.Succeeded.Should().BeTrue();
         result.ExecutorWasCalled.Should().BeTrue();
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
         await AssertCurrentContractAsync(context);
         await AssertInitialEraRowsPreservedAsync(context);
         (await MigrationGoldenStates.ScalarAsync<int>(
@@ -193,7 +220,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
 
         (await MigrationGoldenStates.CaptureStateAsync(context)).Should().Be(firstState);
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
     }
 
     [Fact]
@@ -246,7 +273,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
             .ExecuteAsync(CancellationToken.None).AsTask();
 
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
     }
 
     [Fact]
@@ -278,7 +305,7 @@ public sealed class MigrationExecutionTests : IAsyncLifetime
         }
 
         (await MigrationGoldenStates.ReadAppliedHistoryAsync(context)).Should().Equal(
-            MigrationGoldenStates.InitialId, MigrationGoldenStates.AddTagsId);
+            QuaesturaMigrationExecutor.KnownMigrationIds);
 
         // The final inspection of the initializer already verified Current; re-check explicitly.
         var state = await new QuaesturaMigrationExecutor(context, NullLogger.Instance)

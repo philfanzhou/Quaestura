@@ -20,7 +20,7 @@ namespace Quaestura.Tests.Database;
 /// The target-preparation adapter against real PostgreSQL 16: an existing target is used
 /// without any maintenance connection or CREATE; a verifiably missing target is created with
 /// the configured name and owner only when Database:AllowCreate permits it, after which the
-/// original initializer still produces the six tables and both original history rows;
+/// original initializer still produces the six tables and the current migration history;
 /// permission, reachability, identity, and owner conflicts refuse startup without creation
 /// fallbacks; concurrent preparation converges; cancellation creates nothing; and secret
 /// canaries never enter diagnostics.
@@ -120,7 +120,7 @@ public sealed class TargetPreparationTests
             }
 
             var history = await ReadHistoryAsync(connectionString);
-            history.Should().Equal("20260504115924_InitialCreate", "20260926094240_AddTags");
+            history.Should().Equal(QuaesturaMigrationExecutor.KnownMigrationIds);
         }
         finally
         {
@@ -379,7 +379,7 @@ public sealed class TargetPreparationTests
             results.Should().OnlyContain(result => result.Succeeded);
             results.Count(result => result.ExecutorWasCalled).Should().Be(1);
             (await ReadHistoryAsync(_fixture.GetConnectionString(database)))
-                .Should().Equal("20260504115924_InitialCreate", "20260926094240_AddTags");
+                .Should().Equal(QuaesturaMigrationExecutor.KnownMigrationIds);
         }
         finally { await _fixture.DropDatabaseIfExistsAsync(database); }
     }

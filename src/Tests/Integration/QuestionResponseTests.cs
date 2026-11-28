@@ -16,6 +16,29 @@ namespace Quaestura.Tests.Integration;
 public sealed class QuestionResponseTests(QuaesturaApiFactory factory) : IClassFixture<QuaesturaApiFactory>
 {
     [Fact]
+    public async Task Upload_IgnoresLegacyMistakeId()
+    {
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer",
+            QuaesturaApiFactory.CreateToken("https://identity.test.ruoyu.study", "teacher"));
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("""{"studentId":"example-student","mistakeId":"obsolete"}"""), "question" },
+            { new StringContent("""{"content":"What is 2 + 2?"}"""), "content" },
+            { new StringContent("2"), "subject" },
+            { new StringContent("7"), "grade" }
+        };
+        using var response = await client.PostAsync("/admin/questions", form);
+        response.EnsureSuccessStatusCode();
+        var upload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var id = upload.GetProperty("data").GetProperty("id").GetGuid();
+        var detail = await client.GetFromJsonAsync<JsonElement>($"/admin/questions/{id}");
+        var question = detail.GetProperty("data");
+        Assert.Equal("example-student", question.GetProperty("studentId").GetString());
+        Assert.False(question.TryGetProperty("mistakeId", out _));
+    }
+
+    [Fact]
     public async Task DetailSearchAndRelations_ReturnTheSameQuestionFields()
     {
         var pictures = new Mock<IOssQuestionService>();
@@ -50,7 +73,7 @@ public sealed class QuestionResponseTests(QuaesturaApiFactory factory) : IClassF
         {
             id = question.Id.ToString(), level = 4, type = 5, width = 60, height = 70,
             picturePaths = new[] { "/signed/image.png" }, content = "text", correctAnswer = "answer", analysis = "",
-            userId = (string?)null, studentId = (string?)null, mistakeId = (string?)null, subject = 2, grade = 3,
+            userId = (string?)null, studentId = (string?)null, subject = 2, grade = 3,
             createdAt = "2026-01-02T02:00:00.123Z", updatedAt = "2026-01-03T02:00:00.123Z"
         };
         var detail = await client.GetFromJsonAsync<JsonObject>($"/admin/questions/{question.Id}");

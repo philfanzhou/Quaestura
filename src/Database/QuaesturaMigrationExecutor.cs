@@ -5,6 +5,8 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using ServiceMantle.Database.PostgreSql.Migration;
@@ -19,8 +21,7 @@ namespace Quaestura.Database;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>InspectAsync</c> is strictly read-only and classifies the target database against the two
-/// known migration versions (<c>20260504115924_InitialCreate</c> and <c>20260926094240_AddTags</c>):
+/// <c>InspectAsync</c> is strictly read-only and classifies the database against its migration history:
 /// </para>
 /// <list type="bullet">
 /// <item>Empty: no business tables and no applied history (a missing target database also classifies
@@ -59,11 +60,12 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 {
     internal const string InitialCreateMigrationId = "20260504115924_InitialCreate";
     internal const string AddTagsMigrationId = "20260926094240_AddTags";
+    internal const string RemoveQuestionMistakeIdMigrationId = "20261128081711_RemoveQuestionMistakeId";
     internal const string HistoryTableName = "__EFMigrationsHistory";
 
-    /// <summary>The ordered migration contract this executor supports; frozen by the issue.</summary>
+    /// <summary>The ordered migration contract this executor supports.</summary>
     internal static readonly IReadOnlyList<string> KnownMigrationIds =
-        [InitialCreateMigrationId, AddTagsMigrationId];
+        [InitialCreateMigrationId, AddTagsMigrationId, RemoveQuestionMistakeIdMigrationId];
 
     /// <summary>Business tables created by <see cref="InitialCreateMigrationId"/>.</summary>
     internal static readonly IReadOnlyList<string> InitialTableNames =
@@ -230,7 +232,6 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     private async Task<MigrationInspection> InspectOpenDatabaseAsync(CancellationToken cancellationToken)
     {
-        var expected = BuildExpectedTables();
         var evidence = await ReadSchemaEvidenceAsync(cancellationToken).ConfigureAwait(false);
 
         switch (evidence)
@@ -251,7 +252,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                     $"the database structure could not be read ({evidence.Message})");
 
             case { State: SchemaEvidenceReadState.Succeeded, Snapshot: { } snapshot }:
-                return ClassifySnapshot(evidence.AppliedMigrationIds, snapshot, expected);
+                return ClassifySnapshot(evidence.AppliedMigrationIds, snapshot);
 
             default:
                 throw new InvalidOperationException(
@@ -274,8 +275,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     private MigrationInspection ClassifySnapshot(
         IReadOnlyList<string> applied,
-        SharedSchemaSnapshot snapshot,
-        IReadOnlyDictionary<string, SchemaTable> expected)
+        SharedSchemaSnapshot snapshot)
     {
         var presentBusinessTables = KnownTableNames
             .Where(table => FindTable(snapshot, table) is not null).ToList();
@@ -297,7 +297,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
         if (prefixLength == KnownMigrationIds.Count)
         {
             // The history claims the current version; the complete current schema must verify.
-            var mismatch = ValidateTables(snapshot, expected, KnownTableNames);
+            var mismatch = ValidateTables(snapshot, BuildExpectedTables(_context.Model), KnownTableNames);
             return mismatch is null
                 ? MigrationInspection.Of(
                     MigrationObservationState.CurrentVersionCompatible,
@@ -306,7 +306,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                     $"the history claims the current version but the schema does not verify: {mismatch}");
         }
 
-        if (presentBusinessTables.Count == 0)
+        if (prefixLength == 0 && presentBusinessTables.Count == 0)
         {
             // No business tables at all (history absent or empty): EF runs every migration.
             return MigrationInspection.Of(
@@ -323,7 +323,9 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
                 $"business tables are partially present without migration history: found [{Join(presentBusinessTables)}]");
         }
 
-        // Verify the initial four tables against the InitialCreate version.
+        // AddTags retained the original four tables, so its model describes both legacy layouts.
+        var legacyModel = _context.GetService<IModelRuntimeInitializer>().Initialize(new Migrations.AddTags().TargetModel);
+        var expected = BuildExpectedTables(legacyModel);
         var initialMismatch = ValidateTables(snapshot, expected, InitialTableNames);
         if (initialMismatch is not null)
         {
@@ -333,10 +335,10 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
         var presentTagTables = TagTableNames
             .Where(table => FindTable(snapshot, table) is not null).ToList();
-        if (presentTagTables.Count == 1)
+        if (presentTagTables.Count == 1 || (applied.Contains(AddTagsMigrationId) && presentTagTables.Count == 0))
         {
             return MigrationInspection.Failed(
-                $"the tag tables are partially present: found [{Join(presentTagTables)}]");
+                $"the tag tables do not match the migration history: found [{Join(presentTagTables)}]");
         }
 
         if (presentTagTables.Count == 2)
@@ -351,7 +353,7 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
         // A verified legacy database without history is taken over by registering only the
         // InitialCreate baseline; AddTags then really executes (its DDL is idempotent) and EF
-        // records it. Business data is preserved throughout.
+        // records each remaining migration.
         return MigrationInspection.Of(
             MigrationObservationState.PendingMigration,
             prefixLength == 0
@@ -389,17 +391,17 @@ public sealed class QuaesturaMigrationExecutor : IDatabaseMigrationExecutor
 
     // ---------- shared expectation plus consumer-owned names ----------
 
-    private IReadOnlyDictionary<string, SchemaTable> BuildExpectedTables()
+    private static IReadOnlyDictionary<string, SchemaTable> BuildExpectedTables(IModel model)
     {
         // Extended derivation outputs the PK/FK/index names and key column counts directly, so the
         // expected shape pairs with the reader's extended evidence without local name pairing.
         var derived = EfCoreExpectedSchemaDerivation.Derive(
-                _context.Model,
+                model,
                 new EfCoreExpectedSchemaDerivationOptions(includeExtendedObjectEvidence: true))
             .Tables.ToDictionary(table => table.Name, StringComparer.Ordinal);
 
         var expected = new Dictionary<string, SchemaTable>(StringComparer.Ordinal);
-        foreach (var table in _context.Model.GetRelationalModel().Tables)
+        foreach (var table in model.GetRelationalModel().Tables)
         {
             if (!KnownTableNames.Contains(table.Name))
             {

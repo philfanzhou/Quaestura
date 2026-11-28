@@ -42,10 +42,6 @@ public class Question
     [MaxLength(36)]
     public string? StudentId { get; set; }
 
-    [Column("mistake_id")]
-    [MaxLength(36)]
-    public string? MistakeId { get; set; }
-
     [Column("subject")]
     public int Subject { get; set; }
 
